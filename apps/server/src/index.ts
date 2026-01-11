@@ -45,6 +45,7 @@ function handleMessage(ws: WebSocket, raw: ClientMessage) {
         break;
       }
       case 'reconnect': {
+        table.setSittingOut(raw.playerId, false);
         clients.set(ws, { playerId: raw.playerId });
         send(ws, { type: 'welcome', playerId: raw.playerId, tableId: table.state.id });
         broadcast();
@@ -92,6 +93,11 @@ wss.on('connection', (ws) => {
     }
   });
   ws.on('close', () => {
+    const ctx = clients.get(ws);
+    if (ctx) {
+      table.handleDisconnect(ctx.playerId);
+      broadcast();
+    }
     clients.delete(ws);
   });
 });

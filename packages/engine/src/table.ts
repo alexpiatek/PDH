@@ -126,6 +126,59 @@ export class PokerTable {
     this.state.seats[seat] = null;
   }
 
+  private findSeatIndexByPlayerId(playerId: string) {
+    return this.state.seats.findIndex((s) => s?.id === playerId);
+  }
+
+  setSittingOut(playerId: string, sittingOut: boolean) {
+    const seatIdx = this.findSeatIndexByPlayerId(playerId);
+    if (seatIdx >= 0) {
+      const seat = this.state.seats[seatIdx];
+      if (seat) seat.sittingOut = sittingOut;
+    }
+  }
+
+  handleDisconnect(playerId: string) {
+    this.setSittingOut(playerId, true);
+    const hand = this.state.hand;
+    if (!hand) return;
+    const player = hand.players.find((p) => p.id === playerId);
+    if (!player || player.status !== 'active') {
+      if (hand.phase === 'discard' && hand.discardPending.includes(playerId)) {
+        hand.discardPending = hand.discardPending.filter((id) => id !== playerId);
+        if (hand.discardPending.length === 0) {
+          this.completeDiscardPhase();
+        }
+      }
+      return;
+    }
+
+    player.status = 'folded';
+    player.hasActed = true;
+    logPush(hand.log, `${player.name} disconnected (folded)`);
+
+    if (hand.phase === 'discard' && hand.discardPending.includes(playerId)) {
+      hand.discardPending = hand.discardPending.filter((id) => id !== playerId);
+      if (hand.discardPending.length === 0) {
+        this.completeDiscardPhase();
+      }
+      return;
+    }
+
+    if (activePlayers(hand).length <= 1) {
+      this.finishHand();
+      return;
+    }
+
+    if (hand.phase === 'betting') {
+      if (this.isBettingRoundComplete(hand)) {
+        this.finishBettingRound();
+      } else if (hand.actionOnSeat === player.seat) {
+        hand.actionOnSeat = this.nextToAct(hand);
+      }
+    }
+  }
+
   startHand(rng: () => number = Math.random) {
     if (this.state.hand) throw new Error('Hand already in progress');
     const seatsIn = this.state.seats.filter((s) => s && !s.sittingOut && s.stack > 0) as Seat[];
@@ -557,7 +610,7 @@ export class PokerTable {
 
   beginNextHandIfReady() {
     if (this.state.hand) return;
-    const ready = this.state.seats.filter((s) => s && s.stack > 0) as Seat[];
+    const ready = this.state.seats.filter((s) => s && s.stack > 0 && !s.sittingOut) as Seat[];
     if (ready.length >= 2) {
       this.startHand();
     }
