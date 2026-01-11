@@ -1,0 +1,13 @@
+{
+  "name": "@pdh/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@pdh/engine": "workspace:*",
+    "ws": "^8.14.2"
+  }
+}

@@ -1,0 +1,109 @@
+import { randomUUID } from 'crypto';
+import { WebSocketServer, WebSocket } from 'ws';
+import { PokerTable } from '@pdh/engine';
+import { ClientMessage, ServerMessage } from './protocol';
+
+const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
+const table = new PokerTable('main');
+const clients = new Map<WebSocket, { playerId: string }>();
+
+const wss = new WebSocketServer({ port: PORT });
+console.log(`WebSocket server listening on ws://localhost:${PORT}`);
+
+function send(ws: WebSocket, msg: ServerMessage) {
+  ws.send(JSON.stringify(msg));
+}
+
+function broadcast() {
+  for (const [ws, ctx] of clients.entries()) {
+    const state = table.getPublicState(ctx.playerId);
+    send(ws, { type: 'state', state: { ...state, you: { playerId: ctx.playerId } } });
+  }
+}
+
+function seatPlayer(name: string, buyIn: number, desiredSeat?: number) {
+  const playerId = randomUUID();
+  const seatIndex =
+    desiredSeat !== undefined
+      ? desiredSeat
+      : table.state.seats.findIndex((s) => s === null);
+  if (seatIndex === -1) throw new Error('No open seats');
+  table.seatPlayer(seatIndex, { id: playerId, name, stack: buyIn });
+  table.beginNextHandIfReady();
+  return { playerId, seatIndex };
+}
+
+function handleMessage(ws: WebSocket, raw: ClientMessage) {
+  const ctx = clients.get(ws);
+  try {
+    switch (raw.type) {
+      case 'join': {
+        const { playerId, seatIndex } = seatPlayer(raw.name, raw.buyIn, raw.seat);
+        clients.set(ws, { playerId });
+        send(ws, { type: 'welcome', playerId, tableId: table.state.id });
+        broadcast();
+        break;
+      }
+      case 'reconnect': {
+        clients.set(ws, { playerId: raw.playerId });
+        send(ws, { type: 'welcome', playerId: raw.playerId, tableId: table.state.id });
+        broadcast();
+        break;
+      }
+      case 'action': {
+        if (!ctx) throw new Error('Join first');
+        table.applyAction(ctx.playerId, {
+          type: raw.action as any,
+          amount: raw.amount,
+        });
+        broadcast();
+        break;
+      }
+      case 'discard': {
+        if (!ctx) throw new Error('Join first');
+        table.applyDiscard(ctx.playerId, raw.index);
+        broadcast();
+        break;
+      }
+      case 'requestState': {
+        if (!ctx) throw new Error('Join first');
+        const state = table.getPublicState(ctx.playerId);
+        send(ws, { type: 'state', state: { ...state, you: { playerId: ctx.playerId } } });
+        break;
+      }
+      default:
+        throw new Error('Unknown message');
+    }
+    table.beginNextHandIfReady();
+  } catch (err: any) {
+    send(ws, { type: 'error', message: err.message ?? 'error' });
+  }
+}
+
+wss.on('connection', (ws) => {
+  clients.set(ws, { playerId: randomUUID() });
+  send(ws, { type: 'welcome', playerId: clients.get(ws)!.playerId, tableId: table.state.id });
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data.toString()) as ClientMessage;
+      handleMessage(ws, msg);
+    } catch (err: any) {
+      send(ws, { type: 'error', message: 'Invalid payload' });
+    }
+  });
+  ws.on('close', () => {
+    clients.delete(ws);
+  });
+});
+
+setInterval(() => {
+  const before = JSON.stringify(table.state.hand?.discardPending ?? []);
+  table.autoDiscard();
+  const after = JSON.stringify(table.state.hand?.discardPending ?? []);
+  if (before !== after) {
+    broadcast();
+  }
+  if (!table.state.hand) {
+    table.beginNextHandIfReady();
+  }
+}, 500);
