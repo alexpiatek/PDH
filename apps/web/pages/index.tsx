@@ -53,6 +53,10 @@ const Home: NextPage = () => {
     if (!hand || !playerId) return null;
     return hand.players.find((p: PlayerInHand) => p.id === playerId);
   }, [hand, playerId]);
+  const seated = useMemo(() => {
+    if (!playerId) return false;
+    return Boolean(state?.seats?.some((s: any) => s && s.id === playerId));
+  }, [state, playerId]);
 
   const isMyTurn = hand && you && hand.phase === 'betting' && hand.actionOnSeat === you.seat;
   const discardPending = hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id);
@@ -81,7 +85,7 @@ const Home: NextPage = () => {
     <div style={{ fontFamily: 'Inter, sans-serif', padding: 20, background: '#0b132b', color: '#e5e7eb', minHeight: '100vh' }}>
       <h1>PDH - Discard Hold&apos;em</h1>
       <p>Status: {status}</p>
-      {!you && (
+      {!seated && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={{ padding: 8 }} />
           <input
@@ -182,7 +186,7 @@ const Home: NextPage = () => {
           </div>
         </div>
       ) : (
-        <p>Waiting for hand...</p>
+        <p>{seated ? 'Waiting for next hand...' : 'Waiting for hand...'}</p>
       )}
     </div>
   );

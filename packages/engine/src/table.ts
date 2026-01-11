@@ -414,13 +414,10 @@ export class PokerTable {
     if (canAct.length === 0) return true;
     const allMatched = hand.players.every(
       (p) =>
-        p.status !== 'active' ||
-        p.betThisStreet === hand.currentBet ||
-        p.stack === 0 ||
-        p.status === 'allIn',
+        p.status !== 'active' || p.betThisStreet === hand.currentBet || p.stack === 0,
     );
     const allActed = hand.players.every(
-      (p) => p.status !== 'active' || p.hasActed || p.stack === 0 || p.status === 'allIn',
+      (p) => p.status !== 'active' || p.hasActed || p.stack === 0,
     );
     return allMatched && allActed;
   }
@@ -525,6 +522,17 @@ export class PokerTable {
   private finishHand() {
     const hand = this.state.hand;
     if (!hand) return;
+    const finalize = () => {
+      hand.phase = 'complete';
+      this.state.log.push(...hand.log);
+      this.state.hand = null;
+      // advance button
+      const nextBtn = nextOccupiedSeat(this.state.seats, this.state.buttonSeat);
+      if (nextBtn) {
+        this.state.buttonSeat = nextBtn.seat;
+      }
+      this.beginNextHandIfReady();
+    };
     // If only one active player, award pot
     const contenders = hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
     if (contenders.length === 1) {
@@ -533,8 +541,7 @@ export class PokerTable {
       const seat = this.state.seats[winner.seat];
       if (seat) seat.stack += totalPot;
       logPush(hand.log, `${winner.name} wins ${totalPot} uncontested`);
-      hand.phase = 'complete';
-      this.state.hand = null;
+      finalize();
       return;
     }
     this.buildSidePots(hand);
@@ -544,13 +551,7 @@ export class PokerTable {
       if (seat) seat.stack += res.amount;
       logPush(hand.log, `${res.player.name} wins ${res.amount}`);
     }
-    hand.phase = 'complete';
-    this.state.hand = null;
-    // advance button
-    const nextBtn = nextOccupiedSeat(this.state.seats, this.state.buttonSeat);
-    if (nextBtn) {
-      this.state.buttonSeat = nextBtn.seat;
-    }
+    finalize();
   }
 
   private buildSidePots(hand: HandState) {
