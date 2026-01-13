@@ -6,6 +6,9 @@ import { ClientMessage, ServerMessage } from './protocol';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const table = new PokerTable('main');
 const clients = new Map<WebSocket, { playerId: string }>();
+const START_COUNTDOWN_MS = 20000;
+let startCountdownTimer: NodeJS.Timeout | null = null;
+let startCountdownUntil: number | null = null;
 
 const wss = new WebSocketServer({ port: PORT });
 console.log(`WebSocket server listening on ws://localhost:${PORT}`);
@@ -21,6 +24,31 @@ function broadcast() {
   }
 }
 
+function seatedReadyCount() {
+  return table.state.seats.filter((s) => s && s.stack > 0 && !s.sittingOut).length;
+}
+
+function clearStartCountdown() {
+  if (startCountdownTimer) {
+    clearTimeout(startCountdownTimer);
+    startCountdownTimer = null;
+  }
+  startCountdownUntil = null;
+}
+
+function scheduleStartCountdown() {
+  clearStartCountdown();
+  startCountdownUntil = Date.now() + START_COUNTDOWN_MS;
+  startCountdownTimer = setTimeout(() => {
+    startCountdownTimer = null;
+    startCountdownUntil = null;
+    if (!table.state.hand && seatedReadyCount() >= 2) {
+      table.startHand();
+      broadcast();
+    }
+  }, START_COUNTDOWN_MS);
+}
+
 function seatPlayer(name: string, buyIn: number, desiredSeat?: number) {
   const playerId = randomUUID();
   const seatIndex =
@@ -29,7 +57,13 @@ function seatPlayer(name: string, buyIn: number, desiredSeat?: number) {
       : table.state.seats.findIndex((s) => s === null);
   if (seatIndex === -1) throw new Error('No open seats');
   table.seatPlayer(seatIndex, { id: playerId, name, stack: buyIn });
-  table.beginNextHandIfReady();
+  if (!table.state.hand) {
+    if (seatedReadyCount() >= 2) {
+      scheduleStartCountdown();
+    } else {
+      clearStartCountdown();
+    }
+  }
   return { playerId, seatIndex };
 }
 
@@ -65,6 +99,12 @@ function handleMessage(ws: WebSocket, raw: ClientMessage) {
         broadcast();
         break;
       }
+      case 'nextHand': {
+        if (!ctx) throw new Error('Join first');
+        table.advanceToNextHand();
+        broadcast();
+        break;
+      }
       case 'requestState': {
         if (!ctx) throw new Error('Join first');
         const state = table.getPublicState(ctx.playerId);
@@ -74,7 +114,6 @@ function handleMessage(ws: WebSocket, raw: ClientMessage) {
       default:
         throw new Error('Unknown message');
     }
-    table.beginNextHandIfReady();
   } catch (err: any) {
     send(ws, { type: 'error', message: err.message ?? 'error' });
   }
@@ -102,8 +141,5 @@ setInterval(() => {
   const after = JSON.stringify(table.state.hand?.discardPending ?? []);
   if (before !== after) {
     broadcast();
-  }
-  if (!table.state.hand) {
-    table.beginNextHandIfReady();
   }
 }, 500);
