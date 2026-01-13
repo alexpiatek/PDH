@@ -56,13 +56,14 @@ export interface HandState {
   lastAggressorSeat: number | null;
   discardPending: string[];
   discardDeadline: number | null;
+  showdownWinners: ShowdownWinner[];
   log: HandLogEntry[];
 }
 
 export interface TableConfig {
   smallBlind: number;
   bigBlind: number;
-  discardTimeoutMs: number;
+  discardTimeoutMs: number | null;
 }
 
 export interface TableState {
@@ -86,4 +87,11 @@ export interface ShowdownResult {
   playerId: string;
   handStrength: number;
   bestFive: Card[];
+}
+
+export interface ShowdownWinner {
+  playerId: string;
+  amount: number;
+  handStrength?: number;
+  bestFive?: Card[];
 }

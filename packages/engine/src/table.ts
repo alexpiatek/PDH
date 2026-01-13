@@ -10,6 +10,7 @@ import {
   PlayerStatus,
   Pot,
   Seat,
+  ShowdownWinner,
   Street,
   TableConfig,
   TableState,
@@ -18,7 +19,7 @@ import {
 const DEFAULT_CONFIG: TableConfig = {
   smallBlind: 50,
   bigBlind: 100,
-  discardTimeoutMs: 8000,
+  discardTimeoutMs: null,
 };
 
 function nowTs() {
@@ -90,6 +91,10 @@ function resetStreetState(hand: HandState, nextStreet: Street, table: TableState
 }
 
 function seatAfterButton(table: TableState, hand: HandState): number {
+  const buttonSeat = table.seats[hand.buttonSeat];
+  if (buttonSeat && playerBySeat(hand, buttonSeat.seat).status === 'active') {
+    return buttonSeat.seat;
+  }
   const order = seatOrderFrom(table.seats, hand.buttonSeat);
   const first = order.find((s) => s && playerBySeat(hand, s.seat).status === 'active');
   if (!first) return hand.buttonSeat;
@@ -169,6 +174,7 @@ export class PokerTable {
       lastAggressorSeat: null,
       discardPending: [],
       discardDeadline: null,
+      showdownWinners: [],
       log: [],
     };
     // Post blinds and set action order
@@ -191,6 +197,9 @@ export class PokerTable {
   }
 
   smallBlindSeat(hand: HandState): number {
+    if (activePlayers(hand).length === 2) {
+      return hand.buttonSeat;
+    }
     const sb = nextOccupiedSeat(this.state.seats, hand.buttonSeat);
     if (!sb) throw new Error('No small blind seat');
     return sb.seat;
@@ -306,6 +315,12 @@ export class PokerTable {
         throw new Error('Unknown action');
     }
 
+    const remaining = hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
+    if (remaining.length === 1) {
+      this.finishHand();
+      return;
+    }
+
     if (this.isBettingRoundComplete(hand)) {
       this.finishBettingRound();
     } else {
@@ -375,11 +390,13 @@ export class PokerTable {
     // Move to discard or next street/showdown
     if (hand.street === 'preflop') {
       this.revealFlop(hand);
-      resetStreetState(hand, 'flop', this.state);
+      this.beginDiscardPhase();
     } else if (hand.street === 'flop' || hand.street === 'turn') {
       this.beginDiscardPhase();
     } else if (hand.street === 'river') {
       this.beginDiscardPhase();
+    } else if (hand.street === 'showdown') {
+      this.finishHand();
     }
   }
 
@@ -406,7 +423,10 @@ export class PokerTable {
     hand.discardPending = activePlayers(hand)
       .filter((p) => p.holeCards.length > 2)
       .map((p) => p.id);
-    hand.discardDeadline = nowTs() + this.state.config.discardTimeoutMs;
+    hand.discardDeadline =
+      this.state.config.discardTimeoutMs === null
+        ? null
+        : nowTs() + this.state.config.discardTimeoutMs;
     logPush(hand.log, `Discard phase started (${hand.discardPending.length} to act)`);
     if (hand.discardPending.length === 0) {
       this.completeDiscardPhase();
@@ -454,32 +474,24 @@ export class PokerTable {
     if (!hand) return;
     hand.discardDeadline = null;
     hand.discardPending = [];
-    if (hand.street === 'flop') {
+    if (hand.street === 'preflop') {
+      resetStreetState(hand, 'flop', this.state);
+    } else if (hand.street === 'flop') {
       this.revealSingle(hand, 'Turn');
       resetStreetState(hand, 'turn', this.state);
     } else if (hand.street === 'turn') {
       this.revealSingle(hand, 'River');
       resetStreetState(hand, 'river', this.state);
     } else if (hand.street === 'river') {
-      hand.phase = 'showdown';
-      this.finishHand();
+      resetStreetState(hand, 'showdown', this.state);
     }
   }
 
   private finishHand() {
     const hand = this.state.hand;
     if (!hand) return;
-    const finalize = () => {
-      hand.phase = 'complete';
-      this.state.log.push(...hand.log);
-      this.state.hand = null;
-      // advance button
-      const nextBtn = nextOccupiedSeat(this.state.seats, this.state.buttonSeat);
-      if (nextBtn) {
-        this.state.buttonSeat = nextBtn.seat;
-      }
-      this.beginNextHandIfReady();
-    };
+    hand.phase = 'showdown';
+    hand.showdownWinners = [];
     // If only one active player, award pot
     const contenders = hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
     if (contenders.length === 1) {
@@ -488,17 +500,17 @@ export class PokerTable {
       const seat = this.state.seats[winner.seat];
       if (seat) seat.stack += totalPot;
       logPush(hand.log, `${winner.name} wins ${totalPot} uncontested`);
-      finalize();
+      hand.showdownWinners = [{ playerId: winner.id, amount: totalPot }];
       return;
     }
     this.buildSidePots(hand);
     const results = this.scoreShowdown(hand);
     for (const res of results) {
-      const seat = this.state.seats[res.player.seat];
+      const seat = this.state.seats.find((s) => s?.id === res.playerId);
       if (seat) seat.stack += res.amount;
-      logPush(hand.log, `${res.player.name} wins ${res.amount}`);
+      logPush(hand.log, `${seat?.name ?? res.playerId} wins ${res.amount}`);
     }
-    finalize();
+    hand.showdownWinners = results;
   }
 
   private buildSidePots(hand: HandState) {
@@ -528,13 +540,14 @@ export class PokerTable {
     hand.pots = pots;
   }
 
-  private scoreShowdown(hand: HandState) {
+  private scoreShowdown(hand: HandState): ShowdownWinner[] {
     const contenders = hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
     const evaluations = contenders.map((p) => ({
       player: p,
       eval: evaluateSeven([...hand.board, ...p.holeCards]),
     }));
-    const award: { player: PlayerInHand; amount: number }[] = [];
+    const evalById = new Map(evaluations.map((e) => [e.player.id, e.eval]));
+    const award = new Map<string, ShowdownWinner>();
     for (const pot of hand.pots) {
       const eligible = evaluations.filter((e) => pot.eligible.includes(e.player.id));
       if (eligible.length === 0) continue;
@@ -543,12 +556,37 @@ export class PokerTable {
       const share = Math.floor(pot.amount / winners.length);
       const remainder = pot.amount % winners.length;
       const orderedWinners = this.orderWinnersByButton(winners.map((w) => w.player), hand.buttonSeat);
-      winners.forEach((w) => award.push({ player: w.player, amount: share }));
+      winners.forEach((w) => {
+        const existing = award.get(w.player.id);
+        const evalResult = evalById.get(w.player.id);
+        if (existing) {
+          existing.amount += share;
+        } else {
+          award.set(w.player.id, {
+            playerId: w.player.id,
+            amount: share,
+            bestFive: evalResult?.bestFive,
+            handStrength: evalResult?.score,
+          });
+        }
+      });
       if (remainder > 0 && orderedWinners.length > 0) {
-        award.push({ player: orderedWinners[0], amount: remainder });
+        const winnerId = orderedWinners[0].id;
+        const existing = award.get(winnerId);
+        const evalResult = evalById.get(winnerId);
+        if (existing) {
+          existing.amount += remainder;
+        } else {
+          award.set(winnerId, {
+            playerId: winnerId,
+            amount: remainder,
+            bestFive: evalResult?.bestFive,
+            handStrength: evalResult?.score,
+          });
+        }
       }
     }
-    return award;
+    return [...award.values()];
   }
 
   private orderWinnersByButton(players: PlayerInHand[], buttonSeat: number): PlayerInHand[] {
@@ -564,6 +602,23 @@ export class PokerTable {
     }
   }
 
+  advanceToNextHand() {
+    if (!this.state.hand) {
+      this.beginNextHandIfReady();
+      return;
+    }
+    if (this.state.hand.phase !== 'showdown') {
+      throw new Error('Hand not complete');
+    }
+    this.state.log.push(...this.state.hand.log);
+    this.state.hand = null;
+    const nextBtn = nextOccupiedSeat(this.state.seats, this.state.buttonSeat);
+    if (nextBtn) {
+      this.state.buttonSeat = nextBtn.seat;
+    }
+    this.beginNextHandIfReady();
+  }
+
   getPublicState(forPlayerId?: string) {
     const hand = this.state.hand;
     return {
@@ -571,11 +626,14 @@ export class PokerTable {
       seats: this.state.seats,
       buttonSeat: this.state.buttonSeat,
       hand: hand
-        ? {
+          ? {
             ...hand,
             players: hand.players.map((p) => ({
               ...p,
-              holeCards: forPlayerId && p.id === forPlayerId ? p.holeCards : p.holeCards.map(() => ({ rank: 'X', suit: 'X' } as unknown as Card)),
+              holeCards:
+                hand.phase === 'showdown' || (forPlayerId && p.id === forPlayerId)
+                  ? p.holeCards
+                  : p.holeCards.map(() => ({ rank: 'X', suit: 'X' } as unknown as Card)),
             })),
             deck: [],
           }
