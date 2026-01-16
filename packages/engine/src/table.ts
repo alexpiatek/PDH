@@ -1,5 +1,5 @@
 import { buildDeck, shuffle } from './deck';
-import { evaluateSeven } from './handEvaluator';
+import { evaluateSeven, HAND_CATEGORY_LABELS } from './handEvaluator';
 import {
   Card,
   HandLogEntry,
@@ -57,6 +57,11 @@ function activePlayers(hand: HandState): PlayerInHand[] {
   return hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
 }
 
+function bettingLocked(hand: HandState): boolean {
+  const active = activePlayers(hand);
+  return active.length > 0 && active.every((p) => p.status === 'allIn' || p.stack === 0);
+}
+
 function playerBySeat(hand: HandState, seat: number): PlayerInHand {
   const p = hand.players.find((pl) => pl.seat === seat);
   if (!p) {
@@ -78,6 +83,7 @@ function resetStreetState(hand: HandState, nextStreet: Street, table: TableState
   hand.phase = 'betting';
   hand.currentBet = 0;
   hand.minRaise = table.config.bigBlind;
+  hand.raisesThisStreet = 0;
   hand.lastAggressorSeat = null;
   for (const p of hand.players) {
     p.betThisStreet = 0;
@@ -170,6 +176,7 @@ export class PokerTable {
       pots: [],
       currentBet: 0,
       minRaise: this.state.config.bigBlind,
+      raisesThisStreet: 0,
       actionOnSeat: 0,
       lastAggressorSeat: null,
       discardPending: [],
@@ -335,8 +342,12 @@ export class PokerTable {
     this.commitBet(hand, player, pay);
     const raiseBy = actualTotal - hand.currentBet;
     const fullRaise = raiseBy >= hand.minRaise;
+    if (hand.raisesThisStreet >= 2) {
+      throw new Error('Raise cap reached');
+    }
     if (actualTotal > hand.currentBet) {
       hand.currentBet = actualTotal;
+      hand.raisesThisStreet += 1;
       if (fullRaise) {
         hand.minRaise = raiseBy;
         hand.lastAggressorSeat = player.seat;
@@ -371,7 +382,6 @@ export class PokerTable {
   private isBettingRoundComplete(hand: HandState): boolean {
     const active = hand.players.filter((p) => p.status === 'active');
     if (active.length === 0) return true;
-    if (active.length === 1) return true;
     const canAct = active.filter((p) => p.stack > 0);
     if (canAct.length === 0) return true;
     const allMatched = hand.players.every(
@@ -390,6 +400,7 @@ export class PokerTable {
     // Move to discard or next street/showdown
     if (hand.street === 'preflop') {
       this.revealFlop(hand);
+      hand.street = 'flop';
       this.beginDiscardPhase();
     } else if (hand.street === 'flop' || hand.street === 'turn') {
       this.beginDiscardPhase();
@@ -478,12 +489,26 @@ export class PokerTable {
       resetStreetState(hand, 'flop', this.state);
     } else if (hand.street === 'flop') {
       this.revealSingle(hand, 'Turn');
-      resetStreetState(hand, 'turn', this.state);
+      if (bettingLocked(hand)) {
+        hand.street = 'turn';
+        this.beginDiscardPhase();
+      } else {
+        resetStreetState(hand, 'turn', this.state);
+      }
     } else if (hand.street === 'turn') {
       this.revealSingle(hand, 'River');
-      resetStreetState(hand, 'river', this.state);
+      if (bettingLocked(hand)) {
+        hand.street = 'river';
+        this.beginDiscardPhase();
+      } else {
+        resetStreetState(hand, 'river', this.state);
+      }
     } else if (hand.street === 'river') {
-      resetStreetState(hand, 'showdown', this.state);
+      if (bettingLocked(hand)) {
+        this.finishHand();
+      } else {
+        resetStreetState(hand, 'showdown', this.state);
+      }
     }
   }
 
@@ -499,8 +524,9 @@ export class PokerTable {
       const totalPot = hand.players.reduce((sum, p) => sum + p.totalCommitted, 0);
       const seat = this.state.seats[winner.seat];
       if (seat) seat.stack += totalPot;
-      logPush(hand.log, `${winner.name} wins ${totalPot} uncontested`);
-      hand.showdownWinners = [{ playerId: winner.id, amount: totalPot }];
+      const handLabel = winner.status === 'folded' ? 'Win by Fold' : 'Uncontested';
+      logPush(hand.log, `${winner.name} wins ${totalPot} (${handLabel})`);
+      hand.showdownWinners = [{ playerId: winner.id, amount: totalPot, handLabel }];
       return;
     }
     this.buildSidePots(hand);
@@ -508,7 +534,8 @@ export class PokerTable {
     for (const res of results) {
       const seat = this.state.seats.find((s) => s?.id === res.playerId);
       if (seat) seat.stack += res.amount;
-      logPush(hand.log, `${seat?.name ?? res.playerId} wins ${res.amount}`);
+      const label = res.handLabel ? ` with ${res.handLabel}` : '';
+      logPush(hand.log, `${seat?.name ?? res.playerId} wins ${res.amount}${label}`);
     }
     hand.showdownWinners = results;
   }
@@ -559,6 +586,7 @@ export class PokerTable {
       winners.forEach((w) => {
         const existing = award.get(w.player.id);
         const evalResult = evalById.get(w.player.id);
+        const handLabel = evalResult ? HAND_CATEGORY_LABELS[evalResult.category] : undefined;
         if (existing) {
           existing.amount += share;
         } else {
@@ -567,6 +595,7 @@ export class PokerTable {
             amount: share,
             bestFive: evalResult?.bestFive,
             handStrength: evalResult?.score,
+            handLabel,
           });
         }
       });
@@ -574,6 +603,7 @@ export class PokerTable {
         const winnerId = orderedWinners[0].id;
         const existing = award.get(winnerId);
         const evalResult = evalById.get(winnerId);
+        const handLabel = evalResult ? HAND_CATEGORY_LABELS[evalResult.category] : undefined;
         if (existing) {
           existing.amount += remainder;
         } else {
@@ -582,6 +612,7 @@ export class PokerTable {
             amount: remainder,
             bestFive: evalResult?.bestFive,
             handStrength: evalResult?.score,
+            handLabel,
           });
         }
       }

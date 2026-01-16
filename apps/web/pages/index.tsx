@@ -26,7 +26,7 @@ const Home: NextPage = () => {
   const wsRef = useRef<WebSocket | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [name, setName] = useState('Player');
-  const [buyIn, setBuyIn] = useState(2000);
+  const buyIn = 10000;
   const [state, setState] = useState<any>(null);
   const [status, setStatus] = useState<string>('Disconnected');
   const [betAmount, setBetAmount] = useState<number>(200);
@@ -70,9 +70,9 @@ const Home: NextPage = () => {
     return hand.players.find((p: PlayerInHand) => p.id === playerId);
   }, [hand, playerId]);
   const winnersById = useMemo(() => {
-    const map = new Map<string, { bestFive?: Card[] }>();
+    const map = new Map<string, { bestFive?: Card[]; handLabel?: string }>();
     for (const w of hand?.showdownWinners ?? []) {
-      map.set(w.playerId, { bestFive: w.bestFive });
+      map.set(w.playerId, { bestFive: w.bestFive, handLabel: w.handLabel });
     }
     return map;
   }, [hand?.showdownWinners]);
@@ -85,6 +85,14 @@ const Home: NextPage = () => {
   const discardPending = hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id);
   const toCall = hand && you ? Math.max(0, hand.currentBet - you.betThisStreet) : 0;
   const isShowdown = hand?.phase === 'showdown';
+  const raiseCapReached = Boolean(hand && hand.raisesThisStreet >= 2);
+  const allInTotal = you ? you.stack + you.betThisStreet : 0;
+  const allInWouldRaise = Boolean(hand && hand.currentBet > 0 && allInTotal > hand.currentBet);
+  const suggestedRaiseTo = useMemo(() => {
+    if (!hand) return null;
+    if (hand.currentBet === 0) return hand.minRaise;
+    return hand.currentBet + hand.minRaise;
+  }, [hand?.currentBet, hand?.minRaise]);
 
   useEffect(() => {
     if (!hand) {
@@ -96,9 +104,14 @@ const Home: NextPage = () => {
       return;
     }
     setShowNextHand(false);
-    const timeoutId = window.setTimeout(() => setShowNextHand(true), 15000);
+    const timeoutId = window.setTimeout(() => send({ type: 'nextHand' }), 10000);
     return () => window.clearTimeout(timeoutId);
   }, [hand?.phase, hand?.handId]);
+
+  useEffect(() => {
+    if (!isMyTurn || suggestedRaiseTo === null) return;
+    setBetAmount(suggestedRaiseTo);
+  }, [isMyTurn, hand?.handId, hand?.currentBet, hand?.minRaise, suggestedRaiseTo]);
 
   const send = (msg: ClientMessage) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -119,6 +132,10 @@ const Home: NextPage = () => {
 
   const communityCards = hand?.board ?? [];
   const cardKey = (card: Card) => `${card.rank}${card.suit}`;
+  const potAmount = useMemo(() => {
+    if (!hand) return 0;
+    return hand.players.reduce((sum, p) => sum + p.totalCommitted, 0);
+  }, [hand]);
   const winningCards = useMemo(() => {
     const keys = new Set<string>();
     for (const w of hand?.showdownWinners ?? []) {
@@ -128,6 +145,13 @@ const Home: NextPage = () => {
     }
     return keys;
   }, [hand?.showdownWinners]);
+  const showdownSummary = useMemo(() => {
+    if (!hand?.showdownWinners?.length) return null;
+    const topWinner = hand.showdownWinners[0];
+    const winnerSeat = hand.players.find((p) => p.id === topWinner.playerId);
+    const label = topWinner.handLabel ? ` - ${topWinner.handLabel}` : '';
+    return `${winnerSeat?.name ?? topWinner.playerId} wins ${topWinner.amount}${label}`;
+  }, [hand?.showdownWinners, hand?.players]);
 
   return (
     <div style={{ fontFamily: 'Inter, sans-serif', padding: 20, background: '#0b132b', color: '#e5e7eb', minHeight: '100vh' }}>
@@ -136,13 +160,6 @@ const Home: NextPage = () => {
       {!seated && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={{ padding: 8 }} />
-          <input
-            type="number"
-            value={buyIn}
-            onChange={(e) => setBuyIn(Number(e.target.value))}
-            placeholder="Buy-in"
-            style={{ padding: 8, width: 120 }}
-          />
           <button onClick={join} style={{ padding: '8px 12px' }}>
             Join
           </button>
@@ -158,6 +175,18 @@ const Home: NextPage = () => {
               <CardView key={idx} card={c} highlight={isShowdown && winningCards.has(cardKey(c))} />
             ))}
           </div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+            <div style={{ padding: '6px 12px', borderRadius: 8, background: '#122145', border: '1px solid #2c3e66' }}>
+              Pot: {potAmount}
+            </div>
+          </div>
+          {isShowdown && showdownSummary && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+              <div style={{ padding: '6px 12px', borderRadius: 8, background: '#123b2f', border: '1px solid #22c55e', color: '#d1fae5' }}>
+                {showdownSummary}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
             {hand.players.map((p) => {
               const bestFive = winnersById.get(p.id)?.bestFive ?? [];
@@ -177,10 +206,15 @@ const Home: NextPage = () => {
                     boxShadow: winner ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
                   }}
                 >
-                  <div style={{ fontWeight: 700 }}>{p.name}</div>
-                  <div>Seat {p.seat}</div>
+                <div style={{ fontWeight: 700 }}>{p.name}</div>
+                <div>Seat {p.seat}</div>
                   <div>Status: {p.status}</div>
-                  <div>Stack: {p.stack}</div>
+                  {p.id !== playerId && <div>Stack: {p.stack}</div>}
+                {isShowdown && winner && (
+                  <div style={{ marginTop: 4, fontSize: 12, color: '#86efac' }}>
+                    {winnersById.get(p.id)?.handLabel}
+                  </div>
+                )}
                   <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
                     {p.holeCards.map((c, idx) => (
                       <CardView key={idx} card={c} highlight={winner && bestFive.some((b) => cardKey(b) === cardKey(c))} />
@@ -205,7 +239,7 @@ const Home: NextPage = () => {
                   </div>
                 </div>
               ) : (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button disabled={!isMyTurn} onClick={() => act('fold')} style={{ padding: '8px 12px' }}>
                     Fold
                   </button>
@@ -221,12 +255,23 @@ const Home: NextPage = () => {
                     onChange={(e) => setBetAmount(Number(e.target.value))}
                     style={{ padding: 8, width: 100 }}
                   />
-                  <button disabled={!isMyTurn} onClick={() => act(hand && hand.currentBet === 0 ? 'bet' : 'raise', betAmount)} style={{ padding: '8px 12px' }}>
+                  <button
+                    disabled={!isMyTurn || (hand && hand.currentBet > 0 && raiseCapReached)}
+                    onClick={() => act(hand && hand.currentBet === 0 ? 'bet' : 'raise', betAmount)}
+                    style={{ padding: '8px 12px' }}
+                  >
                     {hand && hand.currentBet === 0 ? 'Bet' : 'Raise'} to {betAmount}
                   </button>
-                  <button disabled={!isMyTurn} onClick={() => act('allIn', betAmount)} style={{ padding: '8px 12px', background: '#ef4444', color: 'white' }}>
-                    All-in
+                  <button
+                    disabled={!isMyTurn || (raiseCapReached && allInWouldRaise)}
+                    onClick={() => act('allIn')}
+                    style={{ padding: '8px 12px', background: '#ef4444', color: 'white' }}
+                  >
+                    All-in {you ? you.stack + you.betThisStreet : ''}
                   </button>
+                  <div style={{ marginLeft: 'auto', padding: '6px 10px', borderRadius: 8, background: '#122145', border: '1px solid #2c3e66' }}>
+                    Stack: {you.stack}
+                  </div>
                 </div>
               )}
             </div>
@@ -241,22 +286,6 @@ const Home: NextPage = () => {
               ))}
             </div>
           </div>
-          {isShowdown && showNextHand && (
-            <div style={{ marginTop: 16 }}>
-              <button
-                onClick={() => send({ type: 'nextHand' })}
-                style={{
-                  padding: '10px 16px',
-                  background: '#22c55e',
-                  color: '#0b132b',
-                  fontWeight: 700,
-                  borderRadius: 8,
-                }}
-              >
-                Next hand
-              </button>
-            </div>
-          )}
         </div>
       ) : (
         <p>{seated ? 'Waiting for next hand...' : 'Waiting for hand...'}</p>

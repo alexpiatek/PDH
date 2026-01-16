@@ -6,7 +6,7 @@ import { ClientMessage, ServerMessage } from './protocol';
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const table = new PokerTable('main');
 const clients = new Map<WebSocket, { playerId: string }>();
-const START_COUNTDOWN_MS = 20000;
+const START_COUNTDOWN_MS = 8000;
 let startCountdownTimer: NodeJS.Timeout | null = null;
 let startCountdownUntil: number | null = null;
 

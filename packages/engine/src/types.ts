@@ -52,6 +52,7 @@ export interface HandState {
   pots: Pot[];
   currentBet: number;
   minRaise: number;
+  raisesThisStreet: number;
   actionOnSeat: number;
   lastAggressorSeat: number | null;
   discardPending: string[];
@@ -94,4 +95,5 @@ export interface ShowdownWinner {
   amount: number;
   handStrength?: number;
   bestFive?: Card[];
+  handLabel?: string;
 }
