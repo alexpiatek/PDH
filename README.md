@@ -17,20 +17,42 @@ Web-based, real-time multiplayer poker variant. Texas Hold'em structure with man
 ## Stack
 - TypeScript everywhere, pnpm monorepo.
 - `packages/engine`: deterministic, pure game logic.
-- `apps/server`: Node + ws authoritative server.
+- `apps/server`: Node + ws authoritative server (legacy MVP).
+- `apps/nakama`: Nakama runtime module + docker-compose.
 - `apps/web`: Next.js UI.
 
 ## Quick start
 ```bash
 pnpm install
+pnpm -C apps/nakama build
+docker compose -f apps/nakama/docker-compose.yml up
 pnpm dev
 ```
 
-Server runs at `ws://localhost:4000`. The web app defaults to that URL.
+Nakama runs at `http://localhost:7350` (WebSocket `ws://localhost:7350`).
 Override with:
 ```bash
-setx NEXT_PUBLIC_WS_URL ws://localhost:4000
+setx NEXT_PUBLIC_NAKAMA_HOST 127.0.0.1
+setx NEXT_PUBLIC_NAKAMA_PORT 7350
+setx NEXT_PUBLIC_NAKAMA_USE_SSL false
+setx NEXT_PUBLIC_NAKAMA_SERVER_KEY defaultkey
 ```
+
+## Nakama backend (WIP)
+Nakama runtime module scaffold lives in `apps/nakama`.
+
+Build the module:
+```bash
+pnpm -C apps/nakama build
+```
+
+Run Nakama + Postgres:
+```bash
+docker compose -f apps/nakama/docker-compose.yml up
+```
+
+Nakama listens on `http://localhost:7350` (WebSocket `ws://localhost:7350`).
+Default server key is `defaultkey`. The Next.js client is not wired to Nakama yet.
 
 ## Tests
 ```bash
@@ -40,6 +62,7 @@ pnpm test
 ## Repo layout
 ```text
 apps/server   WebSocket server (authoritative)
+apps/nakama   Nakama runtime module + compose
 apps/web      Next.js client
 packages/engine  Pure poker engine + tests
 ```

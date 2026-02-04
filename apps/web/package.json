@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@heroiclabs/nakama-js": "^2.8.0",
     "@pdh/engine": "workspace:*",
     "next": "^14.1.0",
     "react": "^18.2.0",

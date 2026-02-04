@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: nakama
+      POSTGRES_USER: nakama
+      POSTGRES_PASSWORD: localdb
+    volumes:
+      - nakama-postgres:/var/lib/postgresql/data
+  nakama:
+    image: heroiclabs/nakama:3.17.0
+    depends_on:
+      - postgres
+    ports:
+      - "7350:7350"
+      - "7351:7351"
+    volumes:
+      - ./nakama.yml:/nakama/data/nakama.yml:ro
+      - ./dist:/nakama/data/modules
+    command:
+      - /nakama/nakama
+      - "--config=/nakama/data/nakama.yml"
+      - "--database.address=nakama:localdb@postgres:5432/nakama?sslmode=disable"
+volumes:
+  nakama-postgres:

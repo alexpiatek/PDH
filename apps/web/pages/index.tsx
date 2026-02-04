@@ -1,14 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NextPage } from 'next';
+import type { Socket } from '@heroiclabs/nakama-js';
 import { Card, HandState, PlayerInHand } from '@pdh/engine';
 import { ClientMessage, ServerMessage } from '../server-types';
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000';
+const NAKAMA_HOST = process.env.NEXT_PUBLIC_NAKAMA_HOST || '127.0.0.1';
+const NAKAMA_PORT = Number(process.env.NEXT_PUBLIC_NAKAMA_PORT || '7350');
+const NAKAMA_SERVER_KEY = process.env.NEXT_PUBLIC_NAKAMA_SERVER_KEY || 'defaultkey';
+const NAKAMA_USE_SSL = (process.env.NEXT_PUBLIC_NAKAMA_USE_SSL || 'false') === 'true';
+const DEVICE_ID_KEY = 'nakamaDeviceId';
+const MATCH_ID_KEY = 'nakamaMatchId';
+const PLAYER_ID_KEY = 'playerId';
+
+const enum OpCode {
+  ClientMessage = 1,
+  ServerMessage = 2,
+}
 
 const cardText = (c: Card) => `${c.rank}${c.suit}`;
 
 const Home: NextPage = () => {
-  const wsRef = useRef<WebSocket | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const matchIdRef = useRef<string | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [name, setName] = useState('Player');
   const [buyIn, setBuyIn] = useState(2000);
@@ -17,34 +30,80 @@ const Home: NextPage = () => {
   const [betAmount, setBetAmount] = useState<number>(200);
 
   useEffect(() => {
-    const existing = typeof window !== 'undefined' ? localStorage.getItem('playerId') : null;
-    if (existing) setPlayerId(existing);
-    const ws = new WebSocket(WS_URL);
-    wsRef.current = ws;
-    ws.onopen = () => {
-      setStatus('Connected');
-      if (existing) {
-        ws.send(JSON.stringify({ type: 'reconnect', playerId: existing }));
-      }
-    };
-    ws.onclose = () => setStatus('Disconnected');
-    ws.onmessage = (ev) => {
-      const msg: ServerMessage = JSON.parse(ev.data.toString());
-      if (msg.type === 'welcome') {
-        setPlayerId(msg.playerId);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('playerId', msg.playerId);
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+    const textDecoder = new TextDecoder();
+
+    const deviceId =
+      localStorage.getItem(DEVICE_ID_KEY) ||
+      (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2));
+    localStorage.setItem(DEVICE_ID_KEY, deviceId);
+
+    const connect = async () => {
+      try {
+        const { Client } = await import('@heroiclabs/nakama-js');
+        const client = new Client(NAKAMA_SERVER_KEY, NAKAMA_HOST, NAKAMA_PORT, NAKAMA_USE_SSL);
+        const socket = client.createSocket(NAKAMA_USE_SSL, true);
+        socketRef.current = socket;
+        setStatus('Connecting');
+
+        socket.onerror = () => {
+          if (!cancelled) setStatus('Error');
+        };
+        socket.ondisconnect = () => {
+          if (!cancelled) setStatus('Disconnected');
+        };
+        socket.onmatchdata = (matchData) => {
+          if (matchData.op_code !== OpCode.ServerMessage) return;
+          const payload = textDecoder.decode(matchData.data);
+          const msg: ServerMessage = JSON.parse(payload);
+          if (msg.type === 'welcome') {
+            setPlayerId(msg.playerId);
+            localStorage.setItem(PLAYER_ID_KEY, msg.playerId);
+          }
+          if (msg.type === 'state') {
+            setState(msg.state);
+          }
+          if (msg.type === 'error') {
+            setStatus(msg.message);
+          }
+        };
+
+        const session = await client.authenticateDevice(deviceId, true);
+        if (cancelled) return;
+        setPlayerId(session.user_id);
+        localStorage.setItem(PLAYER_ID_KEY, session.user_id);
+
+        await socket.connect(session, true);
+        if (cancelled) return;
+        setStatus('Connected');
+
+        let matchId = localStorage.getItem(MATCH_ID_KEY);
+        let match;
+        if (matchId) {
+          try {
+            match = await socket.joinMatch(matchId);
+          } catch (err) {
+            match = await socket.createMatch('pdh');
+          }
+        } else {
+          match = await socket.createMatch('pdh');
         }
-      }
-      if (msg.type === 'state') {
-        setState(msg.state);
-      }
-      if (msg.type === 'error') {
-        setStatus(msg.message);
+
+        if (cancelled) return;
+        matchId = match.match_id;
+        matchIdRef.current = matchId;
+        localStorage.setItem(MATCH_ID_KEY, matchId);
+        socket.sendMatchState(matchId, OpCode.ClientMessage, JSON.stringify({ type: 'requestState' }));
+      } catch (err: any) {
+        if (!cancelled) setStatus(err?.message ?? 'Error');
       }
     };
+
+    connect();
     return () => {
-      ws.close();
+      cancelled = true;
+      socketRef.current?.disconnect(true);
     };
   }, []);
 
@@ -63,8 +122,10 @@ const Home: NextPage = () => {
   const toCall = hand && you ? Math.max(0, hand.currentBet - you.betThisStreet) : 0;
 
   const send = (msg: ClientMessage) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify(msg));
+    const socket = socketRef.current;
+    const matchId = matchIdRef.current;
+    if (!socket || !matchId) return;
+    socket.sendMatchState(matchId, OpCode.ClientMessage, JSON.stringify(msg));
   };
 
   const join = () => {

@@ -1,0 +1,6 @@
+logger:
+  level: "INFO"
+runtime:
+  js_entrypoint: "pdh.js"
+socket:
+  server_key: "defaultkey"
