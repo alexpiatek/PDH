@@ -1,109 +1,66 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NextPage } from 'next';
-import type { Socket } from '@heroiclabs/nakama-js';
 import { Card, HandState, PlayerInHand } from '@pdh/engine';
 import { ClientMessage, ServerMessage } from '../server-types';
 
-const NAKAMA_HOST = process.env.NEXT_PUBLIC_NAKAMA_HOST || '127.0.0.1';
-const NAKAMA_PORT = Number(process.env.NEXT_PUBLIC_NAKAMA_PORT || '7350');
-const NAKAMA_SERVER_KEY = process.env.NEXT_PUBLIC_NAKAMA_SERVER_KEY || 'defaultkey';
-const NAKAMA_USE_SSL = (process.env.NEXT_PUBLIC_NAKAMA_USE_SSL || 'false') === 'true';
-const DEVICE_ID_KEY = 'nakamaDeviceId';
-const MATCH_ID_KEY = 'nakamaMatchId';
-const PLAYER_ID_KEY = 'playerId';
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000';
 
-const enum OpCode {
-  ClientMessage = 1,
-  ServerMessage = 2,
-}
+const suitSymbol = (suit: Card['suit']) => {
+  switch (suit) {
+    case 'H':
+      return '♥';
+    case 'D':
+      return '♦';
+    case 'C':
+      return '♣';
+    case 'S':
+      return '♠';
+    default:
+      return suit;
+  }
+};
 
-const cardText = (c: Card) => `${c.rank}${c.suit}`;
+const cardText = (c: Card) => `${c.rank}${suitSymbol(c.suit)}`;
 
 const Home: NextPage = () => {
-  const socketRef = useRef<Socket | null>(null);
-  const matchIdRef = useRef<string | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [name, setName] = useState('Player');
-  const [buyIn, setBuyIn] = useState(2000);
+  const buyIn = 10000;
   const [state, setState] = useState<any>(null);
   const [status, setStatus] = useState<string>('Disconnected');
   const [betAmount, setBetAmount] = useState<number>(200);
+  const [showNextHand, setShowNextHand] = useState(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    let cancelled = false;
-    const textDecoder = new TextDecoder();
-
-    const deviceId =
-      localStorage.getItem(DEVICE_ID_KEY) ||
-      (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2));
-    localStorage.setItem(DEVICE_ID_KEY, deviceId);
-
-    const connect = async () => {
-      try {
-        const { Client } = await import('@heroiclabs/nakama-js');
-        const client = new Client(NAKAMA_SERVER_KEY, NAKAMA_HOST, NAKAMA_PORT, NAKAMA_USE_SSL);
-        const socket = client.createSocket(NAKAMA_USE_SSL, true);
-        socketRef.current = socket;
-        setStatus('Connecting');
-
-        socket.onerror = () => {
-          if (!cancelled) setStatus('Error');
-        };
-        socket.ondisconnect = () => {
-          if (!cancelled) setStatus('Disconnected');
-        };
-        socket.onmatchdata = (matchData) => {
-          if (matchData.op_code !== OpCode.ServerMessage) return;
-          const payload = textDecoder.decode(matchData.data);
-          const msg: ServerMessage = JSON.parse(payload);
-          if (msg.type === 'welcome') {
-            setPlayerId(msg.playerId);
-            localStorage.setItem(PLAYER_ID_KEY, msg.playerId);
-          }
-          if (msg.type === 'state') {
-            setState(msg.state);
-          }
-          if (msg.type === 'error') {
-            setStatus(msg.message);
-          }
-        };
-
-        const session = await client.authenticateDevice(deviceId, true);
-        if (cancelled) return;
-        setPlayerId(session.user_id);
-        localStorage.setItem(PLAYER_ID_KEY, session.user_id);
-
-        await socket.connect(session, true);
-        if (cancelled) return;
-        setStatus('Connected');
-
-        let matchId = localStorage.getItem(MATCH_ID_KEY);
-        let match;
-        if (matchId) {
-          try {
-            match = await socket.joinMatch(matchId);
-          } catch (err) {
-            match = await socket.createMatch('pdh');
-          }
-        } else {
-          match = await socket.createMatch('pdh');
-        }
-
-        if (cancelled) return;
-        matchId = match.match_id;
-        matchIdRef.current = matchId;
-        localStorage.setItem(MATCH_ID_KEY, matchId);
-        socket.sendMatchState(matchId, OpCode.ClientMessage, JSON.stringify({ type: 'requestState' }));
-      } catch (err: any) {
-        if (!cancelled) setStatus(err?.message ?? 'Error');
+    const existing = typeof window !== 'undefined' ? localStorage.getItem('playerId') : null;
+    if (existing) setPlayerId(existing);
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+    ws.onopen = () => {
+      setStatus('Connected');
+      if (existing) {
+        ws.send(JSON.stringify({ type: 'reconnect', playerId: existing }));
       }
     };
-
-    connect();
+    ws.onclose = () => setStatus('Disconnected');
+    ws.onmessage = (ev) => {
+      const msg: ServerMessage = JSON.parse(ev.data.toString());
+      if (msg.type === 'welcome') {
+        setPlayerId(msg.playerId);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('playerId', msg.playerId);
+        }
+      }
+      if (msg.type === 'state') {
+        setState(msg.state);
+      }
+      if (msg.type === 'error') {
+        setStatus(msg.message);
+      }
+    };
     return () => {
-      cancelled = true;
-      socketRef.current?.disconnect(true);
+      ws.close();
     };
   }, []);
 
@@ -112,6 +69,13 @@ const Home: NextPage = () => {
     if (!hand || !playerId) return null;
     return hand.players.find((p: PlayerInHand) => p.id === playerId);
   }, [hand, playerId]);
+  const winnersById = useMemo(() => {
+    const map = new Map<string, { bestFive?: Card[]; handLabel?: string }>();
+    for (const w of hand?.showdownWinners ?? []) {
+      map.set(w.playerId, { bestFive: w.bestFive, handLabel: w.handLabel });
+    }
+    return map;
+  }, [hand?.showdownWinners]);
   const seated = useMemo(() => {
     if (!playerId) return false;
     return Boolean(state?.seats?.some((s: any) => s && s.id === playerId));
@@ -120,12 +84,38 @@ const Home: NextPage = () => {
   const isMyTurn = hand && you && hand.phase === 'betting' && hand.actionOnSeat === you.seat;
   const discardPending = hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id);
   const toCall = hand && you ? Math.max(0, hand.currentBet - you.betThisStreet) : 0;
+  const isShowdown = hand?.phase === 'showdown';
+  const raiseCapReached = Boolean(hand && hand.raisesThisStreet >= 2);
+  const allInTotal = you ? you.stack + you.betThisStreet : 0;
+  const allInWouldRaise = Boolean(hand && hand.currentBet > 0 && allInTotal > hand.currentBet);
+  const suggestedRaiseTo = useMemo(() => {
+    if (!hand) return null;
+    if (hand.currentBet === 0) return hand.minRaise;
+    return hand.currentBet + hand.minRaise;
+  }, [hand?.currentBet, hand?.minRaise]);
+
+  useEffect(() => {
+    if (!hand) {
+      setShowNextHand(false);
+      return;
+    }
+    if (hand.phase !== 'showdown') {
+      setShowNextHand(false);
+      return;
+    }
+    setShowNextHand(false);
+    const timeoutId = window.setTimeout(() => send({ type: 'nextHand' }), 10000);
+    return () => window.clearTimeout(timeoutId);
+  }, [hand?.phase, hand?.handId]);
+
+  useEffect(() => {
+    if (!isMyTurn || suggestedRaiseTo === null) return;
+    setBetAmount(suggestedRaiseTo);
+  }, [isMyTurn, hand?.handId, hand?.currentBet, hand?.minRaise, suggestedRaiseTo]);
 
   const send = (msg: ClientMessage) => {
-    const socket = socketRef.current;
-    const matchId = matchIdRef.current;
-    if (!socket || !matchId) return;
-    socket.sendMatchState(matchId, OpCode.ClientMessage, JSON.stringify(msg));
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify(msg));
   };
 
   const join = () => {
@@ -141,6 +131,27 @@ const Home: NextPage = () => {
   };
 
   const communityCards = hand?.board ?? [];
+  const cardKey = (card: Card) => `${card.rank}${card.suit}`;
+  const potAmount = useMemo(() => {
+    if (!hand) return 0;
+    return hand.players.reduce((sum, p) => sum + p.totalCommitted, 0);
+  }, [hand]);
+  const winningCards = useMemo(() => {
+    const keys = new Set<string>();
+    for (const w of hand?.showdownWinners ?? []) {
+      for (const c of w.bestFive ?? []) {
+        keys.add(cardKey(c));
+      }
+    }
+    return keys;
+  }, [hand?.showdownWinners]);
+  const showdownSummary = useMemo(() => {
+    if (!hand?.showdownWinners?.length) return null;
+    const topWinner = hand.showdownWinners[0];
+    const winnerSeat = hand.players.find((p) => p.id === topWinner.playerId);
+    const label = topWinner.handLabel ? ` - ${topWinner.handLabel}` : '';
+    return `${winnerSeat?.name ?? topWinner.playerId} wins ${topWinner.amount}${label}`;
+  }, [hand?.showdownWinners, hand?.players]);
 
   return (
     <div style={{ fontFamily: 'Inter, sans-serif', padding: 20, background: '#0b132b', color: '#e5e7eb', minHeight: '100vh' }}>
@@ -149,13 +160,6 @@ const Home: NextPage = () => {
       {!seated && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={{ padding: 8 }} />
-          <input
-            type="number"
-            value={buyIn}
-            onChange={(e) => setBuyIn(Number(e.target.value))}
-            placeholder="Buy-in"
-            style={{ padding: 8, width: 120 }}
-          />
           <button onClick={join} style={{ padding: '8px 12px' }}>
             Join
           </button>
@@ -168,31 +172,57 @@ const Home: NextPage = () => {
           </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             {communityCards.map((c, idx) => (
-              <CardView key={idx} card={c} />
+              <CardView key={idx} card={c} highlight={isShowdown && winningCards.has(cardKey(c))} />
             ))}
           </div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+            <div style={{ padding: '6px 12px', borderRadius: 8, background: '#122145', border: '1px solid #2c3e66' }}>
+              Pot: {potAmount}
+            </div>
+          </div>
+          {isShowdown && showdownSummary && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+              <div style={{ padding: '6px 12px', borderRadius: 8, background: '#123b2f', border: '1px solid #22c55e', color: '#d1fae5' }}>
+                {showdownSummary}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-            {hand.players.map((p) => (
-              <div
-                key={p.id}
-                style={{
-                  padding: 12,
-                  borderRadius: 8,
-                  background: p.id === playerId ? '#1f2a44' : '#162040',
-                  border: hand.actionOnSeat === p.seat && hand.phase === 'betting' ? '2px solid #10b981' : '1px solid #2c3e66',
-                }}
-              >
+            {hand.players.map((p) => {
+              const bestFive = winnersById.get(p.id)?.bestFive ?? [];
+              const winner = winnersById.has(p.id);
+              return (
+                <div
+                  key={p.id}
+                  style={{
+                    padding: 12,
+                    borderRadius: 8,
+                    background: p.id === playerId ? '#1f2a44' : '#162040',
+                    border: winner
+                      ? '2px solid #22c55e'
+                      : hand.actionOnSeat === p.seat && hand.phase === 'betting'
+                        ? '2px solid #10b981'
+                        : '1px solid #2c3e66',
+                    boxShadow: winner ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
+                  }}
+                >
                 <div style={{ fontWeight: 700 }}>{p.name}</div>
                 <div>Seat {p.seat}</div>
-                <div>Status: {p.status}</div>
-                <div>Stack: {p.stack}</div>
-                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                  {p.holeCards.map((c, idx) => (
-                    <CardView key={idx} card={c} />
-                  ))}
+                  <div>Status: {p.status}</div>
+                  {p.id !== playerId && <div>Stack: {p.stack}</div>}
+                {isShowdown && winner && (
+                  <div style={{ marginTop: 4, fontSize: 12, color: '#86efac' }}>
+                    {winnersById.get(p.id)?.handLabel}
+                  </div>
+                )}
+                  <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                    {p.holeCards.map((c, idx) => (
+                      <CardView key={idx} card={c} highlight={winner && bestFive.some((b) => cardKey(b) === cardKey(c))} />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           {you && (
             <div style={{ marginTop: 16, padding: 12, border: '1px solid #2c3e66', borderRadius: 8 }}>
@@ -209,7 +239,7 @@ const Home: NextPage = () => {
                   </div>
                 </div>
               ) : (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button disabled={!isMyTurn} onClick={() => act('fold')} style={{ padding: '8px 12px' }}>
                     Fold
                   </button>
@@ -225,12 +255,23 @@ const Home: NextPage = () => {
                     onChange={(e) => setBetAmount(Number(e.target.value))}
                     style={{ padding: 8, width: 100 }}
                   />
-                  <button disabled={!isMyTurn} onClick={() => act(hand && hand.currentBet === 0 ? 'bet' : 'raise', betAmount)} style={{ padding: '8px 12px' }}>
+                  <button
+                    disabled={!isMyTurn || (hand && hand.currentBet > 0 && raiseCapReached)}
+                    onClick={() => act(hand && hand.currentBet === 0 ? 'bet' : 'raise', betAmount)}
+                    style={{ padding: '8px 12px' }}
+                  >
                     {hand && hand.currentBet === 0 ? 'Bet' : 'Raise'} to {betAmount}
                   </button>
-                  <button disabled={!isMyTurn} onClick={() => act('allIn', betAmount)} style={{ padding: '8px 12px', background: '#ef4444', color: 'white' }}>
-                    All-in
+                  <button
+                    disabled={!isMyTurn || (raiseCapReached && allInWouldRaise)}
+                    onClick={() => act('allIn')}
+                    style={{ padding: '8px 12px', background: '#ef4444', color: 'white' }}
+                  >
+                    All-in {you ? you.stack + you.betThisStreet : ''}
                   </button>
+                  <div style={{ marginLeft: 'auto', padding: '6px 10px', borderRadius: 8, background: '#122145', border: '1px solid #2c3e66' }}>
+                    Stack: {you.stack}
+                  </div>
                 </div>
               )}
             </div>
@@ -253,23 +294,28 @@ const Home: NextPage = () => {
   );
 };
 
-const CardView = ({ card }: { card: Card }) => (
-  <div
-    style={{
-      width: 36,
-      height: 52,
-      borderRadius: 6,
-      border: '1px solid #2c3e66',
-      background: '#111827',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontWeight: 700,
-    }}
-  >
-    {card.rank}
-    {card.suit}
-  </div>
-);
+const CardView = ({ card, highlight = false }: { card: Card; highlight?: boolean }) => {
+  const isRed = card.suit === 'H' || card.suit === 'D';
+  return (
+    <div
+      style={{
+        width: 36,
+        height: 52,
+        borderRadius: 6,
+        border: highlight ? '2px solid #22c55e' : '1px solid #2c3e66',
+        background: '#111827',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontWeight: 700,
+        color: isRed ? '#f87171' : '#e5e7eb',
+        boxShadow: highlight ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
+      }}
+    >
+      {card.rank}
+      {suitSymbol(card.suit)}
+    </div>
+  );
+};
 
 export default Home;

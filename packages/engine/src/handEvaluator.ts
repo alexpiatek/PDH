@@ -22,6 +22,18 @@ export interface EvaluatedHand {
   category: number;
 }
 
+export const HAND_CATEGORY_LABELS = [
+  'High Card',
+  'One Pair',
+  'Two Pair',
+  'Three of a Kind',
+  'Straight',
+  'Flush',
+  'Full House',
+  'Four of a Kind',
+  'Straight Flush',
+];
+
 function encode(values: number[]): number {
   // Base-15 encoding for kickers
   return values.reduce((acc, v) => acc * 15 + v, 0);

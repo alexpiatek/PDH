@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/index.ts"
+    "dev": "pnpm --filter @pdh/engine build && tsx src/index.ts"
   },
   "dependencies": {
     "@pdh/engine": "workspace:*",
