@@ -643,6 +643,11 @@ export class PokerTable {
     }
     this.state.log.push(...this.state.hand.log);
     this.state.hand = null;
+    for (const seat of this.state.seats) {
+      if (seat && seat.stack === 0) {
+        seat.stack = 10000;
+      }
+    }
     const nextBtn = nextOccupiedSeat(this.state.seats, this.state.buttonSeat);
     if (nextBtn) {
       this.state.buttonSeat = nextBtn.seat;

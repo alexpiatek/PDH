@@ -168,7 +168,7 @@ const Home: NextPage = () => {
       {hand ? (
         <div>
           <div style={{ marginBottom: 12 }}>
-            <strong>Street:</strong> {hand.street} | <strong>Phase:</strong> {hand.phase}
+            <strong>Stage:</strong> {hand.street} | <strong>Phase:</strong> {hand.phase}
           </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             {communityCards.map((c, idx) => (
