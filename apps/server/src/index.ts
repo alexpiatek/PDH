@@ -67,12 +67,29 @@ function seatPlayer(name: string, buyIn: number, desiredSeat?: number) {
   return { playerId, seatIndex };
 }
 
+function normalizeName(name: string) {
+  return name.trim().toLowerCase();
+}
+
+function isNameTaken(name: string) {
+  const target = normalizeName(name);
+  if (!target) return false;
+  return table.state.seats.some((s) => s && normalizeName(s.name) === target);
+}
+
 function handleMessage(ws: WebSocket, raw: ClientMessage) {
   const ctx = clients.get(ws);
   try {
     switch (raw.type) {
       case 'join': {
-        const { playerId, seatIndex } = seatPlayer(raw.name, raw.buyIn, raw.seat);
+        const trimmedName = raw.name?.trim();
+        if (!trimmedName) {
+          throw new Error('Name required. Please enter a player name.');
+        }
+        if (isNameTaken(trimmedName)) {
+          throw new Error('Name already taken. Please enter a different name.');
+        }
+        const { playerId, seatIndex } = seatPlayer(trimmedName, raw.buyIn, raw.seat);
         clients.set(ws, { playerId });
         send(ws, { type: 'welcome', playerId, tableId: table.state.id });
         broadcast();

@@ -2,7 +2,7 @@
   "name": "pdh",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"pnpm -C apps/server dev\" \"pnpm -C apps/web dev\"",
+    "dev": "concurrently \"PORT=3002 pnpm -C apps/server dev\" \"PORT=3001 NEXT_PUBLIC_WS_URL=ws://localhost:3002 pnpm -C apps/web dev\"",
     "dev:local": "concurrently \"PORT=3002 pnpm -C apps/server dev\" \"PORT=3001 NEXT_PUBLIC_WS_URL=ws://localhost:3002 pnpm -C apps/web dev\"",
     "test": "pnpm -C packages/engine test"
   },

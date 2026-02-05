@@ -29,13 +29,31 @@ docker compose -f apps/nakama/docker-compose.yml up
 pnpm dev
 ```
 
-Nakama runs at `http://localhost:7350` (WebSocket `ws://localhost:7350`).
-Override with:
+## Local URLs
+- Web app: `http://localhost:3001`
+- Legacy WS server: `ws://localhost:3002`
+- Nakama (WIP): `http://localhost:7350` (WebSocket `ws://localhost:7350`)
+
+If you use an embedded browser (like Cursor/VS Code), open `http://localhost:3001` directly; file previews won’t work with Next.js.
+
+Override with (Windows `setx`):
 ```bash
+setx NEXT_PUBLIC_WS_URL ws://localhost:3002
 setx NEXT_PUBLIC_NAKAMA_HOST 127.0.0.1
 setx NEXT_PUBLIC_NAKAMA_PORT 7350
 setx NEXT_PUBLIC_NAKAMA_USE_SSL false
 setx NEXT_PUBLIC_NAKAMA_SERVER_KEY defaultkey
+```
+
+## Card assets (optional)
+To use the raster PNG deck (default), run:
+```bash
+bash scripts/download-english-pattern-png.sh
+```
+
+To use the modern minimal deck, run:
+```bash
+bash scripts/download-modern-minimal-cards.sh
 ```
 
 ## Nakama backend (WIP)

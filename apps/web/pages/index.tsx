@@ -20,17 +20,17 @@ const suitSymbol = (suit: Card['suit']) => {
   }
 };
 
-const cardText = (c: Card) => `${c.rank}${suitSymbol(c.suit)}`;
+const cardRankLabel = (rank: Card['rank']) => (rank === 'T' ? '10' : rank);
+const cardText = (c: Card) => `${cardRankLabel(c.rank)}${suitSymbol(c.suit)}`;
 
 const Home: NextPage = () => {
   const wsRef = useRef<WebSocket | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
-  const [name, setName] = useState('Player');
+  const [name, setName] = useState('');
   const buyIn = 10000;
   const [state, setState] = useState<any>(null);
   const [status, setStatus] = useState<string>('Disconnected');
   const [betAmount, setBetAmount] = useState<number>(200);
-  const [showNextHand, setShowNextHand] = useState(false);
 
   useEffect(() => {
     const existing = typeof window !== 'undefined' ? localStorage.getItem('playerId') : null;
@@ -81,7 +81,8 @@ const Home: NextPage = () => {
     return Boolean(state?.seats?.some((s: any) => s && s.id === playerId));
   }, [state, playerId]);
 
-  const isMyTurn = hand && you && hand.phase === 'betting' && hand.actionOnSeat === you.seat;
+  const isMyTurn = Boolean(hand && you && hand.phase === 'betting' && hand.actionOnSeat === you.seat);
+  const youInfoDimmed = Boolean(hand && hand.phase === 'betting' && !isMyTurn);
   const discardPending = hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id);
   const toCall = hand && you ? Math.max(0, hand.currentBet - you.betThisStreet) : 0;
   const isShowdown = hand?.phase === 'showdown';
@@ -96,14 +97,11 @@ const Home: NextPage = () => {
 
   useEffect(() => {
     if (!hand) {
-      setShowNextHand(false);
       return;
     }
     if (hand.phase !== 'showdown') {
-      setShowNextHand(false);
       return;
     }
-    setShowNextHand(false);
     const timeoutId = window.setTimeout(() => send({ type: 'nextHand' }), 10000);
     return () => window.clearTimeout(timeoutId);
   }, [hand?.phase, hand?.handId]);
@@ -119,7 +117,9 @@ const Home: NextPage = () => {
   };
 
   const join = () => {
-    send({ type: 'join', name, buyIn });
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    send({ type: 'join', name: trimmed, buyIn });
   };
 
   const act = (action: ClientMessage['action'], amount?: number) => {
@@ -153,168 +153,657 @@ const Home: NextPage = () => {
     return `${winnerSeat?.name ?? topWinner.playerId} wins ${topWinner.amount}${label}`;
   }, [hand?.showdownWinners, hand?.players]);
 
+  const seatingPositions = [
+    { left: '50%', top: '82%' },
+    { left: '14%', top: '22%' },
+    { left: '86%', top: '22%' },
+    { left: '92%', top: '52%' },
+    { left: '8%', top: '52%' },
+    { left: '80%', top: '78%' },
+    { left: '20%', top: '78%' },
+  ];
+  const orderedPlayers = hand
+    ? [
+        ...(you ? [you] : []),
+        ...hand.players.filter((p) => p.id !== playerId),
+      ]
+    : [];
+  const overflowPlayers = orderedPlayers.slice(seatingPositions.length);
+  const tablePlayers = orderedPlayers.slice(0, seatingPositions.length);
+  const roleChipsBySeat = useMemo(() => {
+    if (!hand || !state?.seats?.length) {
+      return new Map<number, { label: string; tone: 'dealer' | 'blind' }[]>();
+    }
+    const seats = state.seats;
+    const max = seats.length;
+    if (hand.buttonSeat < 0) {
+      return new Map<number, { label: string; tone: 'dealer' | 'blind' }[]>();
+    }
+    const nextOccupiedSeat = (start: number) => {
+      for (let i = 1; i <= max; i += 1) {
+        const idx = (start + i) % max;
+        if (seats[idx]) return idx;
+      }
+      return null;
+    };
+    const active = hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
+    const isHeadsUp = active.length === 2;
+    const dealerSeat = hand.buttonSeat;
+    let sbSeat: number | null = null;
+    let bbSeat: number | null = null;
+    if (isHeadsUp) {
+      sbSeat = dealerSeat;
+      bbSeat = nextOccupiedSeat(dealerSeat);
+    } else {
+      sbSeat = nextOccupiedSeat(dealerSeat);
+      bbSeat = sbSeat !== null ? nextOccupiedSeat(sbSeat) : null;
+    }
+    const map = new Map<number, { label: string; tone: 'dealer' | 'blind' }[]>();
+    const addChip = (seat: number | null, chip: { label: string; tone: 'dealer' | 'blind' }) => {
+      if (seat === null) return;
+      const existing = map.get(seat) ?? [];
+      existing.push(chip);
+      map.set(seat, existing);
+    };
+    addChip(dealerSeat, { label: 'D', tone: 'dealer' });
+    addChip(sbSeat, { label: 'sB', tone: 'blind' });
+    addChip(bbSeat, { label: 'BB', tone: 'blind' });
+    return map;
+  }, [hand, state?.seats]);
+  const infoAvatarSize = 36;
+  const youAvatarStyle = useMemo(() => {
+    if (!you) return null;
+    const youIsWinner = winnersById.has(you.id);
+    return {
+      width: infoAvatarSize,
+      height: infoAvatarSize,
+      borderRadius: '50%',
+      background: '#101827',
+      border: youIsWinner ? '3px solid #22c55e' : '3px solid #314066',
+      boxShadow: '0 0 18px rgba(0,0,0,0.45)',
+    };
+  }, [you, winnersById, infoAvatarSize]);
+
   return (
-    <div style={{ fontFamily: 'Inter, sans-serif', padding: 20, background: '#0b132b', color: '#e5e7eb', minHeight: '100vh' }}>
-      <h1>PDH - Discard Hold&apos;em</h1>
-      <p>Status: {status}</p>
-      {!seated && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={{ padding: 8 }} />
-          <button onClick={join} style={{ padding: '8px 12px' }}>
-            Join
-          </button>
-        </div>
-      )}
-      {hand ? (
+    <div
+      style={{
+        fontFamily: '"Bebas Neue", "Oswald", "Trebuchet MS", sans-serif',
+        color: '#e5e7eb',
+        minHeight: '100vh',
+        background: 'radial-gradient(1200px 600px at 50% -10%, #1b3a66 0%, #0b1223 55%, #05070f 100%)',
+        padding: '18px 18px 30px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div>
-          <div style={{ marginBottom: 12 }}>
-            <strong>Stage:</strong> {hand.street} | <strong>Phase:</strong> {hand.phase}
+          <div style={{ fontSize: 32, letterSpacing: 1 }}>Resolute Hold&apos;em</div>
+          <div style={{ fontSize: 14, opacity: 0.7, fontFamily: '"Inter", sans-serif' }}>Status: {status}</div>
+        </div>
+        {!seated && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="enter player name"
+              style={{ padding: 8, color: '#111827', caretColor: '#111827' }}
+            />
+            <button onClick={join} disabled={!name.trim()} style={{ padding: '8px 12px' }}>
+              Join
+            </button>
           </div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            {communityCards.map((c, idx) => (
-              <CardView key={idx} card={c} highlight={isShowdown && winningCards.has(cardKey(c))} />
-            ))}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-            <div style={{ padding: '6px 12px', borderRadius: 8, background: '#122145', border: '1px solid #2c3e66' }}>
-              Pot: {potAmount}
+        )}
+      </div>
+      {hand ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div
+            style={{
+              position: 'relative',
+              width: 'min(1200px, 96vw)',
+              height: 'min(62vh, 620px)',
+              margin: '0 auto',
+              borderRadius: 999,
+              background: 'radial-gradient(circle at 50% 45%, #1f5a2f 0%, #184524 50%, #11331a 100%)',
+              border: '10px solid #2d2a40',
+              boxShadow: '0 30px 80px rgba(0,0,0,0.45), inset 0 0 40px rgba(0,0,0,0.5)',
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                top: 12,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                padding: '6px 12px',
+                borderRadius: 999,
+                background: '#14321e',
+                border: '1px solid #2a6241',
+                color: '#e5e7eb',
+                fontSize: 14,
+                letterSpacing: 1,
+              }}
+            >
+              Stage: {hand.street} | Phase: {hand.phase}
             </div>
-          </div>
-          {isShowdown && showdownSummary && (
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-              <div style={{ padding: '6px 12px', borderRadius: 8, background: '#123b2f', border: '1px solid #22c55e', color: '#d1fae5' }}>
-                {showdownSummary}
+            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', gap: 10 }}>
+              {communityCards.map((c, idx) => (
+                <CardView key={idx} card={c} size="medium" highlight={isShowdown && winningCards.has(cardKey(c))} />
+              ))}
+            </div>
+            <div style={{ position: 'absolute', top: '52%', left: '50%', transform: 'translate(-50%, -50%) translateY(-2cm)' }}>
+              <div style={{ padding: '6px 14px', borderRadius: 999, background: '#0f172a', border: '1px solid #2c3e66' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 24, height: 24, display: 'inline-block' }} aria-hidden="true">
+                    <svg viewBox="0 0 48 26" width="24" height="24" role="img" focusable="false" aria-hidden="true">
+                      <g>
+                        <ellipse cx="12" cy="6" rx="8" ry="3" fill="#b91c1c" stroke="#fee2e2" strokeWidth="1" />
+                        <ellipse cx="12" cy="10" rx="8" ry="3" fill="#dc2626" stroke="#fee2e2" strokeWidth="1" />
+                        <ellipse cx="12" cy="14" rx="8" ry="3" fill="#b91c1c" stroke="#fee2e2" strokeWidth="1" />
+                        <ellipse cx="12" cy="6" rx="5" ry="1.7" fill="none" stroke="#fff7f7" strokeWidth="0.8" />
+                        <rect x="6.2" y="4.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
+                        <rect x="15.4" y="4.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
+                        <rect x="10.3" y="7" width="2.6" height="2.2" rx="0.4" fill="#f9fafb" />
+                      </g>
+                      <g>
+                        <ellipse cx="26" cy="12" rx="8" ry="3" fill="#111827" stroke="#e5e7eb" strokeWidth="1" />
+                        <ellipse cx="26" cy="16" rx="8" ry="3" fill="#1f2937" stroke="#e5e7eb" strokeWidth="1" />
+                        <ellipse cx="26" cy="12" rx="5" ry="1.7" fill="none" stroke="#f3f4f6" strokeWidth="0.8" />
+                        <rect x="20.2" y="10.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
+                        <rect x="29.4" y="10.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
+                      </g>
+                      <g>
+                        <ellipse cx="40" cy="10" rx="7.5" ry="2.8" fill="#1d4ed8" stroke="#dbeafe" strokeWidth="1" />
+                        <ellipse cx="40" cy="14" rx="7.5" ry="2.8" fill="#2563eb" stroke="#dbeafe" strokeWidth="1" />
+                        <ellipse cx="40" cy="10" rx="4.7" ry="1.6" fill="none" stroke="#eff6ff" strokeWidth="0.8" />
+                        <rect x="34.8" y="8.6" width="2.2" height="2.2" rx="0.4" fill="#f9fafb" />
+                        <rect x="42.8" y="8.6" width="2.2" height="2.2" rx="0.4" fill="#f9fafb" />
+                      </g>
+                    </svg>
+                  </span>
+                  <span>{potAmount}</span>
+                </span>
               </div>
             </div>
-          )}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-            {hand.players.map((p) => {
+            {isShowdown && showdownSummary && (
+              <div style={{ position: 'absolute', top: '60%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                <div style={{ padding: '6px 14px', borderRadius: 999, background: '#123b2f', border: '1px solid #22c55e', color: '#d1fae5' }}>
+                  {showdownSummary}
+                </div>
+              </div>
+            )}
+            {tablePlayers.map((p, idx) => {
+              const pos = seatingPositions[idx];
               const bestFive = winnersById.get(p.id)?.bestFive ?? [];
               const winner = winnersById.has(p.id);
+              const isYou = p.id === playerId;
+              const roleChips = roleChipsBySeat.get(p.seat) ?? [];
+              const avatarSize = infoAvatarSize;
+              const avatarBorder = winner ? '3px solid #22c55e' : '3px solid #314066';
+              const isTurn = Boolean(hand && hand.phase === 'betting' && hand.actionOnSeat === p.seat);
+              const infoDimmed = Boolean(hand && hand.phase === 'betting' && !isTurn);
+              const avatarStyle = {
+                width: avatarSize,
+                height: avatarSize,
+                borderRadius: '50%',
+                background: '#101827',
+                border: avatarBorder,
+                boxShadow: '0 0 18px rgba(0,0,0,0.45)',
+              };
               return (
                 <div
                   key={p.id}
                   style={{
-                    padding: 12,
-                    borderRadius: 8,
-                    background: p.id === playerId ? '#1f2a44' : '#162040',
-                    border: winner
-                      ? '2px solid #22c55e'
-                      : hand.actionOnSeat === p.seat && hand.phase === 'betting'
-                        ? '2px solid #10b981'
-                        : '1px solid #2c3e66',
-                    boxShadow: winner ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
+                    position: 'absolute',
+                    left: pos.left,
+                    top: pos.top,
+                    transform: 'translate(-50%, -50%)',
+                    width: 170,
+                    textAlign: 'center',
                   }}
                 >
-                <div style={{ fontWeight: 700 }}>{p.name}</div>
-                <div>Seat {p.seat}</div>
-                  <div>Status: {p.status}</div>
-                  {p.id !== playerId && <div>Stack: {p.stack}</div>}
-                {isShowdown && winner && (
-                  <div style={{ marginTop: 4, fontSize: 12, color: '#86efac' }}>
-                    {winnersById.get(p.id)?.handLabel}
-                  </div>
-                )}
-                  <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                    {p.holeCards.map((c, idx) => (
-                      <CardView key={idx} card={c} highlight={winner && bestFive.some((b) => cardKey(b) === cardKey(c))} />
-                    ))}
-                  </div>
+                  {!isYou && (
+                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                      {roleChips.length > 0 && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: -8,
+                            right: -8,
+                            display: 'flex',
+                            gap: 4,
+                            transform: 'translate(-0.4cm, -0.5cm)',
+                          }}
+                        >
+                          {roleChips.map((chip, chipIdx) => (
+                            <RoleChip key={`${chip.label}-${chipIdx}`} label={chip.label} tone={chip.tone} />
+                          ))}
+                        </div>
+                      )}
+                      <div
+                      style={{
+                          position: 'relative',
+                          padding: '6px 10px 6px 60px',
+                          borderRadius: 10,
+                          background: infoDimmed ? 'rgba(10, 16, 30, 0.6)' : 'rgba(10, 16, 30, 0.85)',
+                          border: winner ? '2px solid #22c55e' : '1px solid #2c3e66',
+                          boxShadow: winner ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
+                          opacity: infoDimmed ? 0.7 : 1,
+                        }}
+                    >
+                        <div style={{ position: 'absolute', top: 6, left: 8, ...avatarStyle }} />
+                        <div style={{ fontWeight: 700, fontFamily: '"Inter", sans-serif', fontSize: 12 }}>{p.name}</div>
+                        <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>{p.status}</div>
+                        {p.id !== playerId && (
+                          <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <StackChipsIcon size={14} />
+                              {p.stack}
+                            </span>
+                          </div>
+                        )}
+                        {isShowdown && winner && (
+                          <div style={{ marginTop: 4, fontSize: 12, color: '#86efac', fontFamily: '"Inter", sans-serif' }}>
+                            {winnersById.get(p.id)?.handLabel}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
-          </div>
-          {you && (
-            <div style={{ marginTop: 16, padding: 12, border: '1px solid #2c3e66', borderRadius: 8 }}>
-              <div style={{ marginBottom: 8 }}>Your actions</div>
-              {discardPending ? (
-                <div>
-                  <div>Choose a card to discard</div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    {you.holeCards.map((c, idx) => (
-                      <button key={idx} onClick={() => discard(idx)} style={{ padding: 8 }}>
-                        Discard {cardText(c)}
-                      </button>
-                    ))}
+            {overflowPlayers.length > 0 && (
+              <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 10 }}>
+                {overflowPlayers.map((p) => (
+                  <div key={p.id} style={{ padding: '6px 10px', borderRadius: 8, background: '#0f172a', border: '1px solid #2c3e66', fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
+                    {p.name} (Seat {p.seat + 1})
+                  </div>
+                ))}
+              </div>
+            )}
+            {you && (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: 14,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                  {(roleChipsBySeat.get(you.seat) ?? []).length > 0 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: -8,
+                        right: -8,
+                        display: 'flex',
+                        gap: 4,
+                        transform: 'translate(-0.4cm, -0.5cm)',
+                      }}
+                    >
+                      {(roleChipsBySeat.get(you.seat) ?? []).map((chip, chipIdx) => (
+                        <RoleChip key={`${chip.label}-${chipIdx}`} label={chip.label} tone={chip.tone} />
+                      ))}
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      padding: '6px 10px 6px 60px',
+                      borderRadius: 10,
+                      background: youInfoDimmed ? 'rgba(10, 16, 30, 0.6)' : 'rgba(10, 16, 30, 0.85)',
+                      border: winnersById.has(you.id) ? '2px solid #22c55e' : '1px solid #2c3e66',
+                      boxShadow: winnersById.has(you.id) ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
+                      textAlign: 'left',
+                      opacity: youInfoDimmed ? 0.7 : 1,
+                      position: 'relative',
+                    }}
+                  >
+                    {youAvatarStyle && <div style={{ position: 'absolute', top: 6, left: 8, ...youAvatarStyle }} />}
+                    <div style={{ fontWeight: 700, fontFamily: '"Inter", sans-serif', fontSize: 12 }}>{you.name}</div>
+                    <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>{you.status}</div>
+                    <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <StackChipsIcon size={14} />
+                        {you.stack}
+                      </span>
+                    </div>
+                    {isShowdown && winnersById.has(you.id) && (
+                      <div style={{ marginTop: 4, fontSize: 12, color: '#86efac', fontFamily: '"Inter", sans-serif' }}>
+                        {winnersById.get(you.id)?.handLabel}
+                      </div>
+                    )}
                   </div>
                 </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {you.holeCards.map((c, idx) => (
+                    <div key={idx} style={{ transform: `rotate(${idx === 0 ? -6 : 6}deg)` }}>
+                      <CardView card={c} size="large" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ position: 'absolute', bottom: -218, left: -9.4, width: 374, background: 'rgba(9, 12, 20, 0.8)', border: '1px solid #27324e', borderRadius: 10, padding: 8 }}>
+              <div style={{ fontSize: 14, fontFamily: '"Inter", sans-serif', opacity: 0.8, marginBottom: 6 }}>Dealer</div>
+              <div style={{ maxHeight: 80, overflowY: 'auto' }}>
+                {(state?.log ?? []).slice(-5).map((l: any, idx: number) => (
+                  <div key={idx} style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, fontFamily: '"Inter", sans-serif' }}>
+                    {l.message}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          {you && (
+            <div
+              style={{
+                width: 'min(1200px, 96vw)',
+                margin: '0 auto',
+                background: 'transparent',
+                border: 'none',
+                borderRadius: 0,
+                padding: 0,
+                display: 'flex',
+                gap: 12,
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              {discardPending ? (
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <div style={{ fontFamily: '"Inter", sans-serif' }}>Choose a card to discard</div>
+                  {you.holeCards.map((c, idx) => (
+                    <button key={idx} onClick={() => discard(idx)} style={{ padding: '8px 12px' }}>
+                      Discard {cardText(c)}
+                    </button>
+                  ))}
+                </div>
               ) : (
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <button disabled={!isMyTurn} onClick={() => act('fold')} style={{ padding: '8px 12px' }}>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button disabled={!isMyTurn} onClick={() => act('fold')} style={{ padding: '10px 18px', fontWeight: 700 }}>
                     Fold
                   </button>
-                  <button disabled={!isMyTurn || toCall !== 0} onClick={() => act('check')} style={{ padding: '8px 12px' }}>
+                  <button disabled={!isMyTurn || toCall !== 0} onClick={() => act('check')} style={{ padding: '10px 18px', fontWeight: 700 }}>
                     Check
                   </button>
-                  <button disabled={!isMyTurn || toCall === 0} onClick={() => act('call')} style={{ padding: '8px 12px' }}>
+                  <button disabled={!isMyTurn || toCall === 0} onClick={() => act('call')} style={{ padding: '10px 18px', fontWeight: 700 }}>
                     Call {toCall}
                   </button>
                   <input
                     type="number"
                     value={betAmount}
                     onChange={(e) => setBetAmount(Number(e.target.value))}
-                    style={{ padding: 8, width: 100 }}
+                    style={{ padding: 8, width: 120 }}
                   />
                   <button
-                    disabled={!isMyTurn || (hand && hand.currentBet > 0 && raiseCapReached)}
+                    disabled={!isMyTurn || (hand && raiseCapReached)}
                     onClick={() => act(hand && hand.currentBet === 0 ? 'bet' : 'raise', betAmount)}
-                    style={{ padding: '8px 12px' }}
+                    style={{ padding: '10px 18px', fontWeight: 700 }}
                   >
                     {hand && hand.currentBet === 0 ? 'Bet' : 'Raise'} to {betAmount}
                   </button>
                   <button
                     disabled={!isMyTurn || (raiseCapReached && allInWouldRaise)}
                     onClick={() => act('allIn')}
-                    style={{ padding: '8px 12px', background: '#ef4444', color: 'white' }}
+                    style={{ padding: '10px 18px', background: '#ef4444', color: 'white', fontWeight: 700 }}
                   >
                     All-in {you ? you.stack + you.betThisStreet : ''}
                   </button>
-                  <div style={{ marginLeft: 'auto', padding: '6px 10px', borderRadius: 8, background: '#122145', border: '1px solid #2c3e66' }}>
-                    Stack: {you.stack}
-                  </div>
                 </div>
               )}
+              <div style={{ padding: '6px 10px', borderRadius: 8, background: '#122145', border: '1px solid #2c3e66', fontFamily: '"Inter", sans-serif' }}>
+                Stack: {you.stack}
+              </div>
             </div>
           )}
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontWeight: 600 }}>Game log</div>
-            <div style={{ maxHeight: 160, overflowY: 'auto', padding: 8, background: '#0f172a', borderRadius: 8 }}>
-              {(state?.log ?? []).slice(-20).map((l: any, idx: number) => (
-                <div key={idx} style={{ fontSize: 12, opacity: 0.85 }}>
-                  {l.message}
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       ) : (
-        <p>{seated ? 'Waiting for next hand...' : 'Waiting for hand...'}</p>
+        <div style={{ fontFamily: '"Inter", sans-serif' }}>{seated ? 'Waiting for next hand...' : 'Waiting for hand...'}</div>
       )}
     </div>
   );
 };
 
-const CardView = ({ card, highlight = false }: { card: Card; highlight?: boolean }) => {
+const rasterPngCardPath = (card: Card) => {
+  if (card.rank === 'X' || card.suit === 'X') return null;
+  const rankMap: Record<Card['rank'], string> = {
+    A: 'ace',
+    K: 'king',
+    Q: 'queen',
+    J: 'jack',
+    T: '10',
+    '9': '9',
+    '8': '8',
+    '7': '7',
+    '6': '6',
+    '5': '5',
+    '4': '4',
+    '3': '3',
+    '2': '2',
+  };
+  const suitMap: Record<Card['suit'], string> = {
+    S: 'spades',
+    H: 'hearts',
+    D: 'diamonds',
+    C: 'clubs',
+  };
+  const rank = rankMap[card.rank];
+  const suit = suitMap[card.suit];
+  return `/cards/english-pattern-png/english_pattern_${rank}_of_${suit}.png`;
+};
+
+const modernMinimalCardPath = (card: Card) => {
+  if (card.rank === 'X' || card.suit === 'X') return null;
+  const rankMap: Record<Card['rank'], string> = {
+    A: 'ace',
+    K: 'king',
+    Q: 'queen',
+    J: 'jack',
+    T: '10',
+    '9': '9',
+    '8': '8',
+    '7': '7',
+    '6': '6',
+    '5': '5',
+    '4': '4',
+    '3': '3',
+    '2': '2',
+  };
+  const suitMap: Record<Card['suit'], string> = {
+    S: 'spades',
+    H: 'hearts',
+    D: 'diamonds',
+    C: 'clubs',
+  };
+  const rank = rankMap[card.rank];
+  const suit = suitMap[card.suit];
+  return `/cards/modern-minimal/${rank}_of_${suit}.png`;
+};
+
+let hasWarnedMissingCards = false;
+
+const CardView = ({
+  card,
+  highlight = false,
+  size = 'small',
+}: {
+  card: Card;
+  highlight?: boolean;
+  size?: 'small' | 'medium' | 'large';
+}) => {
+  const [imageFailed, setImageFailed] = useState(false);
+  const [imageIndex, setImageIndex] = useState(0);
   const isRed = card.suit === 'H' || card.suit === 'D';
+  const isHidden = card.rank === 'X' || card.suit === 'X';
+  const isLarge = size === 'large';
+  const isClassicSize = size === 'large' || size === 'medium';
+  const sizeMap = {
+    small: { width: 28, height: 40, fontSize: 14, corner: 9, center: 16, pad: 2 },
+    medium: { width: 44, height: 62, fontSize: 18, corner: 11, center: 22, pad: 3 },
+    large: { width: 60, height: 84, fontSize: 24, corner: 12, center: 28, pad: 3 },
+  };
+  const sizing = sizeMap[size];
+  const rankLabel = cardRankLabel(card.rank);
+  const suit = suitSymbol(card.suit);
+  const cardColor = isClassicSize ? (isRed ? '#dc2626' : '#111827') : isRed ? '#f87171' : '#e5e7eb';
+  const cardBorder = highlight ? '2px solid #22c55e' : isClassicSize ? '1px solid #d1d5db' : '1px solid #2c3e66';
+  const cardShadow = highlight
+    ? '0 0 0 2px rgba(34, 197, 94, 0.2)'
+      : isClassicSize
+        ? '0 6px 16px rgba(0,0,0,0.25)'
+        : undefined;
+  const cardImageSources = isClassicSize
+    ? [rasterPngCardPath(card), modernMinimalCardPath(card)].filter((value): value is string => Boolean(value))
+    : [];
+  const imageUrl = cardImageSources[imageIndex];
+
+  useEffect(() => {
+    setImageFailed(false);
+    setImageIndex(0);
+  }, [card.rank, card.suit, size]);
+
+  if (imageUrl && !imageFailed) {
+    return (
+      <div
+        style={{
+          width: sizing.width,
+          height: sizing.height,
+          borderRadius: 6,
+          border: cardBorder,
+          background: '#f8fafc',
+          boxShadow: cardShadow,
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <img
+          src={imageUrl}
+          alt={`${rankLabel} of ${suit}`}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          onError={(e) => {
+            if (imageIndex < cardImageSources.length - 1) {
+              setImageIndex(imageIndex + 1);
+              return;
+            }
+            if (typeof window !== 'undefined') {
+              // eslint-disable-next-line no-console
+              if (!hasWarnedMissingCards) {
+                console.warn(`Card assets missing (falling back to text render): ${imageUrl}`);
+                hasWarnedMissingCards = true;
+              }
+            }
+            setImageFailed(true);
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
-        width: 36,
-        height: 52,
+        width: sizing.width,
+        height: sizing.height,
         borderRadius: 6,
-        border: highlight ? '2px solid #22c55e' : '1px solid #2c3e66',
-        background: '#111827',
+        border: cardBorder,
+        background: isClassicSize ? '#f8fafc' : '#111827',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         fontWeight: 700,
-        color: isRed ? '#f87171' : '#e5e7eb',
-        boxShadow: highlight ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
+        fontSize: sizing.fontSize,
+        color: cardColor,
+        boxShadow: cardShadow,
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
-      {card.rank}
-      {suitSymbol(card.suit)}
+      {!isClassicSize || isHidden ? (
+        <>
+          {card.rank}
+          {suit}
+        </>
+      ) : (
+        <>
+          <div
+            style={{
+              position: 'absolute',
+              top: sizing.pad,
+              left: sizing.pad,
+              fontSize: sizing.corner,
+              lineHeight: 1,
+              textAlign: 'left',
+            }}
+          >
+            <div>{rankLabel}</div>
+          </div>
+          <div style={{ fontSize: sizing.center, opacity: 0.9 }}>{suit}</div>
+          <div
+            style={{
+              position: 'absolute',
+              bottom: sizing.pad,
+              right: sizing.pad,
+              fontSize: sizing.corner,
+              lineHeight: 1,
+              textAlign: 'right',
+              transform: 'rotate(180deg)',
+            }}
+          >
+            <div>{rankLabel}</div>
+          </div>
+        </>
+      )}
     </div>
+  );
+};
+
+const RoleChip = ({ label, tone }: { label: string; tone: 'dealer' | 'blind' }) => {
+  const isDealer = tone === 'dealer';
+  return (
+    <div
+      style={{
+        width: 22,
+        height: 22,
+        borderRadius: '50%',
+        background: isDealer ? '#ef4444' : '#9ca3af',
+        border: isDealer ? '1px solid #fecaca' : '1px solid #e5e7eb',
+        color: isDealer ? '#ffffff' : '#111827',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: 0.2,
+      }}
+    >
+      {label}
+    </div>
+  );
+};
+
+const StackChipsIcon = ({ size = 14 }: { size?: number }) => {
+  return (
+    <svg
+      viewBox="0 0 32 32"
+      width={size}
+      height={size}
+      role="img"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <ellipse cx="16" cy="10" rx="10" ry="4" fill="#6b7280" stroke="#e5e7eb" strokeWidth="1" />
+      <ellipse cx="16" cy="17" rx="10" ry="4" fill="#9ca3af" stroke="#e5e7eb" strokeWidth="1" />
+      <ellipse cx="16" cy="24" rx="10" ry="4" fill="#6b7280" stroke="#e5e7eb" strokeWidth="1" />
+      <ellipse cx="16" cy="10" rx="6.5" ry="2.5" fill="none" stroke="#f3f4f6" strokeWidth="1" />
+      <ellipse cx="16" cy="17" rx="6.5" ry="2.5" fill="none" stroke="#f3f4f6" strokeWidth="1" />
+      <ellipse cx="16" cy="24" rx="6.5" ry="2.5" fill="none" stroke="#f3f4f6" strokeWidth="1" />
+    </svg>
   );
 };
 
