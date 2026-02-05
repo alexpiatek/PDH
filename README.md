@@ -26,10 +26,22 @@ pnpm install
 pnpm dev
 ```
 
-Server runs at `ws://localhost:4000`. The web app defaults to that URL.
+## Card assets (optional)
+To use the raster PNG deck (default), run:
+```bash
+bash scripts/download-english-pattern-png.sh
+```
+
+To use the modern minimal deck, run:
+```bash
+bash scripts/download-modern-minimal-cards.sh
+```
+
+Server runs at `ws://localhost:3002`. The web app runs at `http://localhost:3001` and defaults to that URL.
+If you use an embedded browser (like Cursor/VS Code), open `http://localhost:3001` directly; file previews won’t work with Next.js.
 Override with:
 ```bash
-setx NEXT_PUBLIC_WS_URL ws://localhost:4000
+setx NEXT_PUBLIC_WS_URL ws://localhost:3002
 ```
 
 ## Tests
