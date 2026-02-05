@@ -93,6 +93,122 @@ const isHiddenCard = (card: Card) =>
   (card as unknown as { rank: string }).rank === 'X' ||
   (card as unknown as { suit: string }).suit === 'X';
 
+const MINIMAL_DECK_PALETTE = {
+  face: '#f6f7f2',
+  border: '#e2e8f0',
+  navy: '#0b1d3a',
+  orange: '#f15a29',
+  accent: '#cbd5e1',
+};
+const USE_CUSTOM_MINIMAL_DECK = true;
+
+type Pip = { x: number; y: number; size?: number };
+
+const pipLayoutByRank: Record<Card['rank'], Pip[]> = {
+  A: [{ x: 50, y: 72, size: 28 }],
+  K: [],
+  Q: [],
+  J: [],
+  T: [
+    { x: 32, y: 34 },
+    { x: 68, y: 34 },
+    { x: 32, y: 52 },
+    { x: 68, y: 52 },
+    { x: 32, y: 70 },
+    { x: 68, y: 70 },
+    { x: 32, y: 88 },
+    { x: 68, y: 88 },
+    { x: 32, y: 106 },
+    { x: 68, y: 106 },
+  ],
+  '9': [
+    { x: 32, y: 34 },
+    { x: 68, y: 34 },
+    { x: 32, y: 52 },
+    { x: 68, y: 52 },
+    { x: 32, y: 88 },
+    { x: 68, y: 88 },
+    { x: 32, y: 106 },
+    { x: 68, y: 106 },
+    { x: 50, y: 70 },
+  ],
+  '8': [
+    { x: 32, y: 34 },
+    { x: 68, y: 34 },
+    { x: 32, y: 52 },
+    { x: 68, y: 52 },
+    { x: 32, y: 88 },
+    { x: 68, y: 88 },
+    { x: 32, y: 106 },
+    { x: 68, y: 106 },
+  ],
+  '7': [
+    { x: 32, y: 34 },
+    { x: 68, y: 34 },
+    { x: 32, y: 70 },
+    { x: 68, y: 70 },
+    { x: 32, y: 106 },
+    { x: 68, y: 106 },
+    { x: 50, y: 52 },
+  ],
+  '6': [
+    { x: 32, y: 34 },
+    { x: 68, y: 34 },
+    { x: 32, y: 70 },
+    { x: 68, y: 70 },
+    { x: 32, y: 106 },
+    { x: 68, y: 106 },
+  ],
+  '5': [
+    { x: 32, y: 34 },
+    { x: 68, y: 34 },
+    { x: 32, y: 106 },
+    { x: 68, y: 106 },
+    { x: 50, y: 70 },
+  ],
+  '4': [
+    { x: 32, y: 34 },
+    { x: 68, y: 34 },
+    { x: 32, y: 106 },
+    { x: 68, y: 106 },
+  ],
+  '3': [
+    { x: 50, y: 34 },
+    { x: 50, y: 70 },
+    { x: 50, y: 106 },
+  ],
+  '2': [
+    { x: 50, y: 34 },
+    { x: 50, y: 106 },
+  ],
+};
+
+const SuitPip = ({ suit, x, y, size, color }: { suit: Card['suit']; x: number; y: number; size: number; color: string }) => {
+  const scale = size / 100;
+  return (
+    <g transform={`translate(${x} ${y}) scale(${scale}) translate(-50 -50)`} fill={color}>
+      {suit === 'H' && (
+        <path d="M50 90 L18 52 C6 36 14 16 34 16 C44 16 50 24 50 32 C50 24 56 16 66 16 C86 16 94 36 82 52 L50 90 Z" />
+      )}
+      {suit === 'S' && (
+        <>
+          <path d="M50 12 C70 32 90 50 50 88 C10 50 30 32 50 12 Z" />
+          <path d="M45 88 L55 88 L62 100 L38 100 Z" />
+        </>
+      )}
+      {suit === 'D' && <polygon points="50,8 88,50 50,92 12,50" />}
+      {suit === 'C' && (
+        <>
+          <circle cx="35" cy="45" r="18" />
+          <circle cx="65" cy="45" r="18" />
+          <circle cx="50" cy="25" r="18" />
+          <rect x="44" y="45" width="12" height="38" rx="4" />
+        </>
+      )}
+    </g>
+  );
+};
+
 const Home: NextPage = () => {
   const connectionRef = useRef<{ send: (msg: ClientMessage) => void; close: () => void } | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
@@ -423,6 +539,7 @@ const Home: NextPage = () => {
     return map;
   }, [hand, state?.seats]);
   const infoAvatarSize = 36;
+  const playerInfoOffsetY = -19;
   const youAvatarStyle = useMemo(() => {
     if (!you) return null;
     const youIsWinner = winnersById.has(you.id);
@@ -496,12 +613,12 @@ const Home: NextPage = () => {
             >
               Stage: {hand.street} | Phase: {hand.phase}
             </div>
-            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', gap: 10 }}>
+            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', gap: '1mm' }}>
               {communityCards.map((c, idx) => (
-                <CardView key={idx} card={c} size="medium" highlight={isShowdown && winningCards.has(cardKey(c))} />
+                <CardView key={idx} card={c} size="xlarge" highlight={isShowdown && winningCards.has(cardKey(c))} />
               ))}
             </div>
-            <div style={{ position: 'absolute', top: '52%', left: '50%', transform: 'translate(-50%, -50%) translateY(-2cm)' }}>
+            <div style={{ position: 'absolute', top: '52%', left: '50%', transform: 'translate(-50%, -50%) translateY(-171px)' }}>
               <div style={{ padding: '6px 14px', borderRadius: 999, background: '#0f172a', border: '1px solid #2c3e66' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ width: 24, height: 24, display: 'inline-block' }} aria-hidden="true">
@@ -567,7 +684,7 @@ const Home: NextPage = () => {
                     position: 'absolute',
                     left: pos.left,
                     top: pos.top,
-                    transform: 'translate(-50%, -50%)',
+                    transform: `translate(-50%, -50%) translateY(${playerInfoOffsetY}px)`,
                     width: 170,
                     textAlign: 'center',
                   }}
@@ -845,18 +962,19 @@ const CardView = ({
 }: {
   card: Card;
   highlight?: boolean;
-  size?: 'small' | 'medium' | 'large';
+  size?: 'small' | 'medium' | 'large' | 'xlarge';
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const [imageIndex, setImageIndex] = useState(0);
   const isRed = card.suit === 'H' || card.suit === 'D';
   const isHidden = isHiddenCard(card);
   const isLarge = size === 'large';
-  const isClassicSize = size === 'large' || size === 'medium';
+  const isClassicSize = size === 'large' || size === 'medium' || size === 'xlarge';
   const sizeMap = {
     small: { width: 28, height: 40, fontSize: 14, corner: 9, center: 16, pad: 2 },
     medium: { width: 44, height: 62, fontSize: 18, corner: 11, center: 22, pad: 3 },
     large: { width: 60, height: 84, fontSize: 24, corner: 12, center: 28, pad: 3 },
+    xlarge: { width: 66, height: 93, fontSize: 27, corner: 17, center: 33, pad: 4 },
   };
   const sizing = sizeMap[size];
   const rankLabel = cardRankLabel(card.rank);
@@ -877,6 +995,63 @@ const CardView = ({
     setImageFailed(false);
     setImageIndex(0);
   }, [card.rank, card.suit, size]);
+
+  if (USE_CUSTOM_MINIMAL_DECK && isClassicSize && !isHidden) {
+    const suitColor = isRed ? MINIMAL_DECK_PALETTE.orange : MINIMAL_DECK_PALETTE.navy;
+    const isFaceCard = card.rank === 'J' || card.rank === 'Q' || card.rank === 'K';
+    const cornerFontSize = rankLabel === '10' ? 14 : 16;
+    const cornerSuitSize = 14;
+    const pipSize = 17;
+    const pips = pipLayoutByRank[card.rank] ?? [];
+
+    return (
+      <div
+        style={{
+          width: sizing.width,
+          height: sizing.height,
+          borderRadius: 8,
+          border: highlight ? '2px solid #22c55e' : `1px solid ${MINIMAL_DECK_PALETTE.border}`,
+          background: MINIMAL_DECK_PALETTE.face,
+          boxShadow: cardShadow,
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <svg viewBox="0 0 100 140" width="100%" height="100%" role="img" aria-label={`${rankLabel} of ${suit}`}>
+          <rect x="0" y="0" width="100" height="140" rx="10" fill={MINIMAL_DECK_PALETTE.face} />
+          <g fontFamily='"Inter", sans-serif' fontWeight={700} fill={suitColor}>
+            <text x="8" y="18" fontSize={cornerFontSize}>
+              {rankLabel}
+            </text>
+          </g>
+          <SuitPip suit={card.suit} x={13} y={30} size={cornerSuitSize} color={suitColor} />
+          <g transform="translate(100 140) rotate(180)">
+            <text x="8" y="18" fontSize={cornerFontSize} fontFamily='"Inter", sans-serif' fontWeight={700} fill={suitColor}>
+              {rankLabel}
+            </text>
+            <SuitPip suit={card.suit} x={13} y={30} size={cornerSuitSize} color={suitColor} />
+          </g>
+          {isFaceCard ? (
+            <>
+              <g opacity="0.55" fill={MINIMAL_DECK_PALETTE.accent}>
+                <rect x="28" y="32" width="44" height="76" rx="12" transform="rotate(-18 50 70)" />
+                <rect x="28" y="32" width="44" height="76" rx="12" transform="rotate(18 50 70)" />
+              </g>
+              <SuitPip suit={card.suit} x={50} y={70} size={26} color={suitColor} />
+            </>
+          ) : (
+            <>
+              {pips.map((pip, idx) => (
+                <SuitPip key={idx} suit={card.suit} x={pip.x} y={pip.y} size={pip.size ?? pipSize} color={suitColor} />
+              ))}
+            </>
+          )}
+        </svg>
+      </div>
+    );
+  }
 
   if (imageUrl && !imageFailed) {
     return (
