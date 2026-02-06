@@ -59,6 +59,13 @@ export interface HandState {
   discardDeadline: number | null;
   showdownWinners: ShowdownWinner[];
   log: HandLogEntry[];
+  auditLog?: HandLogEntry[];
+}
+
+export interface AuditHandLog {
+  handId: string;
+  endedAt: number;
+  entries: HandLogEntry[];
 }
 
 export interface TableConfig {
@@ -74,6 +81,8 @@ export interface TableState {
   buttonSeat: number;
   hand: HandState | null;
   log: HandLogEntry[];
+  auditLog?: HandLogEntry[];
+  auditHands?: AuditHandLog[];
 }
 
 export type PlayerAction =

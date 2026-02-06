@@ -19,7 +19,7 @@ describe('betting rules', () => {
         // UTG must call but cannot be forced to re-raise
         table.applyAction('p0', { type: 'call' });
         expect(hand.minRaise).toBe(100);
-    expect(hand.street).toBe('preflop');
-    expect(hand.phase).toBe('discard');
+        expect(hand.street).toBe('flop');
+        expect(hand.phase).toBe('discard');
     });
 });

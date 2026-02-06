@@ -141,12 +141,15 @@ const SuitPip = ({ suit, x, y, size, color }: { suit: Card['suit']; x: number; y
 
 const Home: NextPage = () => {
   const wsRef = useRef<WebSocket | null>(null);
+  const discardTimerRef = useRef<number | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const buyIn = 10000;
   const [state, setState] = useState<any>(null);
   const [status, setStatus] = useState<string>('Disconnected');
   const [betAmount, setBetAmount] = useState<number>(200);
+  const [discardFlashIndex, setDiscardFlashIndex] = useState<number | null>(null);
+  const [discardSubmitted, setDiscardSubmitted] = useState(false);
 
   useEffect(() => {
     const existing = typeof window !== 'undefined' ? localStorage.getItem('playerId') : null;
@@ -223,6 +226,26 @@ const Home: NextPage = () => {
   }, [hand?.phase, hand?.handId]);
 
   useEffect(() => {
+    if (!discardPending) {
+      setDiscardFlashIndex(null);
+      setDiscardSubmitted(false);
+      if (discardTimerRef.current) {
+        window.clearTimeout(discardTimerRef.current);
+        discardTimerRef.current = null;
+      }
+    }
+  }, [discardPending, hand?.handId]);
+
+  useEffect(() => {
+    return () => {
+      if (discardTimerRef.current) {
+        window.clearTimeout(discardTimerRef.current);
+        discardTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isMyTurn || suggestedRaiseTo === null) return;
     setBetAmount(suggestedRaiseTo);
   }, [isMyTurn, hand?.handId, hand?.currentBet, hand?.minRaise, suggestedRaiseTo]);
@@ -244,6 +267,20 @@ const Home: NextPage = () => {
 
   const discard = (idx: number) => {
     send({ type: 'discard', index: idx });
+  };
+
+  const handleDiscardClick = (idx: number) => {
+    if (!discardPending || discardSubmitted) return;
+    setDiscardSubmitted(true);
+    setDiscardFlashIndex(idx);
+    if (discardTimerRef.current) {
+      window.clearTimeout(discardTimerRef.current);
+    }
+    discardTimerRef.current = window.setTimeout(() => {
+      setDiscardFlashIndex(null);
+      discardTimerRef.current = null;
+    }, 500);
+    discard(idx);
   };
 
   const communityCards = hand?.board ?? [];
@@ -327,7 +364,7 @@ const Home: NextPage = () => {
     return map;
   }, [hand, state?.seats]);
   const infoAvatarSize = 36;
-  const playerInfoOffsetY = -19;
+  const playerInfoOffsetY = -30;
   const youAvatarStyle = useMemo(() => {
     if (!you) return null;
     const youIsWinner = winnersById.has(you.id);
@@ -401,12 +438,12 @@ const Home: NextPage = () => {
             >
               Stage: {hand.street} | Phase: {hand.phase}
             </div>
-            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%)', display: 'flex', gap: '1mm' }}>
+            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(-19px)', display: 'flex', gap: '1mm' }}>
               {communityCards.map((c, idx) => (
                 <CardView key={idx} card={c} size="xlarge" highlight={isShowdown && winningCards.has(cardKey(c))} />
               ))}
             </div>
-            <div style={{ position: 'absolute', top: '52%', left: '50%', transform: 'translate(-50%, -50%) translateY(-171px)' }}>
+            <div style={{ position: 'absolute', top: '52%', left: '50%', transform: 'translate(-50%, -50%) translateY(-171px) scale(1.2)' }}>
               <div style={{ padding: '6px 14px', borderRadius: 999, background: '#0f172a', border: '1px solid #2c3e66' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ width: 24, height: 24, display: 'inline-block' }} aria-hidden="true">
@@ -441,7 +478,7 @@ const Home: NextPage = () => {
               </div>
             </div>
             {isShowdown && showdownSummary && (
-              <div style={{ position: 'absolute', top: '60%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+              <div style={{ position: 'absolute', top: '60%', left: '50%', transform: 'translate(-50%, -50%) translateY(-47px)' }}>
                 <div style={{ padding: '6px 14px', borderRadius: 999, background: '#123b2f', border: '1px solid #22c55e', color: '#d1fae5' }}>
                   {showdownSummary}
                 </div>
@@ -517,11 +554,6 @@ const Home: NextPage = () => {
                             </span>
                           </div>
                         )}
-                        {isShowdown && winner && (
-                          <div style={{ marginTop: 4, fontSize: 12, color: '#86efac', fontFamily: '"Inter", sans-serif' }}>
-                            {winnersById.get(p.id)?.handLabel}
-                          </div>
-                        )}
                       </div>
                     </div>
                   )}
@@ -538,71 +570,104 @@ const Home: NextPage = () => {
               </div>
             )}
             {you && (
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: 14,
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                <div style={{ position: 'relative', display: 'inline-block' }}>
-                  {(roleChipsBySeat.get(you.seat) ?? []).length > 0 && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: -8,
-                        right: -8,
-                        display: 'flex',
-                        gap: 4,
-                        transform: 'translate(-0.4cm, -0.5cm)',
-                      }}
-                    >
-                      {(roleChipsBySeat.get(you.seat) ?? []).map((chip, chipIdx) => (
-                        <RoleChip key={`${chip.label}-${chipIdx}`} label={chip.label} tone={chip.tone} />
-                      ))}
-                    </div>
-                  )}
-                  <div
-                    style={{
-                      padding: '6px 10px 6px 60px',
-                      borderRadius: 10,
-                      background: youInfoDimmed ? 'rgba(10, 16, 30, 0.6)' : 'rgba(10, 16, 30, 0.85)',
-                      border: winnersById.has(you.id) ? '2px solid #22c55e' : '1px solid #2c3e66',
-                      boxShadow: winnersById.has(you.id) ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
-                      textAlign: 'left',
-                      opacity: youInfoDimmed ? 0.7 : 1,
-                      position: 'relative',
-                    }}
-                  >
-                    {youAvatarStyle && <div style={{ position: 'absolute', top: 6, left: 8, ...youAvatarStyle }} />}
-                    <div style={{ fontWeight: 700, fontFamily: '"Inter", sans-serif', fontSize: 12 }}>{you.name}</div>
-                    <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>{you.status}</div>
-                    <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <StackChipsIcon size={14} />
-                        {you.stack}
-                      </span>
-                    </div>
-                    {isShowdown && winnersById.has(you.id) && (
-                      <div style={{ marginTop: 4, fontSize: 12, color: '#86efac', fontFamily: '"Inter", sans-serif' }}>
-                        {winnersById.get(you.id)?.handLabel}
+              <>
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: 142,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ position: 'relative', display: 'inline-block' }}>
+                    {(roleChipsBySeat.get(you.seat) ?? []).length > 0 && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: -8,
+                          right: -8,
+                          display: 'flex',
+                          gap: 4,
+                          transform: 'translate(-0.4cm, -0.5cm)',
+                        }}
+                      >
+                        {(roleChipsBySeat.get(you.seat) ?? []).map((chip, chipIdx) => (
+                          <RoleChip key={`${chip.label}-${chipIdx}`} label={chip.label} tone={chip.tone} />
+                        ))}
                       </div>
                     )}
+                    <div
+                      style={{
+                        padding: '6px 10px 6px 60px',
+                        borderRadius: 10,
+                        background: youInfoDimmed ? 'rgba(10, 16, 30, 0.6)' : 'rgba(10, 16, 30, 0.85)',
+                        border: winnersById.has(you.id) ? '2px solid #22c55e' : '1px solid #2c3e66',
+                        boxShadow: winnersById.has(you.id) ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
+                        textAlign: 'left',
+                        opacity: youInfoDimmed ? 0.7 : 1,
+                        position: 'relative',
+                      }}
+                    >
+                      {youAvatarStyle && <div style={{ position: 'absolute', top: 6, left: 8, ...youAvatarStyle }} />}
+                      <div style={{ fontWeight: 700, fontFamily: '"Inter", sans-serif', fontSize: 12 }}>{you.name}</div>
+                      <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>{you.status}</div>
+                      <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <StackChipsIcon size={14} />
+                          {you.stack}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  {you.holeCards.map((c, idx) => (
-                    <div key={idx} style={{ transform: `rotate(${idx === 0 ? -6 : 6}deg)` }}>
-                      <CardView card={c} size="large" />
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: 21,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  {discardPending && !discardSubmitted && (
+                    <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif', opacity: 0.85 }}>
+                      Click a card to discard
                     </div>
-                  ))}
+                  )}
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    {you.holeCards.map((c, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          transform: `rotate(${idx === 0 ? -6 : 6}deg)`,
+                          cursor: discardPending && !discardSubmitted ? 'pointer' : 'default',
+                        }}
+                        onClick={() => handleDiscardClick(idx)}
+                      >
+                        <CardView
+                          card={c}
+                          size="large"
+                          outline={
+                            discardFlashIndex === idx
+                              ? 'red'
+                              : discardPending && !discardSubmitted
+                                ? 'green'
+                                : undefined
+                          }
+                          fade={discardFlashIndex === idx}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              </>
             )}
             <div style={{ position: 'absolute', bottom: -218, left: -9.4, width: 374, background: 'rgba(9, 12, 20, 0.8)', border: '1px solid #27324e', borderRadius: 10, padding: 8 }}>
               <div style={{ fontSize: 14, fontFamily: '"Inter", sans-serif', opacity: 0.8, marginBottom: 6 }}>Dealer</div>
@@ -631,14 +696,7 @@ const Home: NextPage = () => {
               }}
             >
               {discardPending ? (
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <div style={{ fontFamily: '"Inter", sans-serif' }}>Choose a card to discard</div>
-                  {you.holeCards.map((c, idx) => (
-                    <button key={idx} onClick={() => discard(idx)} style={{ padding: '8px 12px' }}>
-                      Discard {cardText(c)}
-                    </button>
-                  ))}
-                </div>
+                <div />
               ) : (
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                   <button disabled={!isMyTurn} onClick={() => act('fold')} style={{ padding: '10px 18px', fontWeight: 700 }}>
@@ -746,10 +804,14 @@ let hasWarnedMissingCards = false;
 const CardView = ({
   card,
   highlight = false,
+  outline,
+  fade = false,
   size = 'small',
 }: {
   card: Card;
   highlight?: boolean;
+  outline?: 'green' | 'red';
+  fade?: boolean;
   size?: 'small' | 'medium' | 'large' | 'xlarge';
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
@@ -761,7 +823,7 @@ const CardView = ({
   const sizeMap = {
     small: { width: 28, height: 40, fontSize: 14, corner: 9, center: 16, pad: 2 },
     medium: { width: 44, height: 62, fontSize: 18, corner: 11, center: 22, pad: 3 },
-    large: { width: 60, height: 84, fontSize: 24, corner: 12, center: 28, pad: 3 },
+    large: { width: 66, height: 92, fontSize: 24, corner: 12, center: 28, pad: 3 },
     xlarge: { width: 66, height: 93, fontSize: 27, corner: 17, center: 33, pad: 4 },
   };
   const sizing = sizeMap[size];
@@ -769,11 +831,13 @@ const CardView = ({
   const suit = suitSymbol(card.suit);
   const cardColor = isClassicSize ? (isRed ? '#dc2626' : '#111827') : isRed ? '#f87171' : '#e5e7eb';
   const cardBorder = highlight ? '2px solid #22c55e' : isClassicSize ? '1px solid #d1d5db' : '1px solid #2c3e66';
-  const cardShadow = highlight
-    ? '0 0 0 2px rgba(34, 197, 94, 0.2)'
-      : isClassicSize
-        ? '0 6px 16px rgba(0,0,0,0.25)'
-        : undefined;
+  const baseShadow = isClassicSize ? '0 6px 16px rgba(0,0,0,0.25)' : undefined;
+  const outlineColor = outline === 'green' ? '#22c55e' : outline === 'red' ? '#ef4444' : null;
+  const outlineShadow = outlineColor ? `0 0 0 2px ${outlineColor}` : undefined;
+  const highlightShadow = highlight ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined;
+  const cardShadow = [outlineShadow, highlightShadow, baseShadow].filter(Boolean).join(', ') || undefined;
+  const cardOpacity = fade ? 0.6 : 1;
+  const opacityTransition = 'opacity 0.2s ease';
   const cardImageSources = isClassicSize
     ? [rasterPngCardPath(card), modernMinimalCardPath(card)].filter((value): value is string => Boolean(value))
     : [];
@@ -801,6 +865,8 @@ const CardView = ({
           border: highlight ? '2px solid #22c55e' : `1px solid ${MINIMAL_DECK_PALETTE.border}`,
           background: MINIMAL_DECK_PALETTE.face,
           boxShadow: cardShadow,
+          opacity: cardOpacity,
+          transition: opacityTransition,
           overflow: 'hidden',
           display: 'flex',
           alignItems: 'center',
@@ -851,6 +917,8 @@ const CardView = ({
           border: cardBorder,
           background: '#f8fafc',
           boxShadow: cardShadow,
+          opacity: cardOpacity,
+          transition: opacityTransition,
           overflow: 'hidden',
           display: 'flex',
           alignItems: 'center',
@@ -895,6 +963,8 @@ const CardView = ({
         fontSize: sizing.fontSize,
         color: cardColor,
         boxShadow: cardShadow,
+        opacity: cardOpacity,
+        transition: opacityTransition,
         position: 'relative',
         overflow: 'hidden',
       }}

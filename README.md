@@ -37,6 +37,28 @@ To use the modern minimal deck, run:
 bash scripts/download-modern-minimal-cards.sh
 ```
 
+## Audit log (admin-only)
+The server keeps an in-memory audit log for the **last 5 hands** (discarded cards, showdown hole cards, pot size, stacks, winners).  
+It is **not** sent to clients and is only accessible via a protected endpoint.
+
+### Enable audit log endpoint
+Start the server with a token:
+```bash
+AUDIT_LOG_TOKEN=supersecret pnpm dev
+```
+
+### Fetch locally (when running on your machine)
+```bash
+AUDIT_LOG_TOKEN=supersecret scripts/fetch-audit-log.sh
+```
+
+### Fetch securely from a hosted server
+The endpoint is **localhost-only**, so use an SSH tunnel:
+```bash
+scripts/ssh-audit-tunnel.sh user@your-server 3002 3002
+AUDIT_LOG_TOKEN=supersecret scripts/fetch-audit-log.sh
+```
+
 Server runs at `ws://localhost:3002`. The web app runs at `http://localhost:3001` and defaults to that URL.
 If you use an embedded browser (like Cursor/VS Code), open `http://localhost:3001` directly; file previews won’t work with Next.js.
 Override with:
