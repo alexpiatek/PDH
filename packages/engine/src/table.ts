@@ -2,6 +2,7 @@ import { buildDeck, shuffle } from './deck';
 import { evaluateSeven, HAND_CATEGORY_LABELS } from './handEvaluator';
 import {
   Card,
+  AuditHandLog,
   HandLogEntry,
   HandState,
   Phase,
@@ -119,6 +120,8 @@ export class PokerTable {
       buttonSeat: -1,
       hand: null,
       log: [],
+      auditLog: [],
+      auditHands: [],
     };
   }
 
@@ -183,6 +186,7 @@ export class PokerTable {
       discardDeadline: null,
       showdownWinners: [],
       log: [],
+      auditLog: [],
     };
     // Post blinds and set action order
     this.postBlinds(hand);
@@ -465,6 +469,10 @@ export class PokerTable {
       this.state.hand?.log,
       `${player.name} discarded${auto ? ' (auto)' : ''}`,
     );
+    logPush(
+      this.state.hand?.auditLog,
+      `${player.name} discarded ${card.rank}${card.suit}${auto ? ' (auto)' : ''}`,
+    );
   }
 
   autoDiscard(now: number = nowTs()) {
@@ -517,25 +525,48 @@ export class PokerTable {
     if (!hand) return;
     hand.phase = 'showdown';
     hand.showdownWinners = [];
+    const totalPot = hand.players.reduce((sum, p) => sum + p.totalCommitted, 0);
+    const cardLabel = (card: Card) => `${card.rank}${card.suit}`;
+    const playerCardSnapshot = hand.players
+      .map((p) => {
+        const cards = p.holeCards.length ? p.holeCards.map(cardLabel).join(' ') : '(no cards)';
+        return `${p.name} [${p.status}] ${cards}`;
+      })
+      .join(' | ');
+    const stackSnapshot = hand.players
+      .map((p) => {
+        const seat = this.state.seats[p.seat];
+        const stack = seat?.stack ?? p.stack;
+        return `${p.name}=${stack}`;
+      })
+      .join(', ');
+    logPush(hand.auditLog, `Showdown pot: ${totalPot}`);
+    logPush(hand.auditLog, `Showdown stacks: ${stackSnapshot}`);
+    logPush(hand.auditLog, `Showdown hole cards: ${playerCardSnapshot}`);
     // If only one active player, award pot
     const contenders = hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
     if (contenders.length === 1) {
       const winner = contenders[0];
-      const totalPot = hand.players.reduce((sum, p) => sum + p.totalCommitted, 0);
       const seat = this.state.seats[winner.seat];
       if (seat) seat.stack += totalPot;
       const handLabel = winner.status === 'folded' ? 'Win by Fold' : 'Uncontested';
       logPush(hand.log, `${winner.name} wins ${totalPot} (${handLabel})`);
+      logPush(hand.auditLog, `Winner: ${winner.name} (${handLabel})`);
       hand.showdownWinners = [{ playerId: winner.id, amount: totalPot, handLabel }];
       return;
     }
     this.buildSidePots(hand);
     const results = this.scoreShowdown(hand);
+    const cardShortLabel = (card: Card) => `${card.rank}${card.suit.toLowerCase()}`;
     for (const res of results) {
       const seat = this.state.seats.find((s) => s?.id === res.playerId);
       if (seat) seat.stack += res.amount;
-      const label = res.handLabel ? ` with ${res.handLabel}` : '';
-      logPush(hand.log, `${seat?.name ?? res.playerId} wins ${res.amount}${label}`);
+      const label = res.handLabel ? ` with ${res.handLabel.toLowerCase()}` : '';
+      const bestFiveLabel = res.bestFive ? ` (${res.bestFive.map(cardShortLabel).join(', ')})` : '';
+      logPush(hand.log, `${seat?.name ?? res.playerId} wins ${res.amount}${label}${bestFiveLabel}`);
+      const winnerLabel = res.handLabel ?? 'Unknown';
+      const bestFive = res.bestFive?.map(cardLabel).join(' ') ?? 'best five unavailable';
+      logPush(hand.auditLog, `Winner: ${seat?.name ?? res.playerId} (${winnerLabel}) ${bestFive}`);
     }
     hand.showdownWinners = results;
   }
@@ -642,6 +673,17 @@ export class PokerTable {
       throw new Error('Hand not complete');
     }
     this.state.log.push(...this.state.hand.log);
+    this.state.auditLog?.push(...(this.state.hand.auditLog ?? []));
+    const auditHands: AuditHandLog[] = this.state.auditHands ?? [];
+    auditHands.push({
+      handId: this.state.hand.handId,
+      endedAt: nowTs(),
+      entries: [...(this.state.hand.auditLog ?? [])],
+    });
+    if (auditHands.length > 5) {
+      auditHands.splice(0, auditHands.length - 5);
+    }
+    this.state.auditHands = auditHands;
     this.state.hand = null;
     for (const seat of this.state.seats) {
       if (seat && seat.stack === 0) {
@@ -662,8 +704,10 @@ export class PokerTable {
       seats: this.state.seats,
       buttonSeat: this.state.buttonSeat,
       hand: hand
-          ? {
-            ...hand,
+        ? (() => {
+          const { auditLog, ...handPublic } = hand;
+          return {
+            ...handPublic,
             players: hand.players.map((p) => ({
               ...p,
               holeCards:
@@ -672,7 +716,8 @@ export class PokerTable {
                   : p.holeCards.map(() => ({ rank: 'X', suit: 'X' } as unknown as Card)),
             })),
             deck: [],
-          }
+          };
+        })()
         : null,
       log: [...this.state.log, ...(hand?.log ?? [])],
     };

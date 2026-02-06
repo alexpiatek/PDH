@@ -33,7 +33,7 @@ pnpm -C apps/web dev
 If you are on Windows without `cp`, copy `apps/web/.env.local.example` to `apps/web/.env.local` manually.
 
 ## Local URLs
-- Web app: `http://localhost:3000` (or the Next.js port shown in your terminal)
+- Web app: `http://localhost:3001` (or the Next.js port shown in your terminal)
 - Legacy WS server: `ws://localhost:3002`
 - Nakama HTTP API: `http://localhost:7350`
 - Nakama console API: `http://localhost:7351`
@@ -85,6 +85,27 @@ To use the modern minimal deck:
 bash scripts/download-modern-minimal-cards.sh
 ```
 
+## Audit log (admin-only)
+The server keeps an in-memory audit log for the **last 5 hands** (discarded cards, showdown hole cards, pot size, stacks, winners).  
+It is **not** sent to clients and is only accessible via a protected endpoint.
+
+### Enable audit log endpoint
+Start the server with a token:
+```bash
+AUDIT_LOG_TOKEN=supersecret pnpm dev
+```
+
+### Fetch locally (when running on your machine)
+```bash
+AUDIT_LOG_TOKEN=supersecret scripts/fetch-audit-log.sh
+```
+
+### Fetch securely from a hosted server
+The endpoint is **localhost-only**, so use an SSH tunnel:
+```bash
+scripts/ssh-audit-tunnel.sh user@your-server 3002 3002
+AUDIT_LOG_TOKEN=supersecret scripts/fetch-audit-log.sh
+```
 ## Tests
 ```bash
 pnpm test

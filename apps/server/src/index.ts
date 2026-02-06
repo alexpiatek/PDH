@@ -1,17 +1,77 @@
 import { randomUUID } from 'crypto';
+import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PokerTable } from '@pdh/engine';
 import { ClientMessage, ServerMessage } from './protocol';
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
+const AUDIT_LOG_TOKEN = process.env.AUDIT_LOG_TOKEN || '';
 const table = new PokerTable('main');
 const clients = new Map<WebSocket, { playerId: string }>();
 const START_COUNTDOWN_MS = 8000;
 let startCountdownTimer: NodeJS.Timeout | null = null;
 let startCountdownUntil: number | null = null;
 
-const wss = new WebSocketServer({ port: PORT });
-console.log(`WebSocket server listening on ws://localhost:${PORT}`);
+const server = createServer((req, res) => {
+  if (!req.url) {
+    res.statusCode = 404;
+    res.end('Not Found');
+    return;
+  }
+  if (req.url.startsWith('/admin/audit-log')) {
+    const remoteAddr = req.socket.remoteAddress ?? '';
+    const isLocal =
+      remoteAddr === '127.0.0.1' ||
+      remoteAddr === '::1' ||
+      remoteAddr === '::ffff:127.0.0.1';
+    if (!isLocal) {
+      res.statusCode = 403;
+      res.end('Forbidden');
+      return;
+    }
+    if (!AUDIT_LOG_TOKEN) {
+      res.statusCode = 404;
+      res.end('Not Found');
+      return;
+    }
+    if (req.method !== 'GET') {
+      res.statusCode = 405;
+      res.setHeader('Allow', 'GET');
+      res.end('Method Not Allowed');
+      return;
+    }
+    const tokenHeader = req.headers['x-audit-token'];
+    const authHeader = req.headers.authorization;
+    const token =
+      typeof tokenHeader === 'string'
+        ? tokenHeader
+        : Array.isArray(tokenHeader)
+          ? tokenHeader[0]
+          : undefined;
+    const bearer =
+      typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+        ? authHeader.slice('Bearer '.length).trim()
+        : undefined;
+    const provided = token || bearer;
+    if (!provided || provided !== AUDIT_LOG_TOKEN) {
+      res.statusCode = 403;
+      res.end('Forbidden');
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(JSON.stringify({ hands: table.state.auditHands ?? [] }));
+    return;
+  }
+  res.statusCode = 404;
+  res.end('Not Found');
+});
+
+const wss = new WebSocketServer({ server });
+server.listen(PORT, () => {
+  console.log(`WebSocket server listening on ws://localhost:${PORT}`);
+});
 
 function send(ws: WebSocket, msg: ServerMessage) {
   ws.send(JSON.stringify(msg));
