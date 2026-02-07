@@ -144,6 +144,7 @@ const Home: NextPage = () => {
   const discardTimerRef = useRef<number | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [name, setName] = useState('');
+  const [nameError, setNameError] = useState<string | null>(null);
   const buyIn = 10000;
   const [state, setState] = useState<any>(null);
   const [status, setStatus] = useState<string>('Disconnected');
@@ -388,25 +389,127 @@ const Home: NextPage = () => {
         padding: '18px 18px 30px',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div>
-          <div style={{ fontSize: 32, letterSpacing: 1 }}>Resolute Hold&apos;em</div>
-          <div style={{ fontSize: 14, opacity: 0.7, fontFamily: '"Inter", sans-serif' }}>Status: {status}</div>
-        </div>
-        {!seated && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="enter player name"
-              style={{ padding: 8, color: '#111827', caretColor: '#111827' }}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr auto 1fr',
+          alignItems: 'center',
+          height: '3.5cm',
+          marginBottom: 18,
+          padding: '10px 14px',
+          borderRadius: 16,
+          background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(17,24,39,0.7))',
+          border: '1px solid rgba(59, 130, 246, 0.35)',
+          boxShadow: '0 18px 40px rgba(0,0,0,0.35)',
+          backdropFilter: 'blur(8px)',
+        }}
+      >
+        <div style={{ gridColumn: 2, position: 'relative', textAlign: 'center' }}>
+          <div style={{ position: 'absolute', left: -180, top: 2, width: 170, height: 110 }}>
+            <img
+              src="/Resolute Hold'em.png"
+              alt=""
+              style={{
+                width: 170,
+                height: 110,
+                objectFit: 'contain',
+                borderRadius: 10,
+                boxShadow: '0 6px 16px rgba(0,0,0,0.25)',
+              }}
             />
-            <button onClick={join} disabled={!name.trim()} style={{ padding: '8px 12px' }}>
-              Join
-            </button>
           </div>
-        )}
+          <div style={{ position: 'absolute', right: -180, top: 2, width: 170, height: 110 }}>
+            <img
+              src="/Resolute Hold'em.png"
+              alt=""
+              style={{
+                width: 170,
+                height: 110,
+                objectFit: 'contain',
+                borderRadius: 10,
+                boxShadow: '0 6px 16px rgba(0,0,0,0.25)',
+              }}
+            />
+          </div>
+          <div>
+            <div
+              style={{
+                marginTop: '1cm',
+                fontSize: 36,
+                fontWeight: 700,
+                letterSpacing: 1.2,
+                lineHeight: 1,
+                fontFamily: '"Zapfino", "Snell Roundhand", "Apple Chancery", "Brush Script MT", cursive',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Resolute Hold&apos;em
+            </div>
+            <div style={{ marginTop: '0.5cm' }}>
+              <div style={{ fontSize: 11, opacity: 0.6, fontFamily: '"Inter", sans-serif' }}>Raise the stakes. Own the table.</div>
+            </div>
+          </div>
+        </div>
       </div>
+      {!seated && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '45vh' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <input
+                value={name}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setName(next);
+                  if (nameError && next.trim()) setNameError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    if (name.trim()) {
+                      setNameError(null);
+                      join();
+                    } else {
+                      setNameError('Please enter a name.');
+                    }
+                    e.currentTarget.blur();
+                  }
+                }}
+                placeholder="enter player name"
+                aria-invalid={Boolean(nameError)}
+                style={{
+                  padding: '12px 14px',
+                  minWidth: 260,
+                  borderRadius: 12,
+                  border: nameError ? '1px solid #fca5a5' : '1px solid rgba(148,163,184,0.5)',
+                  background: 'rgba(226,232,240,0.98)',
+                  color: '#111827',
+                  caretColor: '#111827',
+                  fontFamily: '"Inter", sans-serif',
+                }}
+              />
+              <button
+                onClick={() => {
+                  setNameError(null);
+                  join();
+                }}
+                disabled={!name.trim()}
+                style={{
+                  padding: '12px 18px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(59,130,246,0.7)',
+                  background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                  color: '#eef2ff',
+                  letterSpacing: 0.5,
+                  boxShadow: '0 10px 24px rgba(37,99,235,0.35)',
+                }}
+              >
+                Join
+              </button>
+            </div>
+            {nameError && <div style={{ fontSize: 12, color: '#fca5a5', fontFamily: '"Inter", sans-serif' }}>{nameError}</div>}
+            <div style={{ marginLeft: '-1.6cm', fontSize: 12, opacity: 0.7, fontFamily: '"Inter", sans-serif' }}>Waiting for hand...</div>
+          </div>
+        </div>
+      )}
       {hand ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div
@@ -421,29 +524,12 @@ const Home: NextPage = () => {
               boxShadow: '0 30px 80px rgba(0,0,0,0.45), inset 0 0 40px rgba(0,0,0,0.5)',
             }}
           >
-            <div
-              style={{
-                position: 'absolute',
-                top: 12,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                padding: '6px 12px',
-                borderRadius: 999,
-                background: '#14321e',
-                border: '1px solid #2a6241',
-                color: '#e5e7eb',
-                fontSize: 14,
-                letterSpacing: 1,
-              }}
-            >
-              Stage: {hand.street} | Phase: {hand.phase}
-            </div>
-            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px + 0.6cm))', display: 'flex', gap: '1mm' }}>
+            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px - 0.2cm))', display: 'flex', gap: '1mm' }}>
               {communityCards.map((c, idx) => (
                 <CardView key={idx} card={c} size="xlarge" highlight={isShowdown && winningCards.has(cardKey(c))} />
               ))}
             </div>
-            <div style={{ position: 'absolute', top: '52%', left: '50%', transform: 'translate(-50%, -50%) translateY(-171px) scale(1.2)' }}>
+            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px + 1.8cm)) scale(1.2)' }}>
               <div style={{ width: '2.8cm', height: '0.8cm', padding: 0, borderRadius: 999, background: '#0f172a', border: '1px solid #2c3e66', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
                 <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '0.04mm', fontSize: 13, lineHeight: 1.1 }}>
                   <span style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'translateY(-0.8mm)' }} aria-hidden="true">
@@ -749,9 +835,9 @@ const Home: NextPage = () => {
             </div>
           )}
         </div>
-      ) : (
-        <div style={{ fontFamily: '"Inter", sans-serif' }}>{seated ? 'Waiting for next hand...' : 'Waiting for hand...'}</div>
-      )}
+      ) : seated ? (
+        <div style={{ fontFamily: '"Inter", sans-serif' }}>Waiting for next hand...</div>
+      ) : null}
     </div>
   );
 };
@@ -837,7 +923,7 @@ const CardView = ({
     small: { width: 28, height: 40, fontSize: 14, corner: 9, center: 16, pad: 2 },
     medium: { width: 44, height: 62, fontSize: 18, corner: 11, center: 22, pad: 3 },
     large: { width: 66, height: 92, fontSize: 24, corner: 12, center: 28, pad: 3 },
-    xlarge: { width: 66, height: 93, fontSize: 27, corner: 17, center: 33, pad: 4 },
+    xlarge: { width: 72, height: 102, fontSize: 29, corner: 18, center: 36, pad: 4 },
   };
   const sizing = sizeMap[size];
   const rankLabel = cardRankLabel(card.rank);

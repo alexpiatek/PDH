@@ -3,7 +3,7 @@ import { PokerTable } from '../src/table';
 const rng = () => 0.1;
 describe('betting rules', () => {
     it('short all-in raise does not reopen betting', () => {
-        const table = new PokerTable('t', { smallBlind: 50, bigBlind: 100 });
+        const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
         table.seatPlayer(0, { id: 'p0', name: 'UTG', stack: 1000 });
         table.seatPlayer(1, { id: 'p1', name: 'SB', stack: 250 }); // can only raise short
         table.seatPlayer(2, { id: 'p2', name: 'BB', stack: 1000 });
