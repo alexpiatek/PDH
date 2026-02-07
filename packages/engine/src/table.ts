@@ -18,8 +18,8 @@ import {
 } from './types';
 
 const DEFAULT_CONFIG: TableConfig = {
-  smallBlind: 50,
-  bigBlind: 100,
+  smallBlind: 400,
+  bigBlind: 800,
   discardTimeoutMs: null,
 };
 
