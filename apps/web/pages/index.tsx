@@ -438,15 +438,15 @@ const Home: NextPage = () => {
             >
               Stage: {hand.street} | Phase: {hand.phase}
             </div>
-            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(-19px)', display: 'flex', gap: '1mm' }}>
+            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px + 0.6cm))', display: 'flex', gap: '1mm' }}>
               {communityCards.map((c, idx) => (
                 <CardView key={idx} card={c} size="xlarge" highlight={isShowdown && winningCards.has(cardKey(c))} />
               ))}
             </div>
             <div style={{ position: 'absolute', top: '52%', left: '50%', transform: 'translate(-50%, -50%) translateY(-171px) scale(1.2)' }}>
-              <div style={{ padding: '6px 14px', borderRadius: 999, background: '#0f172a', border: '1px solid #2c3e66' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 24, height: 24, display: 'inline-block' }} aria-hidden="true">
+              <div style={{ width: '2.8cm', height: '0.8cm', padding: 0, borderRadius: 999, background: '#0f172a', border: '1px solid #2c3e66', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+                <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '0.04mm', fontSize: 13, lineHeight: 1.1 }}>
+                  <span style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'translateY(-0.8mm)' }} aria-hidden="true">
                     <svg viewBox="0 0 48 26" width="24" height="24" role="img" focusable="false" aria-hidden="true">
                       <g>
                         <ellipse cx="12" cy="6" rx="8" ry="3" fill="#b91c1c" stroke="#fee2e2" strokeWidth="1" />
@@ -473,7 +473,20 @@ const Home: NextPage = () => {
                       </g>
                     </svg>
                   </span>
-                  <span>{potAmount}</span>
+                  <span
+                    style={{
+                      marginTop: '-2.2mm',
+                      minWidth: 24,
+                      maxWidth: '2.2cm',
+                      fontSize: 12,
+                      textAlign: 'center',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {potAmount}
+                  </span>
                 </span>
               </div>
             </div>
