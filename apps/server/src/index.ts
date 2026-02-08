@@ -219,10 +219,11 @@ wss.on('connection', (ws) => {
 });
 
 setInterval(() => {
+  const advanced = table.advancePendingPhase();
   const before = JSON.stringify(table.state.hand?.discardPending ?? []);
   table.autoDiscard();
   const after = JSON.stringify(table.state.hand?.discardPending ?? []);
-  if (before !== after) {
+  if (advanced || before !== after) {
     broadcast();
   }
 }, 500);

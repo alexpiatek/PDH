@@ -55,6 +55,7 @@ export interface HandState {
   raisesThisStreet: number;
   actionOnSeat: number;
   lastAggressorSeat: number | null;
+  pendingNextPhaseAt?: number | null;
   discardPending: string[];
   discardDeadline: number | null;
   showdownWinners: ShowdownWinner[];
