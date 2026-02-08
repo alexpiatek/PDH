@@ -512,6 +512,10 @@ const Home: NextPage = () => {
   const discardPending = hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id);
   const toCall = hand && you ? Math.max(0, hand.currentBet - you.betThisStreet) : 0;
   const isShowdown = hand?.phase === 'showdown';
+  const hasContestedShowdown = Boolean(
+    hand &&
+      hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out').length > 1,
+  );
   const raiseCapReached = Boolean(hand && hand.raisesThisStreet >= 2);
   const allInTotal = you ? you.stack + you.betThisStreet : 0;
   const allInWouldRaise = Boolean(hand && hand.currentBet > 0 && allInTotal > hand.currentBet);
@@ -668,7 +672,7 @@ const Home: NextPage = () => {
           position: 'absolute',
           top: '50%',
           left: '100%',
-          transform: 'translate(8px, -50%)',
+          transform: 'translate(calc(8px - 0.3cm), calc(-50% - 1cm))',
           padding: '4px 8px',
           borderRadius: 8,
           background: tone.background,
@@ -1040,10 +1044,29 @@ const Home: NextPage = () => {
                   position: 'absolute',
                   top: '40%',
                   left: '50%',
-                  transform: 'translate(-50%, -50%) translateY(calc(-19px - 0.5cm - 2cm))',
+                  transform: 'translate(-50%, -50%) translateY(calc(-19px + 1.7cm)) translateX(4cm)',
                 }}
               >
-                <div style={{ padding: '6px 14px', borderRadius: 999, background: '#123b2f', border: '1px solid #22c55e', color: '#d1fae5' }}>
+                <div
+                  style={{
+                    width: '3.22cm',
+                    height: '0.92cm',
+                    padding: '0 6px',
+                    borderRadius: 999,
+                    background: '#123b2f',
+                    border: '1px solid #22c55e',
+                    color: '#d1fae5',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    fontSize: 11,
+                    lineHeight: 1.1,
+                    fontFamily: '"Inter", sans-serif',
+                    overflow: 'hidden',
+                    whiteSpace: 'normal',
+                  }}
+                >
                   {showdownSummary}
                 </div>
               </div>
@@ -1079,54 +1102,62 @@ const Home: NextPage = () => {
                   }}
                 >
                   {!isYou && (
-                    <div style={{ position: 'relative', display: 'inline-block' }}>
-                      {roleChips.length > 0 && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: -8,
-                            right: -8,
-                            display: 'flex',
-                            gap: 4,
-                            transform: 'translate(-0.4cm, -0.5cm)',
-                          }}
-                        >
-                          {roleChips.map((chip, chipIdx) => (
-                            <RoleChip key={`${chip.label}-${chipIdx}`} label={chip.label} tone={chip.tone} />
-                          ))}
-                        </div>
-                      )}
-                      <div
-                        style={{
-                          position: 'relative',
-                          padding: '6px 10px 6px 60px',
-                          borderRadius: 10,
-                          background: infoDimmed ? 'rgba(10, 16, 30, 0.6)' : 'rgba(10, 16, 30, 0.85)',
-                          border: winner ? '2px solid #22c55e' : '1px solid #2c3e66',
-                          boxShadow: winner ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
-                          opacity: infoDimmed ? 0.7 : 1,
-                          textAlign: 'center',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <div style={{ position: 'absolute', top: 'calc(6px - 0.15cm)', left: 'calc(8px - 0.2cm)', overflow: 'hidden', ...avatarStyle }} />
-                        <div style={{ fontWeight: 700, fontFamily: '"Inter", sans-serif', fontSize: 12 }}>{p.name}</div>
-                        {p.id !== playerId && (
-                          <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                              <StackChipsIcon size={14} />
-                              {p.stack}
-                            </span>
+                    <div style={{ display: 'inline-block' }}>
+                      <div style={{ position: 'relative', display: 'inline-block' }}>
+                        {roleChips.length > 0 && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: -8,
+                              right: -8,
+                              display: 'flex',
+                              gap: 4,
+                              transform: 'translate(-0.4cm, -0.5cm)',
+                            }}
+                          >
+                            {roleChips.map((chip, chipIdx) => (
+                              <RoleChip key={`${chip.label}-${chipIdx}`} label={chip.label} tone={chip.tone} />
+                            ))}
                           </div>
                         )}
+                        <div
+                          style={{
+                            position: 'relative',
+                            padding: '6px 10px 6px 60px',
+                            borderRadius: 10,
+                            background: infoDimmed ? 'rgba(10, 16, 30, 0.6)' : 'rgba(10, 16, 30, 0.85)',
+                            border: winner ? '2px solid #22c55e' : '1px solid #2c3e66',
+                            boxShadow: winner ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
+                            opacity: infoDimmed ? 0.7 : 1,
+                            textAlign: 'center',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <div style={{ position: 'absolute', top: 'calc(6px - 0.15cm)', left: 'calc(8px - 0.2cm)', overflow: 'hidden', ...avatarStyle }} />
+                          <div style={{ fontWeight: 700, fontFamily: '"Inter", sans-serif', fontSize: 12 }}>{p.name}</div>
+                          {p.id !== playerId && (
+                            <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                <StackChipsIcon size={14} />
+                                {p.stack}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        {renderActionBadge(actionByPlayerId.get(p.id))}
                       </div>
                       <div style={{ marginTop: 4, display: 'flex', justifyContent: 'center', marginLeft: '1cm' }}>
                         {[0, 1].map((cardIdx) => {
                           const rot = cardIdx === 0 ? -18 : 16;
                           const margin = cardIdx === 0 ? -24 : 0;
-                          const reveal = isShowdown && p.holeCards.length >= 2;
+                          const reveal =
+                            isShowdown &&
+                            hasContestedShowdown &&
+                            p.status !== 'folded' &&
+                            p.status !== 'out' &&
+                            p.holeCards.length >= 2;
                           const card = p.holeCards[cardIdx];
                           return (
                             <div
@@ -1160,7 +1191,6 @@ const Home: NextPage = () => {
                           );
                         })}
                       </div>
-                      {renderActionBadge(actionByPlayerId.get(p.id))}
                     </div>
                   )}
                 </div>

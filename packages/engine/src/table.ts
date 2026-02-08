@@ -731,6 +731,9 @@ export class PokerTable {
 
   getPublicState(forPlayerId?: string) {
     const hand = this.state.hand;
+    const contestedShowdown =
+      Boolean(hand && hand.phase === 'showdown') &&
+      (hand?.players.filter((p) => p.status !== 'folded' && p.status !== 'out').length ?? 0) > 1;
     return {
       id: this.state.id,
       seats: this.state.seats,
@@ -743,7 +746,7 @@ export class PokerTable {
             players: hand.players.map((p) => ({
               ...p,
               holeCards:
-                hand.phase === 'showdown' || (forPlayerId && p.id === forPlayerId)
+                (hand.phase === 'showdown' && contestedShowdown) || (forPlayerId && p.id === forPlayerId)
                   ? p.holeCards
                   : p.holeCards.map(() => ({ rank: 'X', suit: 'X' } as unknown as Card)),
             })),
