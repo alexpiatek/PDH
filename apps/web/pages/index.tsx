@@ -836,68 +836,76 @@ const Home: NextPage = () => {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '1fr auto 1fr',
+          gridTemplateColumns: 'auto 1fr auto',
           alignItems: 'center',
+          columnGap: 'clamp(8px, 2vw, 24px)',
           height: '3.5cm',
           marginBottom: 18,
           padding: '10px 14px',
-          borderRadius: 16,
-          background: 'linear-gradient(135deg, rgba(15,23,42,0.9), rgba(17,24,39,0.7))',
-          border: '1px solid rgba(59, 130, 246, 0.35)',
-          boxShadow: '0 18px 40px rgba(0,0,0,0.35)',
-          backdropFilter: 'blur(8px)',
+          borderRadius: 0,
+          background: 'transparent',
+          border: 'none',
+          boxShadow: 'none',
+          backdropFilter: 'none',
         }}
       >
-        <div style={{ gridColumn: 2, position: 'relative', textAlign: 'center' }}>
-          <div style={{ position: 'absolute', left: -180, top: 2, width: 170, height: 110 }}>
-            <img
-              src="/Resolute Hold'em.png"
-              alt=""
-              style={{
-                width: 170,
-                height: 110,
-                objectFit: 'contain',
-                borderRadius: 10,
-                boxShadow: '0 6px 16px rgba(0,0,0,0.25)',
-              }}
-            />
+        <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
+          <img
+            src="/Resolute Hold'em.png"
+            alt=""
+            style={{
+              width: 'clamp(150px, 22vw, 210px)',
+              height: 'clamp(100px, 15vw, 140px)',
+              objectFit: 'contain',
+              borderRadius: 10,
+              boxShadow: '0 6px 16px rgba(0,0,0,0.25)',
+            }}
+          />
+        </div>
+        <div style={{ textAlign: 'center', maxWidth: 'min(70vw, 520px)', justifySelf: 'center' }}>
+          <div
+            style={{
+              marginTop: '1cm',
+              fontSize: 'clamp(72px, 9vw, 126px)',
+              fontWeight: 1000,
+              letterSpacing: 1.2,
+              lineHeight: 1,
+              fontFamily: '"Savoye LET", "Snell Roundhand", "Apple Chancery", "Brush Script MT", cursive',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Resolute Hold&apos;em
           </div>
-          <div style={{ position: 'absolute', right: -180, top: 2, width: 170, height: 110 }}>
-            <img
-              src="/Resolute Hold'em.png"
-              alt=""
-              style={{
-                width: 170,
-                height: 110,
-                objectFit: 'contain',
-                borderRadius: 10,
-                boxShadow: '0 6px 16px rgba(0,0,0,0.25)',
-              }}
-            />
+          <div style={{ marginTop: '-0.2cm' }}>
+            <div style={{ fontSize: 16, opacity: 0.6, fontFamily: '"Inter", sans-serif' }}>Raise the stakes. Own the table.</div>
           </div>
-          <div>
-            <div
-              style={{
-                marginTop: '1cm',
-                fontSize: 80,
-                fontWeight: 900,
-                letterSpacing: 1.2,
-                lineHeight: 1,
-                fontFamily: '"Savoye LET", "Snell Roundhand", "Apple Chancery", "Brush Script MT", cursive',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Resolute Hold&apos;em
-            </div>
-            <div style={{ marginTop: '-0.2cm' }}>
-              <div style={{ fontSize: 16, opacity: 0.6, fontFamily: '"Inter", sans-serif' }}>Raise the stakes. Own the table.</div>
-            </div>
-          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+          <img
+            src="/Resolute Hold'em.png"
+            alt=""
+            style={{
+              width: 'clamp(150px, 22vw, 210px)',
+              height: 'clamp(100px, 15vw, 140px)',
+              objectFit: 'contain',
+              borderRadius: 10,
+              boxShadow: '0 6px 16px rgba(0,0,0,0.25)',
+            }}
+          />
         </div>
       </div>
       {!seated && (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '45vh', transform: 'translateY(-4cm)' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            minHeight: 'calc(100vh - 3.5cm - 60px)',
+            paddingTop: 'clamp(0px, 2vh, 1cm)',
+            paddingBottom: 'clamp(0px, 6vh, 2cm)',
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, transform: 'translateY(-7cm)' }}>
             <div style={{ display: 'flex', gap: 10 }}>
               <input
                 value={name}
