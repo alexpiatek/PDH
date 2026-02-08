@@ -133,6 +133,12 @@ export class PokerTable {
     logPush(this.state.log, `${player.name} sat in seat ${seat}`);
   }
 
+  setSittingOut(playerId: string, sittingOut: boolean) {
+    const seat = this.state.seats.find((s) => s?.id === playerId);
+    if (!seat) return;
+    seat.sittingOut = sittingOut;
+  }
+
   removePlayer(seat: number) {
     const existing = this.state.seats[seat];
     if (existing) {
@@ -196,6 +202,40 @@ export class PokerTable {
     this.state.hand = hand;
     this.state.buttonSeat = button;
     logPush(hand.log, 'Hand started');
+  }
+
+  handleDisconnect(playerId: string) {
+    this.setSittingOut(playerId, true);
+    const hand = this.state.hand;
+    if (!hand) return;
+    const player = hand.players.find((p) => p.id === playerId);
+    if (!player || player.status !== 'active') return;
+    player.status = 'folded';
+    player.hasActed = true;
+    logPush(hand.log, `${player.name} disconnected`);
+    logPush(hand.log, `${player.name} folded`);
+
+    const remaining = hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
+    if (remaining.length === 1) {
+      this.finishHand();
+      return;
+    }
+
+    if (hand.phase === 'betting') {
+      if (this.isBettingRoundComplete(hand)) {
+        this.queueBettingRoundAdvance(hand);
+      } else if (hand.actionOnSeat === player.seat) {
+        hand.actionOnSeat = this.nextToAct(hand);
+      }
+    } else if (hand.phase === 'discard') {
+      if (hand.discardPending.includes(player.id)) {
+        hand.discardPending = hand.discardPending.filter((id) => id !== player.id);
+        logPush(hand.log, `${player.name} auto-discarded due to disconnect`);
+      }
+      if (hand.discardPending.length === 0) {
+        this.completeDiscardPhase();
+      }
+    }
   }
 
   firstToActPreflop(hand: HandState): number {

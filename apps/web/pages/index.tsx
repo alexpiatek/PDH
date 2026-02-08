@@ -301,6 +301,8 @@ const CardBack = ({ size = 'medium', tone = 'navy' }: { size?: 'small' | 'medium
 
 const Home: NextPage = () => {
   const connectionRef = useRef<{ send: (msg: ClientMessage) => void; close: () => void } | null>(null);
+  const legacySocketRef = useRef<WebSocket | null>(null);
+  const pendingMessagesRef = useRef<ClientMessage[]>([]);
   const discardTimerRef = useRef<number | null>(null);
   const holeDealTimerRef = useRef<number | null>(null);
   const tableRef = useRef<HTMLDivElement | null>(null);
@@ -338,11 +340,25 @@ const Home: NextPage = () => {
       }
     };
 
+    const flushPendingMessages = () => {
+      if (!connectionRef.current) return;
+      const pending = pendingMessagesRef.current;
+      if (!pending.length) return;
+      pendingMessagesRef.current = [];
+      for (const msg of pending) {
+        connectionRef.current?.send(msg);
+      }
+    };
+
     const connectLegacyWebSocket = () => {
       const ws = new WebSocket(WS_URL);
+      legacySocketRef.current = ws;
       connectionRef.current = {
         send: (msg) => {
-          if (ws.readyState !== WebSocket.OPEN) return;
+          if (ws.readyState !== WebSocket.OPEN) {
+            pendingMessagesRef.current.push(msg);
+            return;
+          }
           ws.send(JSON.stringify(msg));
         },
         close: () => {
@@ -352,6 +368,7 @@ const Home: NextPage = () => {
       ws.onopen = () => {
         if (disposed) return;
         setStatus('Connected (legacy)');
+        flushPendingMessages();
         if (existing) {
           ws.send(JSON.stringify({ type: 'reconnect', playerId: existing }));
         } else {
@@ -361,6 +378,7 @@ const Home: NextPage = () => {
       ws.onclose = () => {
         if (disposed) return;
         setStatus('Disconnected');
+        legacySocketRef.current = null;
       };
       ws.onmessage = (ev) => {
         if (disposed) return;
@@ -466,6 +484,7 @@ const Home: NextPage = () => {
       };
 
       setStatus('Connected (nakama)');
+      flushPendingMessages();
       if (existing) {
         connectionRef.current.send({ type: 'reconnect', playerId: existing });
       } else {
@@ -487,6 +506,7 @@ const Home: NextPage = () => {
       disposed = true;
       connectionRef.current?.close();
       connectionRef.current = null;
+      legacySocketRef.current = null;
     };
   }, []);
 
@@ -632,7 +652,15 @@ const Home: NextPage = () => {
   }, [isMyTurn, hand?.handId, hand?.currentBet, hand?.minRaise, suggestedRaiseTo]);
 
   const send = (msg: ClientMessage) => {
-    connectionRef.current?.send(msg);
+    if (!connectionRef.current) {
+      pendingMessagesRef.current.push(msg);
+      return;
+    }
+    if (legacySocketRef.current && legacySocketRef.current.readyState !== WebSocket.OPEN) {
+      pendingMessagesRef.current.push(msg);
+      return;
+    }
+    connectionRef.current.send(msg);
   };
 
   const join = () => {
@@ -930,6 +958,18 @@ const Home: NextPage = () => {
             >
               Waiting for hand...
             </div>
+            {status && !status.startsWith('Connected') && (
+              <div
+                style={{
+                  fontSize: 12,
+                  fontFamily: '"Inter", sans-serif',
+                  color: status.toLowerCase().includes('error') || status.toLowerCase().includes('failed') ? '#fca5a5' : '#e2e8f0',
+                  textAlign: 'center',
+                }}
+              >
+                {status}
+              </div>
+            )}
           </div>
         </div>
       )}
