@@ -46,6 +46,8 @@ const MINIMAL_DECK_PALETTE = {
   accent: '#cbd5e1',
 };
 const USE_CUSTOM_MINIMAL_DECK = true;
+const BASE_TABLE_WIDTH = 780;
+const BASE_TABLE_HEIGHT = 410;
 
 type Pip = { x: number; y: number; size?: number };
 
@@ -188,13 +190,54 @@ const parseActionMessage = (message: string): ActionBadge | null => {
   return null;
 };
 
+const CardBack = ({ size = 'medium', tone = 'navy' }: { size?: 'small' | 'medium'; tone?: 'navy' | 'red' }) => {
+  const sizing = size === 'small'
+    ? { width: 30, height: 44, radius: 6, inset: 3 }
+    : { width: 36, height: 52, radius: 7, inset: 4 };
+  const palette = tone === 'red'
+    ? { base: '#b91c1c', dark: '#7f1d1d', border: '#f8fafc', pattern: 'rgba(254,226,226,0.35)' }
+    : { base: '#0f172a', dark: '#1f2937', border: '#f8fafc', pattern: 'rgba(148,163,184,0.25)' };
+  return (
+    <div
+      style={{
+        width: sizing.width,
+        height: sizing.height,
+        borderRadius: sizing.radius,
+        background: 'transparent',
+        border: 'none',
+        boxShadow: 'none',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          inset: sizing.inset,
+          borderRadius: sizing.radius - 2,
+          border: 'none',
+          background:
+            `radial-gradient(circle at 50% 50%, rgba(255,255,255,0.16), rgba(0,0,0,0) 55%), ` +
+            `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.12), rgba(0,0,0,0) 40%), ` +
+            `radial-gradient(circle at 70% 70%, rgba(255,255,255,0.1), rgba(0,0,0,0) 42%), ` +
+            `repeating-linear-gradient(45deg, ${palette.pattern} 0 1px, rgba(0,0,0,0.2) 1px 3px), ` +
+            `repeating-linear-gradient(-45deg, ${palette.pattern} 0 1px, rgba(0,0,0,0.18) 1px 3px), ` +
+            `linear-gradient(135deg, ${palette.base}, ${palette.dark})`,
+        }}
+      />
+    </div>
+  );
+};
+
 const Home: NextPage = () => {
   const wsRef = useRef<WebSocket | null>(null);
   const discardTimerRef = useRef<number | null>(null);
   const holeDealTimerRef = useRef<number | null>(null);
+  const tableRef = useRef<HTMLDivElement | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
+  const [tableScale, setTableScale] = useState(1);
   const buyIn = 10000;
   const [state, setState] = useState<any>(null);
   const [status, setStatus] = useState<string>('Disconnected');
@@ -337,6 +380,25 @@ const Home: NextPage = () => {
       }
     };
   }, [hand?.handId]);
+
+  useEffect(() => {
+    const el = tableRef.current;
+    if (!el) return;
+    const updateScale = () => {
+      const rect = el.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const nextScale = Math.min(rect.width / BASE_TABLE_WIDTH, rect.height / BASE_TABLE_HEIGHT);
+      setTableScale((prev) => (Math.abs(prev - nextScale) < 0.001 ? prev : nextScale));
+    };
+    updateScale();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateScale);
+      return () => window.removeEventListener('resize', updateScale);
+    }
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -493,7 +555,8 @@ const Home: NextPage = () => {
     return map;
   }, [hand, state?.seats]);
   const infoAvatarSize = 36;
-  const playerInfoOffsetY = -30;
+  const playerInfoOffsetY = -30 + 38;
+  const heroAreaOffsetPx = 38 - 33;
   const youAvatarStyle = useMemo(() => {
     if (!you) return null;
     const youIsWinner = winnersById.has(you.id);
@@ -513,7 +576,12 @@ const Home: NextPage = () => {
         fontFamily: '"Bebas Neue", "Oswald", "Trebuchet MS", sans-serif',
         color: '#e5e7eb',
         minHeight: '100vh',
-        background: 'radial-gradient(1200px 600px at 50% -10%, #1b3a66 0%, #0b1223 55%, #05070f 100%)',
+        background:
+          'linear-gradient(rgba(8, 6, 10, 0.65), rgba(8, 6, 10, 0.7)), ' +
+          'url(\"/Casino floor background.png\")',
+        backgroundPosition: 'center, center',
+        backgroundRepeat: 'no-repeat, no-repeat',
+        backgroundSize: 'cover, cover',
         padding: '18px 18px 30px',
       }}
     >
@@ -573,7 +641,7 @@ const Home: NextPage = () => {
             >
               Resolute Hold&apos;em
             </div>
-            <div style={{ marginTop: '-0.5cm' }}>
+            <div style={{ marginTop: '-0.2cm' }}>
               <div style={{ fontSize: 16, opacity: 0.6, fontFamily: '"Inter", sans-serif' }}>Raise the stakes. Own the table.</div>
             </div>
           </div>
@@ -634,24 +702,48 @@ const Home: NextPage = () => {
               </button>
             </div>
             {nameError && <div style={{ fontSize: 12, color: '#fca5a5', fontFamily: '"Inter", sans-serif' }}>{nameError}</div>}
-            <div style={{ marginLeft: '-1.6cm', fontSize: 12, opacity: 0.7, fontFamily: '"Inter", sans-serif' }}>Waiting for hand...</div>
+            <div
+              style={{
+                fontSize: 12,
+                opacity: 0.7,
+                fontFamily: '"Inter", sans-serif',
+                alignSelf: 'center',
+                textAlign: 'center',
+                marginLeft: '-1.4cm',
+              }}
+            >
+              Waiting for hand...
+            </div>
           </div>
         </div>
       )}
       {hand ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div
+            ref={tableRef}
             style={{
               position: 'relative',
-              width: 'min(1200px, 96vw)',
-              height: 'min(62vh, 620px)',
+              width: 780,
+              height: 410,
               margin: '0 auto',
+              marginTop: '1cm',
               borderRadius: 999,
               background: 'radial-gradient(circle at 50% 45%, #1f5a2f 0%, #184524 50%, #11331a 100%)',
               border: '10px solid #2d2a40',
               boxShadow: '0 30px 80px rgba(0,0,0,0.45), inset 0 0 40px rgba(0,0,0,0.5)',
             }}
           >
+            <div
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                width: BASE_TABLE_WIDTH,
+                height: BASE_TABLE_HEIGHT,
+                transform: `translate(-50%, -50%) scale(${tableScale})`,
+                transformOrigin: 'center',
+              }}
+            >
             <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px - 0.4cm))', display: 'flex', gap: '1mm' }}>
               {communityCards.map((c, idx) => (
                 <div
@@ -668,7 +760,7 @@ const Home: NextPage = () => {
                 </div>
               ))}
             </div>
-            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px - 4.2cm))' }}>
+            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px - 3.2cm))' }}>
               <img
                 src="/Casino dealer.png"
                 alt="Dealer"
@@ -683,10 +775,10 @@ const Home: NextPage = () => {
                 }}
               />
             </div>
-            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px + 1.8cm)) scale(1.2)' }}>
-              <div style={{ width: '2.8cm', height: '0.8cm', padding: 0, borderRadius: 999, background: '#0f172a', border: '1px solid #2c3e66', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-                <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '0.04mm', fontSize: 13, lineHeight: 1.1 }}>
-                  <span style={{ width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'translateY(-0.8mm)' }} aria-hidden="true">
+            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px + 1.8cm)) translateX(-3.5cm)' }}>
+              <div style={{ width: '3.22cm', height: '0.92cm', padding: 0, borderRadius: 999, background: '#0f172a', border: '1px solid #2c3e66', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+                <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '0.04mm', fontSize: 15, lineHeight: 1.1 }}>
+                  <span style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'translateY(-0.8mm)' }} aria-hidden="true">
                     <svg viewBox="0 0 48 26" width="24" height="24" role="img" focusable="false" aria-hidden="true">
                       <g>
                         <ellipse cx="12" cy="6" rx="8" ry="3" fill="#b91c1c" stroke="#fee2e2" strokeWidth="1" />
@@ -801,11 +893,14 @@ const Home: NextPage = () => {
                           border: winner ? '2px solid #22c55e' : '1px solid #2c3e66',
                           boxShadow: winner ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
                           opacity: infoDimmed ? 0.7 : 1,
+                          textAlign: 'center',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
                         }}
                       >
-                        <div style={{ position: 'absolute', top: 6, left: 8, ...avatarStyle }} />
+                        <div style={{ position: 'absolute', top: 'calc(6px - 0.15cm)', left: 'calc(8px - 0.2cm)', overflow: 'hidden', ...avatarStyle }} />
                         <div style={{ fontWeight: 700, fontFamily: '"Inter", sans-serif', fontSize: 12 }}>{p.name}</div>
-                        <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>{p.status}</div>
                         {p.id !== playerId && (
                           <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -814,6 +909,44 @@ const Home: NextPage = () => {
                             </span>
                           </div>
                         )}
+                      </div>
+                      <div style={{ marginTop: 4, display: 'flex', justifyContent: 'center', marginLeft: '1cm' }}>
+                        {[0, 1].map((cardIdx) => {
+                          const rot = cardIdx === 0 ? -18 : 16;
+                          const margin = cardIdx === 0 ? -24 : 0;
+                          const reveal = isShowdown && p.holeCards.length >= 2;
+                          const card = p.holeCards[cardIdx];
+                          return (
+                            <div
+                              key={`${p.id}-down-${cardIdx}`}
+                              style={{
+                                transform: `rotate(${rot}deg)`,
+                                marginRight: margin,
+                                perspective: 600,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  position: 'relative',
+                                  width: 44,
+                                  height: 62,
+                                  transformStyle: 'preserve-3d',
+                                  transition: 'transform 0.6s ease',
+                                  transform: reveal ? 'rotateY(180deg)' : 'rotateY(0deg)',
+                                }}
+                              >
+                                <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden' }}>
+                                  <CardBack size="medium" tone="red" />
+                                </div>
+                                <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
+                                  {card && (
+                                    <CardView card={card} size="medium" highlight={winningCards.has(cardKey(card))} />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                       {renderActionBadge(actionByPlayerId.get(p.id))}
                     </div>
@@ -835,7 +968,7 @@ const Home: NextPage = () => {
                 <div
                   style={{
                     position: 'absolute',
-                    bottom: 142,
+                    bottom: 142 - heroAreaOffsetPx,
                     left: '50%',
                     transform: 'translateX(-50%)',
                     display: 'flex',
@@ -868,14 +1001,16 @@ const Home: NextPage = () => {
                         background: youInfoDimmed ? 'rgba(10, 16, 30, 0.6)' : 'rgba(10, 16, 30, 0.85)',
                         border: winnersById.has(you.id) ? '2px solid #22c55e' : '1px solid #2c3e66',
                         boxShadow: winnersById.has(you.id) ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
-                        textAlign: 'left',
+                        textAlign: 'center',
                         opacity: youInfoDimmed ? 0.7 : 1,
                         position: 'relative',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
                       }}
                     >
-                      {youAvatarStyle && <div style={{ position: 'absolute', top: 6, left: 8, ...youAvatarStyle }} />}
+                      {youAvatarStyle && <div style={{ position: 'absolute', top: 'calc(6px - 0.15cm)', left: 'calc(8px - 0.2cm)', overflow: 'hidden', ...youAvatarStyle }} />}
                       <div style={{ fontWeight: 700, fontFamily: '"Inter", sans-serif', fontSize: 12 }}>{you.name}</div>
-                      <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>{you.status}</div>
                       <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                           <StackChipsIcon size={14} />
@@ -889,7 +1024,7 @@ const Home: NextPage = () => {
                 <div
                   style={{
                     position: 'absolute',
-                    bottom: 21,
+                    bottom: 21 - heroAreaOffsetPx,
                     left: '50%',
                     transform: 'translateX(-50%)',
                     display: 'flex',
@@ -943,7 +1078,7 @@ const Home: NextPage = () => {
                 </div>
               </>
             )}
-            <div style={{ position: 'absolute', bottom: 'calc(-218px + 1.3cm)', left: -9.4, width: 300, background: 'rgba(9, 12, 20, 0.8)', border: '1px solid #27324e', borderRadius: 10, padding: 8 }}>
+            <div style={{ position: 'absolute', bottom: 'calc(-218px + 1.2cm)', left: 'calc(-9.4px + 0.3cm)', width: 300, background: 'rgba(9, 12, 20, 0.8)', border: '1px solid #27324e', borderRadius: 10, padding: 8 }}>
               <div style={{ maxHeight: 80, overflowY: 'auto' }}>
                 {(state?.log ?? []).slice(-5).map((l: any, idx: number) => (
                   <div key={idx} style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, fontFamily: '"Inter", sans-serif' }}>
@@ -951,6 +1086,7 @@ const Home: NextPage = () => {
                   </div>
                 ))}
               </div>
+            </div>
             </div>
           </div>
           {you && (
@@ -1010,6 +1146,12 @@ const Home: NextPage = () => {
         <div style={{ fontFamily: '"Inter", sans-serif' }}>Waiting for next hand...</div>
       ) : null}
       <style jsx global>{`
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+          background: #090406;
+        }
         @keyframes deal-card {
           0% {
             opacity: 0;
