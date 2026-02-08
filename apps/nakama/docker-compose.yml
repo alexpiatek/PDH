@@ -2,15 +2,21 @@ services:
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_DB: nakama
-      POSTGRES_USER: nakama
-      POSTGRES_PASSWORD: localdb
+      POSTGRES_DB: ${POSTGRES_DB:-nakama}
+      POSTGRES_USER: ${POSTGRES_USER:-nakama}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localdb}
     volumes:
       - nakama-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nakama} -d ${POSTGRES_DB:-nakama}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
   nakama:
     image: heroiclabs/nakama:3.17.0
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - "7350:7350"
       - "7351:7351"
@@ -18,8 +24,9 @@ services:
       - ./nakama.yml:/nakama/data/nakama.yml:ro
       - ./dist:/nakama/data/modules
     command:
-      - /nakama/nakama
-      - "--config=/nakama/data/nakama.yml"
-      - "--database.address=nakama:localdb@postgres:5432/nakama?sslmode=disable"
+      - --config
+      - /nakama/data/nakama.yml
+      - --database.address
+      - ${NAKAMA_DATABASE_ADDRESS:-nakama:localdb@postgres:5432/nakama?sslmode=disable}
 volumes:
   nakama-postgres:

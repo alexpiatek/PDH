@@ -1,0 +1,13 @@
+services:
+  nakama:
+    image: heroiclabs/nakama:3.17.0
+    ports:
+      - "7350:7350"
+      - "7351:7351"
+    volumes:
+      - ./nakama.yml:/nakama/data/nakama.yml:ro
+      - ./dist:/nakama/data/modules
+    command:
+      - "--name=${NAKAMA_NODE_NAME:-pdh-nakama}"
+      - "--config=/nakama/data/nakama.yml"
+      - "--database.address=${NAKAMA_DATABASE_ADDRESS:?Set NAKAMA_DATABASE_ADDRESS to your PostgreSQL DSN}"

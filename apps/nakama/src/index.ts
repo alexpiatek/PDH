@@ -144,6 +144,11 @@ const InitModule: nkruntime.InitModule = (ctx, logger, nk, initializer) => {
               shouldBroadcast = true;
               break;
             }
+            case 'nextHand': {
+              state.table.advanceToNextHand();
+              shouldBroadcast = true;
+              break;
+            }
             case 'requestState': {
               const publicState = state.table.getPublicState(presence.userId);
               sendToPresence(dispatcher, presence, {

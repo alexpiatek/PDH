@@ -1,9 +1,75 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NextPage } from 'next';
+import { Client as NakamaClient } from '@heroiclabs/nakama-js';
+import type { Match, Session, Socket as NakamaSocket } from '@heroiclabs/nakama-js';
 import { Card, HandState, PlayerInHand } from '@pdh/engine';
 import { ClientMessage, ServerMessage } from '../server-types';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000';
+const NETWORK_BACKEND = (
+  process.env.NEXT_PUBLIC_NETWORK_BACKEND ||
+  (process.env.NEXT_PUBLIC_NAKAMA_HOST ? 'nakama' : 'legacy')
+).toLowerCase();
+const NAKAMA_HOST = process.env.NEXT_PUBLIC_NAKAMA_HOST || '127.0.0.1';
+const NAKAMA_PORT = process.env.NEXT_PUBLIC_NAKAMA_PORT || '7350';
+const NAKAMA_SERVER_KEY = process.env.NEXT_PUBLIC_NAKAMA_SERVER_KEY || 'defaultkey';
+const NAKAMA_MATCH_MODULE = process.env.NEXT_PUBLIC_NAKAMA_MATCH_MODULE || 'pdh';
+const NAKAMA_TABLE_ID = process.env.NEXT_PUBLIC_NAKAMA_TABLE_ID || 'main';
+const NAKAMA_MATCH_ID = process.env.NEXT_PUBLIC_NAKAMA_MATCH_ID;
+
+const STORAGE_KEYS = {
+  playerId: 'playerId',
+  matchId: 'nakamaMatchId',
+  deviceId: 'nakamaDeviceId',
+} as const;
+
+const textDecoder = new TextDecoder();
+
+const enum MatchOpCode {
+  ClientMessage = 1,
+  ServerMessage = 2,
+}
+
+const parseBoolean = (value: string | undefined, fallback: boolean) => {
+  if (value === undefined) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+};
+
+const NAKAMA_USE_SSL = parseBoolean(process.env.NEXT_PUBLIC_NAKAMA_USE_SSL, false);
+const USE_NAKAMA_BACKEND = NETWORK_BACKEND === 'nakama';
+
+const createDeviceId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `pdh-${Date.now()}-${Math.floor(Math.random() * 1_000_000_000)}`;
+};
+
+const getOrCreateDeviceId = () => {
+  if (typeof window === 'undefined') {
+    return createDeviceId();
+  }
+  const existing = window.localStorage.getItem(STORAGE_KEYS.deviceId);
+  if (existing) {
+    return existing;
+  }
+  const created = createDeviceId();
+  window.localStorage.setItem(STORAGE_KEYS.deviceId, created);
+  return created;
+};
+
+const errorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const msg = (error as { message?: unknown }).message;
+    if (typeof msg === 'string') return msg;
+  }
+  return 'unknown error';
+};
 
 const suitSymbol = (suit: Card['suit']) => {
   switch (suit) {
@@ -22,9 +88,13 @@ const suitSymbol = (suit: Card['suit']) => {
 
 const cardRankLabel = (rank: Card['rank']) => (rank === 'T' ? '10' : rank);
 const cardText = (c: Card) => `${cardRankLabel(c.rank)}${suitSymbol(c.suit)}`;
+type PlayerActionType = Extract<ClientMessage, { type: 'action' }>['action'];
+const isHiddenCard = (card: Card) =>
+  (card as unknown as { rank: string }).rank === 'X' ||
+  (card as unknown as { suit: string }).suit === 'X';
 
 const Home: NextPage = () => {
-  const wsRef = useRef<WebSocket | null>(null);
+  const connectionRef = useRef<{ send: (msg: ClientMessage) => void; close: () => void } | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const buyIn = 10000;
@@ -33,23 +103,18 @@ const Home: NextPage = () => {
   const [betAmount, setBetAmount] = useState<number>(200);
 
   useEffect(() => {
-    const existing = typeof window !== 'undefined' ? localStorage.getItem('playerId') : null;
-    if (existing) setPlayerId(existing);
-    const ws = new WebSocket(WS_URL);
-    wsRef.current = ws;
-    ws.onopen = () => {
-      setStatus('Connected');
-      if (existing) {
-        ws.send(JSON.stringify({ type: 'reconnect', playerId: existing }));
-      }
-    };
-    ws.onclose = () => setStatus('Disconnected');
-    ws.onmessage = (ev) => {
-      const msg: ServerMessage = JSON.parse(ev.data.toString());
+    const existing = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.playerId) : null;
+    if (existing) {
+      setPlayerId(existing);
+    }
+
+    let disposed = false;
+
+    const onServerMessage = (msg: ServerMessage) => {
       if (msg.type === 'welcome') {
         setPlayerId(msg.playerId);
         if (typeof window !== 'undefined') {
-          localStorage.setItem('playerId', msg.playerId);
+          localStorage.setItem(STORAGE_KEYS.playerId, msg.playerId);
         }
       }
       if (msg.type === 'state') {
@@ -59,8 +124,156 @@ const Home: NextPage = () => {
         setStatus(msg.message);
       }
     };
+
+    const connectLegacyWebSocket = () => {
+      const ws = new WebSocket(WS_URL);
+      connectionRef.current = {
+        send: (msg) => {
+          if (ws.readyState !== WebSocket.OPEN) return;
+          ws.send(JSON.stringify(msg));
+        },
+        close: () => {
+          ws.close();
+        },
+      };
+      ws.onopen = () => {
+        if (disposed) return;
+        setStatus('Connected (legacy)');
+        if (existing) {
+          ws.send(JSON.stringify({ type: 'reconnect', playerId: existing }));
+        } else {
+          ws.send(JSON.stringify({ type: 'requestState' }));
+        }
+      };
+      ws.onclose = () => {
+        if (disposed) return;
+        setStatus('Disconnected');
+      };
+      ws.onmessage = (ev) => {
+        if (disposed) return;
+        try {
+          const msg: ServerMessage = JSON.parse(ev.data.toString());
+          onServerMessage(msg);
+        } catch {
+          setStatus('Invalid payload');
+        }
+      };
+    };
+
+    const joinOrCreateNakamaMatch = async (client: NakamaClient, session: Session, socket: NakamaSocket): Promise<Match> => {
+      if (NAKAMA_MATCH_ID) {
+        return socket.joinMatch(NAKAMA_MATCH_ID);
+      }
+
+      const storedMatchId =
+        typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEYS.matchId) : null;
+      if (storedMatchId) {
+        try {
+          return await socket.joinMatch(storedMatchId);
+        } catch {
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem(STORAGE_KEYS.matchId);
+          }
+        }
+      }
+
+      const label = JSON.stringify({ tableId: NAKAMA_TABLE_ID });
+      const list = await client.listMatches(session, 10, true, label, 0, 9);
+      const existingMatch = (list.matches ?? []).find((match) => Boolean(match.match_id));
+      if (existingMatch?.match_id) {
+        return socket.joinMatch(existingMatch.match_id);
+      }
+
+      const created = await socket.createMatch(NAKAMA_MATCH_MODULE);
+      if (!created.authoritative) {
+        throw new Error(
+          `Created non-authoritative match. Check NEXT_PUBLIC_NAKAMA_MATCH_MODULE=${NAKAMA_MATCH_MODULE}.`
+        );
+      }
+      return created;
+    };
+
+    const connectNakama = async () => {
+      setStatus('Connecting to Nakama...');
+
+      const client = new NakamaClient(NAKAMA_SERVER_KEY, NAKAMA_HOST, NAKAMA_PORT, NAKAMA_USE_SSL);
+      const session = await client.authenticateDevice(getOrCreateDeviceId(), true);
+      if (disposed) return;
+
+      const socket = client.createSocket(NAKAMA_USE_SSL, false);
+      socket.onmatchdata = (matchData) => {
+        if (disposed) return;
+        if (matchData.op_code !== MatchOpCode.ServerMessage) return;
+        try {
+          const payload = textDecoder.decode(matchData.data);
+          const msg = JSON.parse(payload) as ServerMessage;
+          onServerMessage(msg);
+        } catch {
+          setStatus('Invalid match payload');
+        }
+      };
+      socket.ondisconnect = () => {
+        if (disposed) return;
+        setStatus('Disconnected');
+      };
+      socket.onerror = () => {
+        if (disposed) return;
+        setStatus('Nakama socket error');
+      };
+
+      await socket.connect(session, true);
+      if (disposed) {
+        socket.disconnect(false);
+        return;
+      }
+
+      const match = await joinOrCreateNakamaMatch(client, session, socket);
+      if (disposed) {
+        socket.disconnect(false);
+        return;
+      }
+
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(STORAGE_KEYS.matchId, match.match_id);
+      }
+
+      connectionRef.current = {
+        send: (msg) => {
+          void socket
+            .sendMatchState(match.match_id, MatchOpCode.ClientMessage, JSON.stringify(msg))
+            .catch((error) => {
+              if (!disposed) {
+                setStatus(`Send failed: ${errorMessage(error)}`);
+              }
+            });
+        },
+        close: () => {
+          socket.disconnect(false);
+        },
+      };
+
+      setStatus('Connected (nakama)');
+      if (existing) {
+        connectionRef.current.send({ type: 'reconnect', playerId: existing });
+      } else {
+        connectionRef.current.send({ type: 'requestState' });
+      }
+    };
+
+    if (USE_NAKAMA_BACKEND) {
+      void connectNakama().catch((error) => {
+        if (!disposed) {
+          setStatus(`Connection failed: ${errorMessage(error)}`);
+        }
+      });
+    } else {
+      connectLegacyWebSocket();
+    }
+
     return () => {
-      ws.close();
+      disposed = true;
+      connectionRef.current?.close();
+      connectionRef.current = null;
     };
   }, []);
 
@@ -112,8 +325,7 @@ const Home: NextPage = () => {
   }, [isMyTurn, hand?.handId, hand?.currentBet, hand?.minRaise, suggestedRaiseTo]);
 
   const send = (msg: ClientMessage) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify(msg));
+    connectionRef.current?.send(msg);
   };
 
   const join = () => {
@@ -122,7 +334,7 @@ const Home: NextPage = () => {
     send({ type: 'join', name: trimmed, buyIn });
   };
 
-  const act = (action: ClientMessage['action'], amount?: number) => {
+  const act = (action: PlayerActionType, amount?: number) => {
     send({ type: 'action', action, amount });
   };
 
@@ -569,7 +781,7 @@ const Home: NextPage = () => {
 };
 
 const rasterPngCardPath = (card: Card) => {
-  if (card.rank === 'X' || card.suit === 'X') return null;
+  if (isHiddenCard(card)) return null;
   const rankMap: Record<Card['rank'], string> = {
     A: 'ace',
     K: 'king',
@@ -597,7 +809,7 @@ const rasterPngCardPath = (card: Card) => {
 };
 
 const modernMinimalCardPath = (card: Card) => {
-  if (card.rank === 'X' || card.suit === 'X') return null;
+  if (isHiddenCard(card)) return null;
   const rankMap: Record<Card['rank'], string> = {
     A: 'ace',
     K: 'king',
@@ -638,7 +850,7 @@ const CardView = ({
   const [imageFailed, setImageFailed] = useState(false);
   const [imageIndex, setImageIndex] = useState(0);
   const isRed = card.suit === 'H' || card.suit === 'D';
-  const isHidden = card.rank === 'X' || card.suit === 'X';
+  const isHidden = isHiddenCard(card);
   const isLarge = size === 'large';
   const isClassicSize = size === 'large' || size === 'medium';
   const sizeMap = {
