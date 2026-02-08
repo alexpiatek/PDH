@@ -22,6 +22,21 @@ const suitSymbol = (suit: Card['suit']) => {
 
 const cardRankLabel = (rank: Card['rank']) => (rank === 'T' ? '10' : rank);
 const cardText = (c: Card) => `${cardRankLabel(c.rank)}${suitSymbol(c.suit)}`;
+const formatHandLabel = (label: string) => {
+  const lower = label.trim().toLowerCase();
+  if (!lower) return lower;
+  if (lower.endsWith(' high')) return lower;
+  if (lower.startsWith('two pair')) return lower;
+  if (lower.startsWith('three of a kind')) return lower;
+  if (lower.startsWith('four of a kind')) return lower;
+  if (lower.startsWith('five of a kind')) return lower;
+  if (lower.startsWith('pair of')) return `a ${lower}`;
+  if (lower === 'pair') return 'a pair';
+  if (['full house', 'straight', 'flush', 'straight flush', 'royal flush'].includes(lower)) {
+    return `a ${lower}`;
+  }
+  return lower;
+};
 
 const MINIMAL_DECK_PALETTE = {
   face: '#f6f7f2',
@@ -139,9 +154,44 @@ const SuitPip = ({ suit, x, y, size, color }: { suit: Card['suit']; x: number; y
   );
 };
 
+type ActionTone = 'raise' | 'call' | 'allin' | 'fold' | 'check' | 'bet';
+type ActionBadge = { name: string; label: string; tone: ActionTone; amount?: number };
+
+const ACTION_TONE_STYLES: Record<ActionTone, { background: string; border: string; color: string }> = {
+  raise: { background: 'rgba(30, 41, 59, 0.9)', border: '#38bdf8', color: '#e0f2fe' },
+  call: { background: 'rgba(30, 41, 59, 0.9)', border: '#a3e635', color: '#f7fee7' },
+  allin: { background: 'rgba(88, 28, 28, 0.9)', border: '#f97316', color: '#fff7ed' },
+  fold: { background: 'rgba(63, 29, 29, 0.9)', border: '#ef4444', color: '#fee2e2' },
+  check: { background: 'rgba(30, 41, 59, 0.9)', border: '#94a3b8', color: '#e2e8f0' },
+  bet: { background: 'rgba(30, 41, 59, 0.9)', border: '#facc15', color: '#fef9c3' },
+};
+
+const parseActionMessage = (message: string): ActionBadge | null => {
+  const patterns: Array<{ re: RegExp; label: string; tone: ActionTone; amountIndex?: number }> = [
+    { re: /^(.+?) folded$/, label: 'Fold', tone: 'fold' },
+    { re: /^(.+?) checked$/, label: 'Check', tone: 'check' },
+    { re: /^(.+?) called all-in for (\d+)$/, label: 'Call', tone: 'allin', amountIndex: 2 },
+    { re: /^(.+?) is all-in for (\d+)$/, label: 'All-in', tone: 'allin', amountIndex: 2 },
+    { re: /^(.+?) all-in to (\d+)$/, label: 'All-in', tone: 'allin', amountIndex: 2 },
+    { re: /^(.+?) raised short to (\d+)$/, label: 'Raise', tone: 'raise', amountIndex: 2 },
+    { re: /^(.+?) raised to (\d+)$/, label: 'Raise', tone: 'raise', amountIndex: 2 },
+    { re: /^(.+?) called (\d+)$/, label: 'Call', tone: 'call', amountIndex: 2 },
+    { re: /^(.+?) bet (\d+)$/, label: 'Bet', tone: 'bet', amountIndex: 2 },
+  ];
+
+  for (const pattern of patterns) {
+    const match = message.match(pattern.re);
+    if (!match) continue;
+    const amount = pattern.amountIndex ? Number(match[pattern.amountIndex]) : undefined;
+    return { name: match[1], label: pattern.label, tone: pattern.tone, amount };
+  }
+  return null;
+};
+
 const Home: NextPage = () => {
   const wsRef = useRef<WebSocket | null>(null);
   const discardTimerRef = useRef<number | null>(null);
+  const holeDealTimerRef = useRef<number | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
@@ -209,11 +259,44 @@ const Home: NextPage = () => {
   const raiseCapReached = Boolean(hand && hand.raisesThisStreet >= 2);
   const allInTotal = you ? you.stack + you.betThisStreet : 0;
   const allInWouldRaise = Boolean(hand && hand.currentBet > 0 && allInTotal > hand.currentBet);
+  const dealAnimationKey = hand?.handId ?? 'no-hand';
+  const [animateHoleDeal, setAnimateHoleDeal] = useState(false);
   const suggestedRaiseTo = useMemo(() => {
     if (!hand) return null;
     if (hand.currentBet === 0) return hand.minRaise;
     return hand.currentBet + hand.minRaise;
   }, [hand?.currentBet, hand?.minRaise]);
+  const actionByPlayerId = useMemo(() => {
+    if (!hand || hand.phase !== 'betting') return new Map<string, ActionBadge>();
+    const logs = hand.log ?? [];
+    let startIdx = 0;
+    if (hand.street === 'preflop') {
+      for (let i = logs.length - 1; i >= 0; i -= 1) {
+        if (logs[i].message === 'Hand started') {
+          startIdx = i + 1;
+          break;
+        }
+      }
+    } else {
+      const marker = `Starting betting on ${hand.street}`;
+      for (let i = logs.length - 1; i >= 0; i -= 1) {
+        if (logs[i].message === marker) {
+          startIdx = i + 1;
+          break;
+        }
+      }
+    }
+    const playersByName = new Map(hand.players.map((p) => [p.name, p.id]));
+    const map = new Map<string, ActionBadge>();
+    for (let i = startIdx; i < logs.length; i += 1) {
+      const parsed = parseActionMessage(logs[i].message);
+      if (!parsed) continue;
+      const playerId = playersByName.get(parsed.name);
+      if (!playerId) continue;
+      map.set(playerId, parsed);
+    }
+    return map;
+  }, [hand?.log, hand?.phase, hand?.street, hand?.players]);
 
   useEffect(() => {
     if (!hand) {
@@ -222,7 +305,7 @@ const Home: NextPage = () => {
     if (hand.phase !== 'showdown') {
       return;
     }
-    const timeoutId = window.setTimeout(() => send({ type: 'nextHand' }), 10000);
+    const timeoutId = window.setTimeout(() => send({ type: 'nextHand' }), 6000);
     return () => window.clearTimeout(timeoutId);
   }, [hand?.phase, hand?.handId]);
 
@@ -236,6 +319,24 @@ const Home: NextPage = () => {
       }
     }
   }, [discardPending, hand?.handId]);
+
+  useEffect(() => {
+    if (!hand?.handId) return;
+    setAnimateHoleDeal(true);
+    if (holeDealTimerRef.current) {
+      window.clearTimeout(holeDealTimerRef.current);
+    }
+    holeDealTimerRef.current = window.setTimeout(() => {
+      setAnimateHoleDeal(false);
+      holeDealTimerRef.current = null;
+    }, 1400);
+    return () => {
+      if (holeDealTimerRef.current) {
+        window.clearTimeout(holeDealTimerRef.current);
+        holeDealTimerRef.current = null;
+      }
+    };
+  }, [hand?.handId]);
 
   useEffect(() => {
     return () => {
@@ -280,8 +381,35 @@ const Home: NextPage = () => {
     discardTimerRef.current = window.setTimeout(() => {
       setDiscardFlashIndex(null);
       discardTimerRef.current = null;
+      discard(idx);
     }, 500);
-    discard(idx);
+  };
+
+  const renderActionBadge = (action?: ActionBadge) => {
+    if (!action) return null;
+    const tone = ACTION_TONE_STYLES[action.tone];
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: '100%',
+          transform: 'translate(8px, -50%)',
+          padding: '4px 8px',
+          borderRadius: 8,
+          background: tone.background,
+          border: `1px solid ${tone.border}`,
+          color: tone.color,
+          fontSize: 11,
+          fontFamily: '"Inter", sans-serif',
+          whiteSpace: 'nowrap',
+          boxShadow: '0 8px 18px rgba(0,0,0,0.35)',
+        }}
+      >
+        {action.label}
+        {action.amount !== undefined ? ` ${action.amount}` : ''}
+      </div>
+    );
   };
 
   const communityCards = hand?.board ?? [];
@@ -303,8 +431,8 @@ const Home: NextPage = () => {
     if (!hand?.showdownWinners?.length) return null;
     const topWinner = hand.showdownWinners[0];
     const winnerSeat = hand.players.find((p) => p.id === topWinner.playerId);
-    const label = topWinner.handLabel ? ` - ${topWinner.handLabel}` : '';
-    return `${winnerSeat?.name ?? topWinner.playerId} wins ${topWinner.amount}${label}`;
+    const label = topWinner.handLabel ? ` with ${formatHandLabel(topWinner.handLabel)}` : '';
+    return `${winnerSeat?.name ?? topWinner.playerId} won ${topWinner.amount}${label}`;
   }, [hand?.showdownWinners, hand?.players]);
 
   const seatingPositions = [
@@ -435,24 +563,24 @@ const Home: NextPage = () => {
             <div
               style={{
                 marginTop: '1cm',
-                fontSize: 36,
-                fontWeight: 700,
+                fontSize: 80,
+                fontWeight: 900,
                 letterSpacing: 1.2,
                 lineHeight: 1,
-                fontFamily: '"Zapfino", "Snell Roundhand", "Apple Chancery", "Brush Script MT", cursive',
+                fontFamily: '"Savoye LET", "Snell Roundhand", "Apple Chancery", "Brush Script MT", cursive',
                 whiteSpace: 'nowrap',
               }}
             >
               Resolute Hold&apos;em
             </div>
-            <div style={{ marginTop: '0.5cm' }}>
-              <div style={{ fontSize: 11, opacity: 0.6, fontFamily: '"Inter", sans-serif' }}>Raise the stakes. Own the table.</div>
+            <div style={{ marginTop: '-0.5cm' }}>
+              <div style={{ fontSize: 16, opacity: 0.6, fontFamily: '"Inter", sans-serif' }}>Raise the stakes. Own the table.</div>
             </div>
           </div>
         </div>
       </div>
       {!seated && (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '45vh' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '45vh', transform: 'translateY(-4cm)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
             <div style={{ display: 'flex', gap: 10 }}>
               <input
@@ -524,10 +652,36 @@ const Home: NextPage = () => {
               boxShadow: '0 30px 80px rgba(0,0,0,0.45), inset 0 0 40px rgba(0,0,0,0.5)',
             }}
           >
-            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px - 0.2cm))', display: 'flex', gap: '1mm' }}>
+            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px - 0.4cm))', display: 'flex', gap: '1mm' }}>
               {communityCards.map((c, idx) => (
-                <CardView key={idx} card={c} size="xlarge" highlight={isShowdown && winningCards.has(cardKey(c))} />
+                <div
+                  key={`${dealAnimationKey}-community-${idx}-${c.rank}${c.suit}`}
+                  style={
+                    {
+                      animation: `deal-card 700ms ease-out ${idx * 120}ms both`,
+                      '--deal-x': '0px',
+                      '--deal-y': '-3.8cm',
+                    } as React.CSSProperties
+                  }
+                >
+                  <CardView key={idx} card={c} size="xlarge" highlight={isShowdown && winningCards.has(cardKey(c))} />
+                </div>
               ))}
+            </div>
+            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px - 4.2cm))' }}>
+              <img
+                src="/Casino dealer.png"
+                alt="Dealer"
+                style={{
+                  width: 84,
+                  height: 84,
+                  borderRadius: 999,
+                  objectFit: 'cover',
+                  border: '2px solid rgba(255,255,255,0.7)',
+                  boxShadow: '0 10px 24px rgba(0,0,0,0.35)',
+                  background: 'rgba(8, 12, 22, 0.6)',
+                }}
+              />
             </div>
             <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px + 1.8cm)) scale(1.2)' }}>
               <div style={{ width: '2.8cm', height: '0.8cm', padding: 0, borderRadius: 999, background: '#0f172a', border: '1px solid #2c3e66', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
@@ -577,7 +731,14 @@ const Home: NextPage = () => {
               </div>
             </div>
             {isShowdown && showdownSummary && (
-              <div style={{ position: 'absolute', top: '60%', left: '50%', transform: 'translate(-50%, -50%) translateY(-47px)' }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '40%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%) translateY(calc(-19px - 0.5cm - 2cm))',
+                }}
+              >
                 <div style={{ padding: '6px 14px', borderRadius: 999, background: '#123b2f', border: '1px solid #22c55e', color: '#d1fae5' }}>
                   {showdownSummary}
                 </div>
@@ -632,7 +793,7 @@ const Home: NextPage = () => {
                         </div>
                       )}
                       <div
-                      style={{
+                        style={{
                           position: 'relative',
                           padding: '6px 10px 6px 60px',
                           borderRadius: 10,
@@ -641,7 +802,7 @@ const Home: NextPage = () => {
                           boxShadow: winner ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
                           opacity: infoDimmed ? 0.7 : 1,
                         }}
-                    >
+                      >
                         <div style={{ position: 'absolute', top: 6, left: 8, ...avatarStyle }} />
                         <div style={{ fontWeight: 700, fontFamily: '"Inter", sans-serif', fontSize: 12 }}>{p.name}</div>
                         <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>{p.status}</div>
@@ -654,6 +815,7 @@ const Home: NextPage = () => {
                           </div>
                         )}
                       </div>
+                      {renderActionBadge(actionByPlayerId.get(p.id))}
                     </div>
                   )}
                 </div>
@@ -721,6 +883,7 @@ const Home: NextPage = () => {
                         </span>
                       </div>
                     </div>
+                    {renderActionBadge(actionByPlayerId.get(you.id))}
                   </div>
                 </div>
                 <div
@@ -743,33 +906,44 @@ const Home: NextPage = () => {
                   <div style={{ display: 'flex', gap: 10 }}>
                     {you.holeCards.map((c, idx) => (
                       <div
-                        key={idx}
-                        style={{
-                          transform: `rotate(${idx === 0 ? -6 : 6}deg)`,
-                          cursor: discardPending && !discardSubmitted ? 'pointer' : 'default',
-                        }}
-                        onClick={() => handleDiscardClick(idx)}
+                        key={`${dealAnimationKey}-hole-${idx}`}
+                        style={
+                          (animateHoleDeal
+                            ? {
+                                animation: `deal-card 700ms ease-out ${idx * 120}ms both`,
+                                '--deal-x': '0px',
+                                '--deal-y': '-10.5cm',
+                              }
+                            : {}) as React.CSSProperties
+                        }
                       >
-                        <CardView
-                          card={c}
-                          size="large"
-                          outline={
-                            discardFlashIndex === idx
-                              ? 'red'
-                              : discardPending && !discardSubmitted
-                                ? 'green'
-                                : undefined
-                          }
-                          fade={discardFlashIndex === idx}
-                        />
+                        <div
+                          style={{
+                            transform: `rotate(${idx === 0 ? -6 : 6}deg)`,
+                            cursor: discardPending && !discardSubmitted ? 'pointer' : 'default',
+                          }}
+                          onClick={() => handleDiscardClick(idx)}
+                        >
+                          <CardView
+                            card={c}
+                            size="large"
+                            outline={
+                              discardFlashIndex === idx
+                                ? 'red'
+                                : discardPending && !discardSubmitted
+                                  ? 'green'
+                                  : undefined
+                            }
+                            fade={discardFlashIndex === idx}
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
               </>
             )}
-            <div style={{ position: 'absolute', bottom: -218, left: -9.4, width: 374, background: 'rgba(9, 12, 20, 0.8)', border: '1px solid #27324e', borderRadius: 10, padding: 8 }}>
-              <div style={{ fontSize: 14, fontFamily: '"Inter", sans-serif', opacity: 0.8, marginBottom: 6 }}>Dealer</div>
+            <div style={{ position: 'absolute', bottom: 'calc(-218px + 1.3cm)', left: -9.4, width: 300, background: 'rgba(9, 12, 20, 0.8)', border: '1px solid #27324e', borderRadius: 10, padding: 8 }}>
               <div style={{ maxHeight: 80, overflowY: 'auto' }}>
                 {(state?.log ?? []).slice(-5).map((l: any, idx: number) => (
                   <div key={idx} style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, fontFamily: '"Inter", sans-serif' }}>
@@ -829,15 +1003,24 @@ const Home: NextPage = () => {
                   </button>
                 </div>
               )}
-              <div style={{ padding: '6px 10px', borderRadius: 8, background: '#122145', border: '1px solid #2c3e66', fontFamily: '"Inter", sans-serif' }}>
-                Stack: {you.stack}
-              </div>
             </div>
           )}
         </div>
       ) : seated ? (
         <div style={{ fontFamily: '"Inter", sans-serif' }}>Waiting for next hand...</div>
       ) : null}
+      <style jsx global>{`
+        @keyframes deal-card {
+          0% {
+            opacity: 0;
+            transform: translate(var(--deal-x, 0px), var(--deal-y, -200px)) scale(0.92);
+          }
+          100% {
+            opacity: 1;
+            transform: translate(0, 0) scale(1);
+          }
+        }
+      `}</style>
     </div>
   );
 };
@@ -935,8 +1118,8 @@ const CardView = ({
   const outlineShadow = outlineColor ? `0 0 0 2px ${outlineColor}` : undefined;
   const highlightShadow = highlight ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined;
   const cardShadow = [outlineShadow, highlightShadow, baseShadow].filter(Boolean).join(', ') || undefined;
-  const cardOpacity = fade ? 0.6 : 1;
-  const opacityTransition = 'opacity 0.2s ease';
+  const cardOpacity = fade ? 0 : 1;
+  const opacityTransition = 'opacity 0.5s ease';
   const cardImageSources = isClassicSize
     ? [rasterPngCardPath(card), modernMinimalCardPath(card)].filter((value): value is string => Boolean(value))
     : [];

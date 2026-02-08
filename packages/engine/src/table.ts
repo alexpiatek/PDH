@@ -86,6 +86,7 @@ function resetStreetState(hand: HandState, nextStreet: Street, table: TableState
   hand.minRaise = table.config.bigBlind;
   hand.raisesThisStreet = 0;
   hand.lastAggressorSeat = null;
+  hand.pendingNextPhaseAt = null;
   for (const p of hand.players) {
     p.betThisStreet = 0;
     p.hasActed = p.status !== 'active' ? true : false;
@@ -182,6 +183,7 @@ export class PokerTable {
       raisesThisStreet: 0,
       actionOnSeat: 0,
       lastAggressorSeat: null,
+      pendingNextPhaseAt: null,
       discardPending: [],
       discardDeadline: null,
       showdownWinners: [],
@@ -261,6 +263,7 @@ export class PokerTable {
     const hand = this.state.hand;
     if (!hand) throw new Error('No hand in progress');
     if (hand.phase !== 'betting') throw new Error('Not in betting phase');
+    if (hand.pendingNextPhaseAt) throw new Error('Waiting for next phase');
     const player = playerById(hand, playerId);
     if (player.seat !== hand.actionOnSeat) throw new Error('Not your turn');
     if (player.status !== 'active') throw new Error('Player cannot act');
@@ -288,7 +291,7 @@ export class PokerTable {
       case 'bet': {
         if (hand.currentBet !== 0) throw new Error('Cannot bet, must raise');
         if (action.amount < this.state.config.bigBlind) throw new Error('Bet below minimum');
-        this.placeRaise(hand, player, action.amount);
+        this.placeRaise(hand, player, action.amount, 'bet');
         break;
       }
       case 'raise': {
@@ -297,7 +300,7 @@ export class PokerTable {
         if (raiseBy < hand.minRaise && action.amount < player.betThisStreet + player.stack) {
           throw new Error('Raise below minimum');
         }
-        this.placeRaise(hand, player, action.amount);
+        this.placeRaise(hand, player, action.amount, 'raise');
         break;
       }
       case 'allIn': {
@@ -318,7 +321,7 @@ export class PokerTable {
           logPush(hand.log, `${player.name} called all-in for ${pay}`);
         } else {
           // all-in raise
-          this.placeRaise(hand, player, newTotal);
+          this.placeRaise(hand, player, newTotal, 'allIn');
         }
         break;
       }
@@ -333,13 +336,36 @@ export class PokerTable {
     }
 
     if (this.isBettingRoundComplete(hand)) {
-      this.finishBettingRound();
+      this.queueBettingRoundAdvance(hand);
     } else {
       hand.actionOnSeat = this.nextToAct(hand);
     }
   }
 
-  private placeRaise(hand: HandState, player: PlayerInHand, newTotalBet: number) {
+  private queueBettingRoundAdvance(hand: HandState, delayMs = 1300) {
+    if (hand.pendingNextPhaseAt) return;
+    hand.pendingNextPhaseAt = nowTs() + delayMs;
+    hand.actionOnSeat = -1;
+  }
+
+  advancePendingPhase(now: number = nowTs()) {
+    const hand = this.state.hand;
+    if (!hand || hand.pendingNextPhaseAt === null || hand.pendingNextPhaseAt === undefined) return false;
+    if (now < hand.pendingNextPhaseAt) return false;
+    hand.pendingNextPhaseAt = null;
+    if (hand.phase === 'betting') {
+      this.finishBettingRound();
+      return true;
+    }
+    return false;
+  }
+
+  private placeRaise(
+    hand: HandState,
+    player: PlayerInHand,
+    newTotalBet: number,
+    actionLabel: 'raise' | 'bet' | 'allIn' = 'raise',
+  ) {
     const contributionNeeded = newTotalBet - player.betThisStreet;
     const actualTotal = Math.min(newTotalBet, player.betThisStreet + player.stack);
     const pay = actualTotal - player.betThisStreet;
@@ -366,6 +392,14 @@ export class PokerTable {
       }
     }
     player.hasActed = true;
+    if (actionLabel === 'bet') {
+      logPush(hand.log, `${player.name} bet ${actualTotal}`);
+      return;
+    }
+    if (actionLabel === 'allIn') {
+      logPush(hand.log, `${player.name} all-in to ${actualTotal}`);
+      return;
+    }
     const actionWord = player.stack === 0 ? 'all-in' : fullRaise ? 'raised' : 'raised short';
     logPush(hand.log, `${player.name} ${actionWord} to ${actualTotal}`);
   }
@@ -401,6 +435,7 @@ export class PokerTable {
   private finishBettingRound() {
     const hand = this.state.hand;
     if (!hand) return;
+    hand.pendingNextPhaseAt = null;
     // Move to discard or next street/showdown
     if (hand.street === 'preflop') {
       this.revealFlop(hand);
@@ -512,11 +547,8 @@ export class PokerTable {
         resetStreetState(hand, 'river', this.state);
       }
     } else if (hand.street === 'river') {
-      if (bettingLocked(hand)) {
-        this.finishHand();
-      } else {
-        resetStreetState(hand, 'showdown', this.state);
-      }
+      hand.street = 'showdown';
+      this.finishHand();
     }
   }
 
