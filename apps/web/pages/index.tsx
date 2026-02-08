@@ -86,6 +86,17 @@ const suitSymbol = (suit: Card['suit']) => {
   }
 };
 
+const AVATAR_SUITS: Card['suit'][] = ['C', 'S', 'H', 'D'];
+const avatarSuitForId = (id?: string) => {
+  if (!id) return 'S';
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return AVATAR_SUITS[hash % AVATAR_SUITS.length];
+};
+const avatarSuitColor = (suit: Card['suit']) => (suit === 'H' || suit === 'D' ? '#dc2626' : '#111827');
+
 const cardRankLabel = (rank: Card['rank']) => (rank === 'T' ? '10' : rank);
 const cardText = (c: Card) => `${cardRankLabel(c.rank)}${suitSymbol(c.suit)}`;
 type PlayerActionType = Extract<ClientMessage, { type: 'action' }>['action'];
@@ -262,13 +273,22 @@ const parseActionMessage = (message: string): ActionBadge | null => {
   return null;
 };
 
-const CardBack = ({ size = 'medium', tone = 'navy' }: { size?: 'small' | 'medium'; tone?: 'navy' | 'red' }) => {
+const CardBack = ({
+  size = 'medium',
+  tone = 'navy',
+}: {
+  size?: 'small' | 'medium';
+  tone?: 'navy' | 'red' | 'gold';
+}) => {
   const sizing = size === 'small'
     ? { width: 30, height: 44, radius: 6, inset: 3 }
     : { width: 36, height: 52, radius: 7, inset: 4 };
-  const palette = tone === 'red'
-    ? { base: '#b91c1c', dark: '#7f1d1d', border: '#f8fafc', pattern: 'rgba(254,226,226,0.35)' }
-    : { base: '#0f172a', dark: '#1f2937', border: '#f8fafc', pattern: 'rgba(148,163,184,0.25)' };
+  const palette =
+    tone === 'red'
+      ? { base: '#b91c1c', dark: '#7f1d1d', border: '#f8fafc', pattern: 'rgba(254,226,226,0.35)' }
+      : tone === 'gold'
+        ? { base: '#9a6a24', dark: '#6b4517', border: '#fef3c7', pattern: 'rgba(252,211,77,0.28)' }
+        : { base: '#0f172a', dark: '#1f2937', border: '#f8fafc', pattern: 'rgba(148,163,184,0.25)' };
   return (
     <div
       style={{
@@ -812,11 +832,26 @@ const Home: NextPage = () => {
       width: infoAvatarSize,
       height: infoAvatarSize,
       borderRadius: '50%',
-      background: '#101827',
+      background: '#f8fafc',
       border: youIsWinner ? '3px solid #22c55e' : '3px solid #314066',
       boxShadow: '0 0 18px rgba(0,0,0,0.45)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontFamily: '"Inter", sans-serif',
+      fontWeight: 800,
+      fontSize: 18,
     };
   }, [you, winnersById, infoAvatarSize]);
+  const youAvatarSuit = useMemo(() => avatarSuitForId(you?.id), [you?.id]);
+  const youAvatarColor = avatarSuitColor(youAvatarSuit);
+  const ellipsisDotStyle = (delayMs: number): React.CSSProperties => ({
+    display: 'inline-block',
+    width: '0.35em',
+    textAlign: 'center',
+    animation: 'ellipsis-blink 1.2s infinite',
+    animationDelay: `${delayMs}ms`,
+  });
 
   return (
     <div
@@ -854,11 +889,19 @@ const Home: NextPage = () => {
             src="/Resolute Hold'em.png"
             alt=""
             style={{
-              width: 'clamp(150px, 22vw, 210px)',
-              height: 'clamp(100px, 15vw, 140px)',
+              width: 'clamp(210px, 30vw, 290px)',
+              height: 'clamp(140px, 21vw, 190px)',
               objectFit: 'contain',
-              borderRadius: 10,
-              boxShadow: '0 6px 16px rgba(0,0,0,0.25)',
+              borderRadius: 14,
+              boxShadow: 'none',
+              opacity: 0.92,
+              filter: 'drop-shadow(0 10px 24px rgba(0,0,0,0.35))',
+              WebkitMaskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
+              maskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
+              WebkitMaskRepeat: 'no-repeat',
+              maskRepeat: 'no-repeat',
+              WebkitMaskSize: '100% 100%',
+              maskSize: '100% 100%',
             }}
           />
         </div>
@@ -885,11 +928,19 @@ const Home: NextPage = () => {
             src="/Resolute Hold'em.png"
             alt=""
             style={{
-              width: 'clamp(150px, 22vw, 210px)',
-              height: 'clamp(100px, 15vw, 140px)',
+              width: 'clamp(210px, 30vw, 290px)',
+              height: 'clamp(140px, 21vw, 190px)',
               objectFit: 'contain',
-              borderRadius: 10,
-              boxShadow: '0 6px 16px rgba(0,0,0,0.25)',
+              borderRadius: 14,
+              boxShadow: 'none',
+              opacity: 0.92,
+              filter: 'drop-shadow(0 10px 24px rgba(0,0,0,0.35))',
+              WebkitMaskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
+              maskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
+              WebkitMaskRepeat: 'no-repeat',
+              maskRepeat: 'no-repeat',
+              WebkitMaskSize: '100% 100%',
+              maskSize: '100% 100%',
             }}
           />
         </div>
@@ -1131,15 +1182,24 @@ const Home: NextPage = () => {
               const roleChips = roleChipsBySeat.get(p.seat) ?? [];
               const avatarSize = infoAvatarSize;
               const avatarBorder = winner ? '3px solid #22c55e' : '3px solid #314066';
+              const avatarSuit = avatarSuitForId(p.id);
+              const avatarColor = avatarSuitColor(avatarSuit);
               const isTurn = Boolean(hand && hand.phase === 'betting' && hand.actionOnSeat === p.seat);
               const infoDimmed = Boolean(hand && hand.phase === 'betting' && !isTurn);
               const avatarStyle = {
                 width: avatarSize,
                 height: avatarSize,
                 borderRadius: '50%',
-                background: '#101827',
+                background: '#f8fafc',
                 border: avatarBorder,
                 boxShadow: '0 0 18px rgba(0,0,0,0.45)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: '"Inter", sans-serif',
+                fontWeight: 800,
+                fontSize: 18,
+                color: avatarColor,
               };
               return (
                 <div
@@ -1187,7 +1247,9 @@ const Home: NextPage = () => {
                             alignItems: 'center',
                           }}
                         >
-                          <div style={{ position: 'absolute', top: 'calc(6px - 0.15cm)', left: 'calc(8px - 0.2cm)', overflow: 'hidden', ...avatarStyle }} />
+                        <div style={{ position: 'absolute', top: 'calc(6px - 0.15cm)', left: 'calc(8px - 0.2cm)', overflow: 'hidden', ...avatarStyle }}>
+                          {suitSymbol(avatarSuit)}
+                        </div>
                           <div style={{ fontWeight: 700, fontFamily: '"Inter", sans-serif', fontSize: 12 }}>{p.name}</div>
                           {p.id !== playerId && (
                             <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
@@ -1231,7 +1293,7 @@ const Home: NextPage = () => {
                                 }}
                               >
                                 <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden' }}>
-                                  <CardBack size="medium" tone="red" />
+                                  <CardBack size="medium" tone="gold" />
                                 </div>
                                 <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
                                   {card && (
@@ -1303,7 +1365,20 @@ const Home: NextPage = () => {
                         alignItems: 'center',
                       }}
                     >
-                      {youAvatarStyle && <div style={{ position: 'absolute', top: 'calc(6px - 0.15cm)', left: 'calc(8px - 0.2cm)', overflow: 'hidden', ...youAvatarStyle }} />}
+                      {youAvatarStyle && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 'calc(6px - 0.15cm)',
+                            left: 'calc(8px - 0.2cm)',
+                            overflow: 'hidden',
+                            color: youAvatarColor,
+                            ...youAvatarStyle,
+                          }}
+                        >
+                          {suitSymbol(youAvatarSuit)}
+                        </div>
+                      )}
                       <div style={{ fontWeight: 700, fontFamily: '"Inter", sans-serif', fontSize: 12 }}>{you.name}</div>
                       <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -1437,7 +1512,27 @@ const Home: NextPage = () => {
           )}
         </div>
       ) : seated ? (
-        <div style={{ fontFamily: '"Inter", sans-serif' }}>Waiting for next hand...</div>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            minHeight: 'calc(100vh - 3.5cm - 60px)',
+            paddingTop: 'clamp(0px, 2vh, 1cm)',
+            paddingBottom: 'clamp(0px, 6vh, 2cm)',
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateY(-7cm)' }}>
+            <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 16, fontWeight: 700, opacity: 0.85, marginTop: '0.6cm' }}>
+              Waiting for next hand
+              <span style={{ display: 'inline-flex', marginLeft: 4 }}>
+                <span style={ellipsisDotStyle(0)}>.</span>
+                <span style={ellipsisDotStyle(200)}>.</span>
+                <span style={ellipsisDotStyle(400)}>.</span>
+              </span>
+            </div>
+          </div>
+        </div>
       ) : null}
       <style jsx global>{`
         html,
@@ -1454,6 +1549,16 @@ const Home: NextPage = () => {
           100% {
             opacity: 1;
             transform: translate(0, 0) scale(1);
+          }
+        }
+        @keyframes ellipsis-blink {
+          0%,
+          80%,
+          100% {
+            opacity: 0.2;
+          }
+          40% {
+            opacity: 1;
           }
         }
       `}</style>
