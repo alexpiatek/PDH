@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { NextPage } from 'next';
 import { Client as NakamaClient } from '@heroiclabs/nakama-js';
 import type { Match, Session, Socket as NakamaSocket } from '@heroiclabs/nakama-js';
@@ -116,6 +116,8 @@ const MINIMAL_DECK_PALETTE = {
   accent: '#cbd5e1',
 };
 const USE_CUSTOM_MINIMAL_DECK = true;
+
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 const BASE_TABLE_WIDTH = 780;
 const BASE_TABLE_HEIGHT = 410;
 
@@ -600,8 +602,10 @@ const Home: NextPage = () => {
     }
   }, [discardPending, hand?.handId]);
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if (!hand?.handId) return;
+    setDiscardFlashIndex(null);
+    setDiscardSubmitted(false);
     setAnimateHoleDeal(true);
     if (holeDealTimerRef.current) {
       window.clearTimeout(holeDealTimerRef.current);
@@ -1347,7 +1351,7 @@ const Home: NextPage = () => {
                             outline={
                               discardFlashIndex === idx
                                 ? 'red'
-                                : discardPending && !discardSubmitted
+                                : discardPending && !discardSubmitted && !animateHoleDeal
                                   ? 'green'
                                   : undefined
                             }
@@ -1360,7 +1364,7 @@ const Home: NextPage = () => {
                 </div>
               </>
             )}
-            <div style={{ position: 'absolute', bottom: 'calc(-218px + 1.2cm)', left: 'calc(-9.4px + 0.3cm)', width: 300, background: 'rgba(9, 12, 20, 0.8)', border: '1px solid #27324e', borderRadius: 10, padding: 8 }}>
+            <div style={{ position: 'absolute', bottom: 'calc(-218px + 1.2cm)', left: 'calc(-9.4px + 0.2cm)', width: 300, background: 'rgba(9, 12, 20, 0.8)', border: '1px solid #27324e', borderRadius: 10, padding: 8 }}>
               <div style={{ maxHeight: 80, overflowY: 'auto' }}>
                 {(state?.log ?? []).slice(-5).map((l: any, idx: number) => (
                   <div key={idx} style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, fontFamily: '"Inter", sans-serif' }}>
