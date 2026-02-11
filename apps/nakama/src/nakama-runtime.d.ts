@@ -1,4 +1,12 @@
 declare module '@heroiclabs/nakama-runtime' {
+  export interface MatchListEntry {
+    matchId?: string;
+    match_id?: string;
+    authoritative?: boolean;
+    label?: string;
+    size?: number;
+  }
+
   export interface Presence {
     userId: string;
     sessionId?: string;
@@ -24,6 +32,15 @@ declare module '@heroiclabs/nakama-runtime' {
 
   export interface Nakama {
     binaryToString(data: Uint8Array): string;
+    matchCreate(module: string, params: Record<string, unknown>): string;
+    matchList(
+      limit: number,
+      authoritative: boolean,
+      label: string,
+      minSize: number,
+      maxSize: number,
+      query?: string
+    ): MatchListEntry[];
   }
 
   export interface Logger {
@@ -34,6 +51,8 @@ declare module '@heroiclabs/nakama-runtime' {
 
   export interface Initializer {
     registerMatch(name: string, handler: MatchHandler): void;
+    registerRpc(name: string, fn: (...args: any[]) => string): void;
+    registerAfterAuthenticateDevice?(fn: (...args: any[]) => void): void;
   }
 
   export type MatchHandler = {

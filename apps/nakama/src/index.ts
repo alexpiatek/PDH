@@ -1,5 +1,5 @@
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
-import { PokerTable } from '@pdh/engine';
+import { PokerTable, type TableState } from '@pdh/engine';
 import type { ClientMessage, ServerMessage } from './protocol';
 
 const enum OpCode {
@@ -8,11 +8,19 @@ const enum OpCode {
 }
 
 const AUTO_DISCARD_INTERVAL_MS = 500;
+const DEFAULT_TABLE_ID = 'main';
+const DEFAULT_MATCH_MODULE = 'pdh';
 
 interface MatchState {
-  table: PokerTable;
+  table: TableState;
   presences: Record<string, nkruntime.Presence>;
   lastAutoDiscardMs: number;
+}
+
+function hydrateTable(tableState: TableState): PokerTable {
+  const table = new PokerTable(tableState.id);
+  table.state = tableState;
+  return table;
 }
 
 function sendToPresence(
@@ -24,10 +32,11 @@ function sendToPresence(
 }
 
 function broadcastState(dispatcher: nkruntime.MatchDispatcher, state: MatchState) {
+  const table = hydrateTable(state.table);
   const presences = Object.values(state.presences);
   for (const presence of presences) {
     const playerId = presence.userId;
-    const publicState = state.table.getPublicState(playerId);
+    const publicState = table.getPublicState(playerId);
     const msg: ServerMessage = {
       type: 'state',
       state: { ...publicState, you: { playerId } },
@@ -54,154 +63,229 @@ function parseClientMessage(nk: nkruntime.Nakama, message: nkruntime.MatchMessag
   return JSON.parse(data) as ClientMessage;
 }
 
-const InitModule: nkruntime.InitModule = (ctx, logger, nk, initializer) => {
-  initializer.registerMatch('pdh', {
-    matchInit: (ctx, logger, nk, params) => {
-      const tableId = (params?.tableId as string | undefined) ?? 'main';
-      const state: MatchState = {
-        table: new PokerTable(tableId),
-        presences: {},
-        lastAutoDiscardMs: 0,
-      };
-      return {
-        state,
-        tickRate: 10,
-        label: JSON.stringify({ tableId }),
-      };
-    },
-    matchJoinAttempt: (ctx, logger, nk, dispatcher, tick, state, presence, metadata) => {
-      return { state, accept: true };
-    },
-    matchJoin: (ctx, logger, nk, dispatcher, tick, state, presences) => {
-      for (const presence of presences) {
-        state.presences[presence.userId] = presence;
-        state.table.setSittingOut(presence.userId, false);
-        sendToPresence(dispatcher, presence, {
-          type: 'welcome',
-          playerId: presence.userId,
-          tableId: state.table.state.id,
-        });
-      }
-      broadcastState(dispatcher, state);
-      return { state };
-    },
-    matchLeave: (ctx, logger, nk, dispatcher, tick, state, presences) => {
-      for (const presence of presences) {
-        delete state.presences[presence.userId];
-        state.table.handleDisconnect(presence.userId);
-      }
-      broadcastState(dispatcher, state);
-      return { state };
-    },
-    matchLoop: (ctx, logger, nk, dispatcher, tick, state, messages) => {
-      let shouldBroadcast = false;
+function findExistingAuthoritativeMatchId(
+  nk: nkruntime.Nakama,
+  tableId: string
+): string | null {
+  const label = JSON.stringify({ tableId });
+  const matches = nk.matchList(10, true, label, 0, 9, '') ?? [];
+  for (const match of matches) {
+    const matchId =
+      (typeof match.matchId === 'string' ? match.matchId : undefined) ??
+      (typeof match.match_id === 'string' ? match.match_id : undefined);
+    if (matchId) return matchId;
+  }
+  return null;
+}
 
-      for (const message of messages) {
-        if (message.opCode !== OpCode.ClientMessage) continue;
+function ensureDefaultMatch(nk: nkruntime.Nakama) {
+  const existing = findExistingAuthoritativeMatchId(nk, DEFAULT_TABLE_ID);
+  if (existing) {
+    return existing;
+  }
+  return nk.matchCreate(DEFAULT_MATCH_MODULE, { tableId: DEFAULT_TABLE_ID });
+}
 
-        const presence = message.sender;
-        let data: ClientMessage;
-        try {
-          data = parseClientMessage(nk, message);
-        } catch (err) {
-          sendToPresence(dispatcher, presence, { type: 'error', message: 'Invalid payload' });
-          continue;
-        }
+function ensureDefaultMatchAfterAuthenticate(
+  ctx: unknown,
+  logger: nkruntime.Logger,
+  nk: nkruntime.Nakama
+) {
+  try {
+    ensureDefaultMatch(nk);
+  } catch (err: any) {
+    logger.error('Failed to ensure default authoritative match: %v', err?.message ?? err);
+  }
+}
 
-        try {
-          switch (data.type) {
-            case 'join': {
-              seatPlayer(state.table, presence.userId, data.name, data.buyIn, data.seat);
-              state.table.setSittingOut(presence.userId, false);
-              sendToPresence(dispatcher, presence, {
-                type: 'welcome',
-                playerId: presence.userId,
-                tableId: state.table.state.id,
-              });
-              shouldBroadcast = true;
-              break;
-            }
-            case 'reconnect': {
-              state.table.setSittingOut(presence.userId, false);
-              sendToPresence(dispatcher, presence, {
-                type: 'welcome',
-                playerId: presence.userId,
-                tableId: state.table.state.id,
-              });
-              shouldBroadcast = true;
-              break;
-            }
-            case 'action': {
-              state.table.applyAction(presence.userId, {
-                type: data.action as any,
-                amount: data.amount,
-              });
-              shouldBroadcast = true;
-              break;
-            }
-            case 'discard': {
-              state.table.applyDiscard(presence.userId, data.index);
-              shouldBroadcast = true;
-              break;
-            }
-            case 'nextHand': {
-              state.table.advanceToNextHand();
-              shouldBroadcast = true;
-              break;
-            }
-            case 'requestState': {
-              const publicState = state.table.getPublicState(presence.userId);
-              sendToPresence(dispatcher, presence, {
-                type: 'state',
-                state: { ...publicState, you: { playerId: presence.userId } },
-              });
-              break;
-            }
-            default:
-              throw new Error('Unknown message');
-          }
-          state.table.beginNextHandIfReady();
-        } catch (err: any) {
+function matchInit(ctx, logger, nk, params) {
+  const tableId = (params?.tableId as string | undefined) ?? 'main';
+  const table = new PokerTable(tableId);
+  const state: MatchState = {
+    table: table.state,
+    presences: {},
+    lastAutoDiscardMs: 0,
+  };
+  return {
+    state,
+    tickRate: 10,
+    label: JSON.stringify({ tableId }),
+  };
+}
+
+function matchJoinAttempt(ctx, logger, nk, dispatcher, tick, state, presence, metadata) {
+  return { state, accept: true };
+}
+
+function matchJoin(ctx, logger, nk, dispatcher, tick, state, presences) {
+  const table = hydrateTable(state.table);
+  for (const presence of presences) {
+    state.presences[presence.userId] = presence;
+    table.setSittingOut(presence.userId, false);
+    sendToPresence(dispatcher, presence, {
+      type: 'welcome',
+      playerId: presence.userId,
+      tableId: table.state.id,
+    });
+  }
+  state.table = table.state;
+  broadcastState(dispatcher, state);
+  return { state };
+}
+
+function matchLeave(ctx, logger, nk, dispatcher, tick, state, presences) {
+  const table = hydrateTable(state.table);
+  for (const presence of presences) {
+    delete state.presences[presence.userId];
+    table.handleDisconnect(presence.userId);
+  }
+  state.table = table.state;
+  broadcastState(dispatcher, state);
+  return { state };
+}
+
+function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
+  const table = hydrateTable(state.table);
+  let shouldBroadcast = false;
+
+  for (const message of messages) {
+    if (message.opCode !== OpCode.ClientMessage) continue;
+
+    const presence = message.sender;
+    let data: ClientMessage;
+    try {
+      data = parseClientMessage(nk, message);
+    } catch (err) {
+      sendToPresence(dispatcher, presence, { type: 'error', message: 'Invalid payload' });
+      continue;
+    }
+
+    try {
+      switch (data.type) {
+        case 'join': {
+          seatPlayer(table, presence.userId, data.name, data.buyIn, data.seat);
+          table.setSittingOut(presence.userId, false);
           sendToPresence(dispatcher, presence, {
-            type: 'error',
-            message: err?.message ?? 'error',
+            type: 'welcome',
+            playerId: presence.userId,
+            tableId: table.state.id,
           });
-        }
-      }
-
-      const now = Date.now();
-      if (!state.lastAutoDiscardMs) state.lastAutoDiscardMs = now;
-      if (now - state.lastAutoDiscardMs >= AUTO_DISCARD_INTERVAL_MS) {
-        const before = JSON.stringify(state.table.state.hand?.discardPending ?? []);
-        state.table.autoDiscard();
-        const after = JSON.stringify(state.table.state.hand?.discardPending ?? []);
-        if (before !== after) {
           shouldBroadcast = true;
+          break;
         }
-        if (!state.table.state.hand) {
-          state.table.beginNextHandIfReady();
-          if (state.table.state.hand) {
-            shouldBroadcast = true;
-          }
+        case 'reconnect': {
+          table.setSittingOut(presence.userId, false);
+          sendToPresence(dispatcher, presence, {
+            type: 'welcome',
+            playerId: presence.userId,
+            tableId: table.state.id,
+          });
+          shouldBroadcast = true;
+          break;
         }
-        state.lastAutoDiscardMs = now;
+        case 'action': {
+          table.applyAction(presence.userId, {
+            type: data.action as any,
+            amount: data.amount,
+          });
+          shouldBroadcast = true;
+          break;
+        }
+        case 'discard': {
+          table.applyDiscard(presence.userId, data.index);
+          shouldBroadcast = true;
+          break;
+        }
+        case 'nextHand': {
+          table.advanceToNextHand();
+          shouldBroadcast = true;
+          break;
+        }
+        case 'requestState': {
+          const publicState = table.getPublicState(presence.userId);
+          sendToPresence(dispatcher, presence, {
+            type: 'state',
+            state: { ...publicState, you: { playerId: presence.userId } },
+          });
+          break;
+        }
+        default:
+          throw new Error('Unknown message');
       }
+      table.beginNextHandIfReady();
+    } catch (err: any) {
+      sendToPresence(dispatcher, presence, {
+        type: 'error',
+        message: err?.message ?? 'error',
+      });
+    }
+  }
 
-      if (shouldBroadcast) {
-        broadcastState(dispatcher, state);
+  const now = Date.now();
+  if (!state.lastAutoDiscardMs) state.lastAutoDiscardMs = now;
+  if (now - state.lastAutoDiscardMs >= AUTO_DISCARD_INTERVAL_MS) {
+    const before = JSON.stringify(table.state.hand?.discardPending ?? []);
+    table.autoDiscard();
+    const after = JSON.stringify(table.state.hand?.discardPending ?? []);
+    if (before !== after) {
+      shouldBroadcast = true;
+    }
+    if (!table.state.hand) {
+      table.beginNextHandIfReady();
+      if (table.state.hand) {
+        shouldBroadcast = true;
       }
+    }
+    state.lastAutoDiscardMs = now;
+  }
 
-      return { state };
-    },
-    matchTerminate: (ctx, logger, nk, dispatcher, tick, state, graceSeconds) => {
-      return { state };
-    },
-    matchSignal: (ctx, logger, nk, dispatcher, tick, state, data) => {
-      return { state, data: 'ok' };
-    },
-  });
+  state.table = table.state;
+  if (shouldBroadcast) {
+    broadcastState(dispatcher, state);
+  }
+
+  return { state };
+}
+
+function matchTerminate(ctx, logger, nk, dispatcher, tick, state, graceSeconds) {
+  return { state };
+}
+
+function matchSignal(ctx, logger, nk, dispatcher, tick, state, data) {
+  return { state, data: 'ok' };
+}
+
+const pdhMatchHandler = {
+  matchInit,
+  matchJoinAttempt,
+  matchJoin,
+  matchLeave,
+  matchLoop,
+  matchTerminate,
+  matchSignal,
+};
+
+const InitModule: nkruntime.InitModule = (ctx, logger, nk, initializer) => {
+  const maybeRegisterAfterAuthenticateDevice = (
+    initializer as unknown as { registerAfterAuthenticateDevice?: (...args: any[]) => void }
+  ).registerAfterAuthenticateDevice;
+  if (typeof maybeRegisterAfterAuthenticateDevice === 'function') {
+    maybeRegisterAfterAuthenticateDevice(ensureDefaultMatchAfterAuthenticate);
+  } else {
+    logger.warn('registerAfterAuthenticateDevice unavailable; default match auto-create disabled.');
+  }
+
+  initializer.registerMatch('pdh', pdhMatchHandler);
 
   logger.info('PDH Nakama module loaded');
 };
 
+(globalThis as any).ensureDefaultMatchAfterAuthenticate = ensureDefaultMatchAfterAuthenticate;
+(globalThis as any).matchInit = matchInit;
+(globalThis as any).matchJoinAttempt = matchJoinAttempt;
+(globalThis as any).matchJoin = matchJoin;
+(globalThis as any).matchLeave = matchLeave;
+(globalThis as any).matchLoop = matchLoop;
+(globalThis as any).matchTerminate = matchTerminate;
+(globalThis as any).matchSignal = matchSignal;
 globalThis.InitModule = InitModule;

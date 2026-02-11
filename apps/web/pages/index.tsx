@@ -431,19 +431,24 @@ const Home: NextPage = () => {
       }
 
       const label = JSON.stringify({ tableId: NAKAMA_TABLE_ID });
-      const list = await client.listMatches(session, 10, true, label, 0, 9);
-      const existingMatch = (list.matches ?? []).find((match) => Boolean(match.match_id));
-      if (existingMatch?.match_id) {
-        return socket.joinMatch(existingMatch.match_id);
+      const findAuthoritativeMatchId = async () => {
+        const list = await client.listMatches(session, 10, true, label, 0, 9);
+        const existingMatch = (list.matches ?? []).find((match) => Boolean(match.match_id));
+        return existingMatch?.match_id ?? null;
+      };
+
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const matchId = await findAuthoritativeMatchId();
+        if (matchId) {
+          return socket.joinMatch(matchId);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 150));
       }
 
-      const created = await socket.createMatch(NAKAMA_MATCH_MODULE);
-      if (!created.authoritative) {
-        throw new Error(
-          `Created non-authoritative match. Check NEXT_PUBLIC_NAKAMA_MATCH_MODULE=${NAKAMA_MATCH_MODULE}.`
-        );
-      }
-      return created;
+      throw new Error(
+        `No authoritative match found for tableId=${NAKAMA_TABLE_ID}. ` +
+          `Check server hook registration and module ${NAKAMA_MATCH_MODULE}.`
+      );
     };
 
     const connectNakama = async () => {
