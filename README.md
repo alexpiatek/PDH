@@ -61,6 +61,7 @@ Use these guides:
 
 - `docs/ONBOARDING_30_MIN.md` (fast start for new contributors)
 - `docs/PROD_RUNBOOK.md` (exact end-to-end production flow used for `bondipoker.online`)
+- `docs/TROUBLESHOOTING.md` (production issue diagnosis and fix commands)
 - `docs/DEPLOY_OCI.md` (OCI-specific deployment checklist)
 
 ## Test + Smoke
