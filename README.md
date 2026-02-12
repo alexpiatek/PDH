@@ -24,13 +24,30 @@ Web-based, real-time multiplayer poker variant. Texas Hold'em structure with man
 ## Quick Start (Nakama Local)
 ```bash
 pnpm install
-pnpm -C apps/nakama build
-docker compose -f apps/nakama/docker-compose.yml up
+cp .env.example .env
+make dev-up
+```
+
+Then run the web app:
+
+```bash
 cp apps/web/.env.local.example apps/web/.env.local
 pnpm -C apps/web dev
 ```
 
-If you are on Windows without `cp`, copy `apps/web/.env.local.example` to `apps/web/.env.local` manually.
+Windows: use WSL, or run the equivalent commands from PowerShell/CMD.
+
+## Test + Smoke
+```bash
+make test
+make smoke
+```
+
+Smoke test options example:
+
+```bash
+./scripts/smoke.sh --host 127.0.0.1 --port 7350 --ssl false --clients 4
+```
 
 ## Local URLs
 - Web app: `http://localhost:3001` (or the Next.js port shown in your terminal)
@@ -41,33 +58,12 @@ If you are on Windows without `cp`, copy `apps/web/.env.local.example` to `apps/
 If you use an embedded browser (Cursor/VS Code), open the app URL directly; file previews will not run Next.js.
 
 ## Oracle/OCI Run-through
-Nakama requires PostgreSQL or CockroachDB for its database backend. For Oracle Cloud, run Nakama against a PostgreSQL endpoint hosted in OCI (managed or self-managed).
-
-1. Build the Nakama runtime module:
-```bash
-pnpm -C apps/nakama build
-```
-2. Set your remote database DSN:
-```bash
-export NAKAMA_DATABASE_ADDRESS='nakama:<password>@<postgres-host>:5432/nakama?sslmode=require'
-```
-3. Start Nakama in Oracle mode (no local Postgres container):
-```bash
-docker compose -f apps/nakama/docker-compose.oracle.yml up
-```
-4. Configure the web client to hit your public Nakama host:
-```bash
-NEXT_PUBLIC_NETWORK_BACKEND=nakama
-NEXT_PUBLIC_NAKAMA_HOST=<public-nakama-host>
-NEXT_PUBLIC_NAKAMA_PORT=443
-NEXT_PUBLIC_NAKAMA_USE_SSL=true
-NEXT_PUBLIC_NAKAMA_SERVER_KEY=defaultkey
-NEXT_PUBLIC_NAKAMA_MATCH_MODULE=pdh
-NEXT_PUBLIC_NAKAMA_TABLE_ID=main
-```
-5. Deploy the Next.js app and open it from two different browsers/devices to verify shared online play.
-
-The web client auto-discovers a running authoritative match labeled `{"tableId":"main"}` and creates one with module `pdh` if none exists.
+See `docs/DEPLOY_OCI.md` for full OCI deployment steps:
+- OCI ingress and host firewall checklist
+- production `docker-compose.prod.yml` usage
+- TLS reverse proxy (Caddy) example
+- console hardening guidance
+- remote smoke test verification
 
 ## Legacy Quick Start (optional)
 ```bash

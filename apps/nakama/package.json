@@ -4,13 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "test:unit": "vitest run"
   },
   "dependencies": {
     "@pdh/engine": "workspace:*"
   },
   "devDependencies": {
     "esbuild": "^0.20.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.3"
   }
 }

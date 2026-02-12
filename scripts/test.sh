@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+(
+  cd "$ROOT_DIR"
+  ./scripts/run-pnpm.sh -C packages/engine test
+  ./scripts/run-pnpm.sh -C apps/nakama test:unit
+)
+"$ROOT_DIR/scripts/integration-test.sh"

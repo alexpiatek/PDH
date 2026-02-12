@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:${POSTGRES_VERSION:-15}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nakama}
+      POSTGRES_USER: ${POSTGRES_USER:-nakama}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - nakama-postgres-prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nakama} -d ${POSTGRES_DB:-nakama}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  nakama-migrate:
+    image: heroiclabs/nakama:${NAKAMA_VERSION:-3.17.0}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - "migrate"
+      - "up"
+      - "--database.address=${NAKAMA_DATABASE_ADDRESS:?Set NAKAMA_DATABASE_ADDRESS in .env}"
+    volumes:
+      - ./apps/nakama/nakama.yml:/nakama/data/nakama.yml:ro
+      - ./apps/nakama/dist:/nakama/data/modules:ro
+
+  nakama:
+    image: heroiclabs/nakama:${NAKAMA_VERSION:-3.17.0}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nakama-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${NAKAMA_HTTP_PORT:-7350}:7350"
+    command:
+      - "--name=${NAKAMA_NODE_NAME:-pdh-nakama}"
+      - "--config=/nakama/data/nakama.yml"
+      - "--database.address=${NAKAMA_DATABASE_ADDRESS:?Set NAKAMA_DATABASE_ADDRESS in .env}"
+      - "--socket.server_key=${NAKAMA_SOCKET_SERVER_KEY:?Set NAKAMA_SOCKET_SERVER_KEY in .env}"
+      - "--session.encryption_key=${NAKAMA_SESSION_ENCRYPTION_KEY:?Set NAKAMA_SESSION_ENCRYPTION_KEY in .env}"
+      - "--session.refresh_encryption_key=${NAKAMA_SESSION_REFRESH_ENCRYPTION_KEY:?Set NAKAMA_SESSION_REFRESH_ENCRYPTION_KEY in .env}"
+      - "--runtime.http_key=${NAKAMA_RUNTIME_HTTP_KEY:?Set NAKAMA_RUNTIME_HTTP_KEY in .env}"
+      - "--console.signing_key=${NAKAMA_CONSOLE_SIGNING_KEY:?Set NAKAMA_CONSOLE_SIGNING_KEY in .env}"
+      - "--console.username=${NAKAMA_CONSOLE_USERNAME:?Set NAKAMA_CONSOLE_USERNAME in .env}"
+      - "--console.password=${NAKAMA_CONSOLE_PASSWORD:?Set NAKAMA_CONSOLE_PASSWORD in .env}"
+      - "--logger.level=${NAKAMA_LOG_LEVEL:-info}"
+    volumes:
+      - ./apps/nakama/nakama.yml:/nakama/data/nakama.yml:ro
+      - ./apps/nakama/dist:/nakama/data/modules:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:7350/healthcheck >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  nakama-postgres-prod:

@@ -1,0 +1,17 @@
+{
+  "name": "@pdh/smoke",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@heroiclabs/nakama-js": "^2.8.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.2",
+    "typescript": "^5.3.3"
+  }
+}
