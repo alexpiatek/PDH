@@ -62,6 +62,9 @@ Use these guides:
 - `docs/ONBOARDING_30_MIN.md` (fast start for new contributors)
 - `docs/PROD_RUNBOOK.md` (exact end-to-end production flow used for `bondipoker.online`)
 - `docs/TROUBLESHOOTING.md` (production issue diagnosis and fix commands)
+- `docs/NON_ROOT_MIGRATION.md` (move production off root user)
+- `docs/MONITORING_ALERTING.md` (uptime, host metrics, alerting baseline)
+- `docs/BACKUP_RESTORE.md` (daily backup + restore drill)
 - `docs/DEPLOY_OCI.md` (OCI-specific deployment checklist)
 
 ## Test + Smoke
