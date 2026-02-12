@@ -35,6 +35,15 @@ const FLOP: PokerCard[] = [
 ];
 
 const DISCARD_CARD_ID = '2H';
+const RULES = [
+  '2-9 players, standard 52-card deck.',
+  'Each player is dealt 5 private cards pre-flop.',
+  'Flop betting round, then each remaining player discards exactly 1 card.',
+  'Turn betting round, then each remaining player discards exactly 1 card.',
+  'River betting round, then each remaining player discards exactly 1 card.',
+  'Showdown uses exactly 2 hole cards plus 5 community cards.',
+  'Discards stay hidden for the entire hand.',
+] as const;
 
 const SUIT_SYMBOL: Record<Suit, string> = {
   S: '♠',
@@ -208,7 +217,7 @@ export default function HeroSection() {
             </button>
 
             <a
-              href="/play"
+              href="#rules"
               className="inline-flex items-center justify-center rounded-xl border border-purple-400/45 bg-purple-500/10 px-5 py-3 text-sm font-semibold text-purple-100 transition hover:bg-purple-500/20"
             >
               See Rules
@@ -378,6 +387,28 @@ export default function HeroSection() {
               </LayoutGroup>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div id="rules" className="relative mx-auto max-w-5xl scroll-mt-20 px-4 pb-20 sm:px-6 lg:px-8">
+        <div className="rounded-2xl border border-cyan-400/20 bg-slate-900/55 p-5 backdrop-blur sm:p-7">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Rules</p>
+          <h2 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+            Easy-to-read hand flow
+          </h2>
+          <ol className="mt-5 space-y-3 text-sm text-slate-200 sm:text-base">
+            {RULES.map((rule, index) => (
+              <li
+                key={rule}
+                className="grid grid-cols-[1.8rem_1fr] items-start gap-3 rounded-lg border border-white/10 bg-slate-950/50 px-4 py-3 leading-relaxed"
+              >
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-cyan-300/40 bg-cyan-400/10 text-xs font-bold text-cyan-200">
+                  {index + 1}
+                </span>
+                <span>{rule}</span>
+              </li>
+            ))}
+          </ol>
         </div>
       </div>
     </section>
