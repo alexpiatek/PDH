@@ -7,7 +7,8 @@ Use this page when production is broken and you need fast diagnosis.
 Run these first on the server:
 
 ```bash
-cd /root/PDH
+SERVICE_DIR=$(systemctl show -p WorkingDirectory --value pdh-web)
+cd "$SERVICE_DIR"
 docker compose --env-file .env -f docker-compose.prod.yml ps
 docker compose --env-file .env -f docker-compose.prod.yml logs --tail=120 nakama postgres
 systemctl status pdh-web --no-pager
@@ -16,6 +17,12 @@ curl -i http://127.0.0.1:7350/healthcheck
 curl -I http://127.0.0.1:3001
 curl -i https://api.<domain>/healthcheck
 curl -I https://play.<domain>
+```
+
+Fast safe redeploy (recommended):
+```bash
+cd "$SERVICE_DIR"
+./scripts/deploy-web-prod.sh
 ```
 
 ## 1) Nakama Not Starting
@@ -85,7 +92,8 @@ ss -ltnp | grep ':3001'
 
 ### Fix
 ```bash
-cd /root/PDH
+SERVICE_DIR=$(systemctl show -p WorkingDirectory --value pdh-web)
+cd "$SERVICE_DIR"
 ./scripts/run-pnpm.sh -C apps/web build
 systemctl restart pdh-web
 systemctl status pdh-web --no-pager
@@ -120,7 +128,8 @@ ss -ltnp | grep -E ':80|:443|:3001|:7350'
 
 ### Check frontend env
 ```bash
-cat /root/PDH/apps/web/.env.local
+SERVICE_DIR=$(systemctl show -p WorkingDirectory --value pdh-web)
+cat "$SERVICE_DIR/apps/web/.env.local"
 ```
 
 Must match:
@@ -131,6 +140,7 @@ Must match:
 
 After edits:
 ```bash
+cd "$SERVICE_DIR"
 ./scripts/run-pnpm.sh -C apps/web build
 systemctl restart pdh-web
 ```
@@ -160,7 +170,8 @@ curl.exe -i https://api.<domain>/healthcheck
 ## 8) Emergency Restart Sequence
 
 ```bash
-cd /root/PDH
+SERVICE_DIR=$(systemctl show -p WorkingDirectory --value pdh-web)
+cd "$SERVICE_DIR"
 docker compose --env-file .env -f docker-compose.prod.yml up -d postgres
 docker compose --env-file .env -f docker-compose.prod.yml run --rm nakama-migrate
 docker compose --env-file .env -f docker-compose.prod.yml up -d nakama
