@@ -21,27 +21,34 @@ This is the single source of truth for local development.
 pnpm install
 cp -n .env.example .env
 cp -n apps/web/.env.local.example apps/web/.env.local
-make up
+pnpm run up
 ```
 
 Then start the client:
 
 ```bash
-make dev
+pnpm run dev:web
 ```
 
 Open `http://localhost:3001`.
 
+One-command boot (backend + frontend):
+
+```bash
+pnpm run dev:full
+```
+
 ## Daily Commands
 
-- Start backend (Postgres + Nakama + migrations): `make up`
-- Start frontend dev server: `make dev`
-- Tail backend logs: `make logs`
-- Stop backend: `make down`
-- Run tests: `make test`
-- Run lint baseline: `make lint`
-- Run type checks: `make typecheck`
-- Build all apps: `make build`
+- Start backend (Postgres + Nakama + migrations): `pnpm run up` (or `make up`)
+- Start frontend dev server: `pnpm run dev:web` (or `make dev`)
+- One-command boot: `pnpm run dev:full`
+- Tail backend logs: `pnpm run logs` (or `make logs`)
+- Stop backend: `pnpm run down` (or `make down`)
+- Run tests: `pnpm run test` (or `make test`)
+- Run lint baseline: `pnpm run lint` (or `make lint`)
+- Run type checks: `pnpm run typecheck` (or `make typecheck`)
+- Build all apps: `pnpm run build` (or `make build`)
 
 ## Troubleshooting
 

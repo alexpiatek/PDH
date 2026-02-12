@@ -46,8 +46,7 @@ Run from repo root:
 pnpm install
 cp -n .env.example .env
 cp -n apps/web/.env.local.example apps/web/.env.local
-make up
-make dev
+pnpm run dev:full
 ```
 
 Open `http://localhost:3001`.
