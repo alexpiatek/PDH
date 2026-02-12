@@ -62,7 +62,7 @@ jobs:
             docker compose --env-file .env -f docker-compose.prod.yml run --rm nakama-migrate
             docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate nakama
             ./scripts/run-pnpm.sh -C apps/web build
-            sudo systemctl restart pdh-web
+            sudo -n /bin/systemctl restart pdh-web
             curl -fsS https://api.bondipoker.online/healthcheck >/dev/null
 
       - name: Smoke test
