@@ -2,6 +2,7 @@
 
 This is the exact deployment pattern used for:
 
+- `bondipoker.online` (landing page)
 - `play.bondipoker.online` (web client)
 - `api.bondipoker.online` (Nakama API)
 
@@ -9,6 +10,7 @@ This is the exact deployment pattern used for:
 
 - Caddy terminates TLS on `:443`.
 - Caddy routes:
+  - apex + `www.*` -> `127.0.0.1:3001` (Next.js landing page)
   - `play.*` -> `127.0.0.1:3001` (Next.js)
   - `api.*` -> `127.0.0.1:7350` (Nakama)
 - Nakama and Postgres run via `docker-compose.prod.yml`.
@@ -19,6 +21,8 @@ This is the exact deployment pattern used for:
 - Ubuntu VPS with Docker + Docker Compose plugin.
 - Node.js + pnpm installed on VPS.
 - DNS `A` records:
+  - `<domain>` -> VPS IP
+  - `www.<domain>` -> VPS IP
   - `play.<domain>` -> VPS IP
   - `api.<domain>` -> VPS IP
 - Firewall/Security group:
@@ -158,6 +162,10 @@ apt install -y caddy
 Set `/etc/caddy/Caddyfile`:
 
 ```caddy
+<your-domain>, www.<your-domain> {
+  reverse_proxy 127.0.0.1:3001
+}
+
 play.<your-domain> {
   reverse_proxy 127.0.0.1:3001
 }
@@ -166,6 +174,10 @@ api.<your-domain> {
   reverse_proxy 127.0.0.1:7350
 }
 ```
+
+Note:
+
+- The app middleware serves the landing page on apex/`www` and rewrites `play.*` root requests to `/play`.
 
 Validate + restart:
 
@@ -180,6 +192,7 @@ systemctl status caddy --no-pager
 From VPS and local machine:
 
 ```bash
+curl -I https://<your-domain>
 curl -I https://play.<your-domain>
 curl -i https://api.<your-domain>/healthcheck
 ```

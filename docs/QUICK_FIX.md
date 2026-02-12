@@ -38,7 +38,7 @@ grep -n '^NEXT_PUBLIC_NAKAMA_HOST=' apps/web/.env.local
 grep -n '^NEXT_PUBLIC_NAKAMA_PORT=' apps/web/.env.local
 grep -n '^NEXT_PUBLIC_NAKAMA_USE_SSL=' apps/web/.env.local
 
-CHUNK=$(curl -sS https://play.bondipoker.online | grep -oE '/_next/static/chunks/pages/index-[^"]+\.js' | head -n1)
+CHUNK=$(curl -sS https://play.bondipoker.online | grep -oE '/_next/static/chunks/pages/(play|index)-[^"]+\.js' | head -n1)
 JS=$(curl -sS "https://play.bondipoker.online$CHUNK")
 echo "$JS" | grep -oE '37ba066c[0-9a-f]*|88f89fa2[0-9a-f]*' | sort -u
 echo "$JS" | grep -q 'Startup sanity check failed' && echo 'STARTUP_SANITY_CODE=present'

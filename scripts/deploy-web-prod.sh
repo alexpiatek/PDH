@@ -53,9 +53,9 @@ verify_live_bundle_key() {
   local chunk_path
   local live_js
 
-  chunk_path="$(curl -fsS "$PLAY_URL" | grep -oE '/_next/static/chunks/pages/index-[^"]+\.js' | head -n1 || true)"
+  chunk_path="$(curl -fsS "$PLAY_URL" | grep -oE '/_next/static/chunks/pages/(play|index)-[^"]+\.js' | head -n1 || true)"
   if [[ -z "$chunk_path" ]]; then
-    echo "WARN: Could not discover live index chunk from $PLAY_URL."
+    echo "WARN: Could not discover live game chunk from $PLAY_URL."
     return
   fi
 
@@ -116,8 +116,8 @@ main() {
   fi
 
   local local_chunk
-  local_chunk="$(ls -1 "$ROOT_DIR/apps/web/.next/static/chunks/pages"/index-*.js 2>/dev/null | head -n1 || true)"
-  [[ -n "$local_chunk" ]] || die "Could not find local built index chunk."
+  local_chunk="$(ls -1 "$ROOT_DIR/apps/web/.next/static/chunks/pages"/play-*.js 2>/dev/null | head -n1 || true)"
+  [[ -n "$local_chunk" ]] || die "Could not find local built play chunk."
   grep -q "$backend_key" "$local_chunk" || die "Local build chunk does not contain expected key prefix ${backend_key:0:8}..."
   grep -q "Startup sanity check failed" "$local_chunk" || die "Local build is missing startup sanity-check logic."
   echo "Local startup sanity-check marker present."
@@ -126,7 +126,7 @@ main() {
 
   echo "Deploy complete."
   echo "Quick verify:"
-  echo "CHUNK=\$(curl -sS ${PLAY_URL} | grep -oE '/_next/static/chunks/pages/index-[^\"]+\\.js' | head -n1)"
+  echo "CHUNK=\$(curl -sS ${PLAY_URL} | grep -oE '/_next/static/chunks/pages/(play|index)-[^\"]+\\.js' | head -n1)"
   echo "JS=\$(curl -sS \"${PLAY_URL}\$CHUNK\")"
   echo "echo \"\$JS\" | grep -oE '${backend_key:0:8}[0-9a-f]*|37ba066c[0-9a-f]*' | sort -u"
   echo "echo \"\$JS\" | grep -q 'Startup sanity check failed' && echo 'STARTUP_SANITY_CODE=present'"
