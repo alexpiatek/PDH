@@ -1,5 +1,8 @@
 # Deploy to Oracle Cloud (OCI)
 
+For the full production flow (including Next.js + Caddy + troubleshooting),
+see `docs/PROD_RUNBOOK.md`.
+
 This runbook deploys Nakama + Postgres on one OCI VM using `docker-compose.prod.yml`.
 
 ## 1) Build Runtime Module
@@ -94,12 +97,19 @@ Run smoke test from any machine with repo checkout:
 ```
 
 ## 7) Recommended TLS Front Door (Caddy)
-Expose only `443` publicly and proxy to Nakama `7350` on localhost.
+Expose only `443` publicly and proxy:
+- `play.<domain>` -> Next.js on `127.0.0.1:3001`
+- `api.<domain>` -> Nakama on `127.0.0.1:7350`
 
 Example `Caddyfile`:
 
 ```caddy
-pdh.example.com {
+play.example.com {
+  encode gzip
+  reverse_proxy 127.0.0.1:3001
+}
+
+api.example.com {
   encode gzip
   reverse_proxy 127.0.0.1:7350
 }
