@@ -51,11 +51,12 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
+            export CI=true
             cd /home/pdh/PDH
             git fetch --all
             git checkout main
             git pull origin main
-            ./scripts/run-pnpm.sh install
+            ./scripts/run-pnpm.sh install --no-frozen-lockfile --force
             ./scripts/run-pnpm.sh -C packages/engine build
             ./scripts/run-pnpm.sh -C apps/nakama build
             docker compose --env-file .env -f docker-compose.prod.yml up -d postgres
