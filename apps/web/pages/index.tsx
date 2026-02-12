@@ -40,6 +40,7 @@ const parseBoolean = (value: string | undefined, fallback: boolean) => {
 
 const NAKAMA_USE_SSL = parseBoolean(process.env.NEXT_PUBLIC_NAKAMA_USE_SSL, false);
 const USE_NAKAMA_BACKEND = NETWORK_BACKEND === 'nakama';
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 
 const createDeviceId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -62,13 +63,76 @@ const getOrCreateDeviceId = () => {
 };
 
 const errorMessage = (error: unknown) => {
+  if (typeof Response !== 'undefined' && error instanceof Response) {
+    const statusText = error.statusText ? ` ${error.statusText}` : '';
+    return `HTTP ${error.status}${statusText}`;
+  }
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
+  if (error && typeof error === 'object') {
+    const maybeStatus = (error as { status?: unknown }).status;
+    const maybeStatusText = (error as { statusText?: unknown }).statusText;
+    if (typeof maybeStatus === 'number') {
+      const statusText = typeof maybeStatusText === 'string' && maybeStatusText
+        ? ` ${maybeStatusText}`
+        : '';
+      return `HTTP ${maybeStatus}${statusText}`;
+    }
+    const maybeCode = (error as { code?: unknown }).code;
+    if (typeof maybeCode === 'string' || typeof maybeCode === 'number') {
+      return `code ${String(maybeCode)}`;
+    }
+    const maybeError = (error as { error?: unknown }).error;
+    if (typeof maybeError === 'string') {
+      return maybeError;
+    }
+  }
   if (error && typeof error === 'object' && 'message' in error) {
     const msg = (error as { message?: unknown }).message;
     if (typeof msg === 'string') return msg;
   }
-  return 'unknown error';
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+};
+
+const startupSanityError = () => {
+  if (!USE_NAKAMA_BACKEND) return null;
+  if (typeof window === 'undefined') return null;
+
+  if (!NAKAMA_HOST.trim()) {
+    return 'Missing NEXT_PUBLIC_NAKAMA_HOST';
+  }
+  if (!NAKAMA_PORT.trim()) {
+    return 'Missing NEXT_PUBLIC_NAKAMA_PORT';
+  }
+  if (!NAKAMA_SERVER_KEY.trim()) {
+    return 'Missing NEXT_PUBLIC_NAKAMA_SERVER_KEY';
+  }
+
+  const keyLower = NAKAMA_SERVER_KEY.trim().toLowerCase();
+  const looksPlaceholder =
+    keyLower === 'defaultkey' ||
+    keyLower.includes('change_me') ||
+    keyLower.includes('changeme') ||
+    NAKAMA_SERVER_KEY.trim().length < 24;
+  if (looksPlaceholder) {
+    return 'NEXT_PUBLIC_NAKAMA_SERVER_KEY looks like a placeholder';
+  }
+
+  if (window.location.protocol === 'https:' && !NAKAMA_USE_SSL) {
+    return 'NEXT_PUBLIC_NAKAMA_USE_SSL=false on an HTTPS site';
+  }
+
+  const uiHost = window.location.hostname.toLowerCase();
+  const apiHost = NAKAMA_HOST.trim().toLowerCase();
+  if (!LOCAL_HOSTS.has(uiHost) && LOCAL_HOSTS.has(apiHost)) {
+    return `Nakama host ${NAKAMA_HOST} is local, but UI host is ${window.location.hostname}`;
+  }
+
+  return null;
 };
 
 const suitSymbol = (suit: Card['suit']) => {
@@ -453,6 +517,10 @@ const Home: NextPage = () => {
 
     const connectNakama = async () => {
       setStatus('Connecting to Nakama...');
+      const sanity = startupSanityError();
+      if (sanity) {
+        throw new Error(`Startup sanity check failed: ${sanity}`);
+      }
 
       const client = new NakamaClient(NAKAMA_SERVER_KEY, NAKAMA_HOST, NAKAMA_PORT, NAKAMA_USE_SSL);
       const session = await client.authenticateDevice(getOrCreateDeviceId(), true);
