@@ -36,17 +36,26 @@ you start with 5 hole cards, then discard one after flop, turn, and river, endin
 - `apps/web`: Next.js client.
 - `apps/server`: legacy WebSocket backend (optional fallback).
 
-## Quick Start (Local Nakama)
+## QUICKSTART (Local Dev, 30 Minutes)
+
+Single source of truth: `docs/LOCAL_DEV.md`.
+
+Run from repo root:
 
 ```bash
 pnpm install
-cp .env.example .env
-./scripts/dev-up.sh
-cp apps/web/.env.local.example apps/web/.env.local
-pnpm -C apps/web dev --port 3001
+cp -n .env.example .env
+cp -n apps/web/.env.local.example apps/web/.env.local
+make up
+make dev
 ```
 
 Open `http://localhost:3001`.
+
+Notes:
+
+- Local stack is Next.js + Nakama + Postgres.
+- Caddy is production-only and is not needed for local development.
 
 ## Local URLs
 
@@ -59,6 +68,7 @@ Open `http://localhost:3001`.
 
 Use these guides:
 
+- `docs/LOCAL_DEV.md` (local development commands + troubleshooting)
 - `docs/ONBOARDING_30_MIN.md` (fast start for new contributors)
 - `docs/PROD_RUNBOOK.md` (exact end-to-end production flow used for `bondipoker.online`)
 - `docs/QUICK_FIX.md` (fastest safe recovery commands for production connection failures)
@@ -73,6 +83,19 @@ Use these guides:
 ```bash
 make test
 make smoke
+```
+
+## Standard Commands
+
+```bash
+pnpm run dev        # legacy websocket stack
+pnpm run up         # start Postgres + Nakama (Docker)
+pnpm run dev:web    # start Next.js client only
+pnpm run dev:full   # start backend then Next.js client
+pnpm run test
+pnpm run lint
+pnpm run typecheck
+pnpm run build
 ```
 
 Remote smoke test:
