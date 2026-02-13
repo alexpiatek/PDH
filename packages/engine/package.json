@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "fast-check": "^4.5.3",
     "typescript": "^5.3.3",
     "vitest": "^1.1.3"
   }
