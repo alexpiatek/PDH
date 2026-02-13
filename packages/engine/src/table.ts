@@ -154,7 +154,7 @@ export class PokerTable {
     const button =
       this.state.buttonSeat === -1
         ? seatsIn[0].seat
-        : nextOccupiedSeat(this.state.seats, this.state.buttonSeat)?.seat ?? seatsIn[0].seat;
+        : (nextOccupiedSeat(this.state.seats, this.state.buttonSeat)?.seat ?? seatsIn[0].seat);
     const deck = shuffle(buildDeck(), rng);
     const players: PlayerInHand[] = seatsIn.map((s) => ({
       seat: s.seat,
@@ -390,7 +390,8 @@ export class PokerTable {
 
   advancePendingPhase(now: number = nowTs()) {
     const hand = this.state.hand;
-    if (!hand || hand.pendingNextPhaseAt === null || hand.pendingNextPhaseAt === undefined) return false;
+    if (!hand || hand.pendingNextPhaseAt === null || hand.pendingNextPhaseAt === undefined)
+      return false;
     if (now < hand.pendingNextPhaseAt) return false;
     hand.pendingNextPhaseAt = null;
     if (hand.phase === 'betting') {
@@ -404,7 +405,7 @@ export class PokerTable {
     hand: HandState,
     player: PlayerInHand,
     newTotalBet: number,
-    actionLabel: 'raise' | 'bet' | 'allIn' = 'raise',
+    actionLabel: 'raise' | 'bet' | 'allIn' = 'raise'
   ) {
     const actualTotal = Math.min(newTotalBet, player.betThisStreet + player.stack);
     const raiseBy = actualTotal - hand.currentBet;
@@ -462,11 +463,10 @@ export class PokerTable {
     const canAct = active.filter((p) => p.stack > 0);
     if (canAct.length === 0) return true;
     const allMatched = hand.players.every(
-      (p) =>
-        p.status !== 'active' || p.betThisStreet === hand.currentBet || p.stack === 0,
+      (p) => p.status !== 'active' || p.betThisStreet === hand.currentBet || p.stack === 0
     );
     const allActed = hand.players.every(
-      (p) => p.status !== 'active' || p.hasActed || p.stack === 0,
+      (p) => p.status !== 'active' || p.hasActed || p.stack === 0
     );
     return allMatched && allActed;
   }
@@ -539,13 +539,10 @@ export class PokerTable {
     const card = player.holeCards[cardIndex];
     if (!card) throw new Error('Invalid discard index');
     player.holeCards.splice(cardIndex, 1);
-    logPush(
-      this.state.hand?.log,
-      `${player.name} discarded${auto ? ' (auto)' : ''}`,
-    );
+    logPush(this.state.hand?.log, `${player.name} discarded${auto ? ' (auto)' : ''}`);
     logPush(
       this.state.hand?.auditLog,
-      `${player.name} discarded ${card.rank}${card.suit}${auto ? ' (auto)' : ''}`,
+      `${player.name} discarded ${card.rank}${card.suit}${auto ? ' (auto)' : ''}`
     );
   }
 
@@ -648,7 +645,7 @@ export class PokerTable {
       .map((p) => ({ id: p.id, seat: p.seat, amount: p.totalCommitted }))
       .sort((a, b) => a.amount - b.amount);
     const live = new Set(
-      hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out').map((p) => p.id),
+      hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out').map((p) => p.id)
     );
     let remaining = contributions.map((c) => ({ ...c }));
     const pots: Pot[] = [];
@@ -684,7 +681,10 @@ export class PokerTable {
       const winners = eligible.filter((e) => e.eval.score === best);
       const share = Math.floor(pot.amount / winners.length);
       const remainder = pot.amount % winners.length;
-      const orderedWinners = this.orderWinnersByButton(winners.map((w) => w.player), hand.buttonSeat);
+      const orderedWinners = this.orderWinnersByButton(
+        winners.map((w) => w.player),
+        hand.buttonSeat
+      );
       winners.forEach((w) => {
         const existing = award.get(w.player.id);
         const evalResult = evalById.get(w.player.id);
@@ -779,19 +779,20 @@ export class PokerTable {
       buttonSeat: this.state.buttonSeat,
       hand: hand
         ? (() => {
-          const { auditLog, ...handPublic } = hand;
-          return {
-            ...handPublic,
-            players: hand.players.map((p) => ({
-              ...p,
-              holeCards:
-                (hand.phase === 'showdown' && contestedShowdown) || (forPlayerId && p.id === forPlayerId)
-                  ? p.holeCards
-                  : p.holeCards.map(() => ({ rank: 'X', suit: 'X' } as unknown as Card)),
-            })),
-            deck: [],
-          };
-        })()
+            const { auditLog, ...handPublic } = hand;
+            return {
+              ...handPublic,
+              players: hand.players.map((p) => ({
+                ...p,
+                holeCards:
+                  (hand.phase === 'showdown' && contestedShowdown) ||
+                  (forPlayerId && p.id === forPlayerId)
+                    ? p.holeCards
+                    : p.holeCards.map(() => ({ rank: 'X', suit: 'X' }) as unknown as Card),
+              })),
+              deck: [],
+            };
+          })()
         : null,
       log: [...this.state.log, ...(hand?.log ?? [])],
     };

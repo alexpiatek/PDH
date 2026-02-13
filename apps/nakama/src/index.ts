@@ -26,7 +26,11 @@ const InitModule: nkruntime.InitModule = (ctx, logger, nk, initializer) => {
   initializer.registerMatch(SMOKE_MATCH_MODULE, smokeMatchHandler);
   initializer.registerRpc(SMOKE_RPC_ENSURE_MATCH, rpcEnsureSmokeMatch);
 
-  logger.info('PDH Nakama module loaded (modules: %v, %v)', DEFAULT_MATCH_MODULE, SMOKE_MATCH_MODULE);
+  logger.info(
+    'PDH Nakama module loaded (modules: %v, %v)',
+    DEFAULT_MATCH_MODULE,
+    SMOKE_MATCH_MODULE
+  );
 };
 
 globalThis.InitModule = InitModule;

@@ -72,7 +72,12 @@ function evaluateFive(cards: Card[]): { category: number; rankValues: number[] }
   }
   vals.sort((a, b) => b - a);
   const flushSuit = Object.entries(suits).find(([, arr]) => arr.length >= 5)?.[0] ?? null;
-  const flushValues = flushSuit ? suits[flushSuit].map((c) => rankValue[c.rank]).sort((a, b) => b - a).slice(0, 5) : [];
+  const flushValues = flushSuit
+    ? suits[flushSuit]
+        .map((c) => rankValue[c.rank])
+        .sort((a, b) => b - a)
+        .slice(0, 5)
+    : [];
 
   const { straight, high } = isStraight(vals);
   const isFlush = !!flushSuit;
@@ -104,7 +109,10 @@ function evaluateFive(cards: Card[]): { category: number; rankValues: number[] }
   }
   if (groups[0].c === 3) {
     const trip = groups[0].v;
-    const kickers = groups.filter((g) => g.v !== trip).map((g) => g.v).sort((a, b) => b - a);
+    const kickers = groups
+      .filter((g) => g.v !== trip)
+      .map((g) => g.v)
+      .sort((a, b) => b - a);
     return { category: 3, rankValues: [trip, ...kickers.slice(0, 2)] };
   }
   if (groups[0].c === 2 && groups[1]?.c === 2) {
@@ -114,7 +122,10 @@ function evaluateFive(cards: Card[]): { category: number; rankValues: number[] }
   }
   if (groups[0].c === 2) {
     const pair = groups[0].v;
-    const kickers = groups.filter((g) => g.v !== pair).map((g) => g.v).sort((a, b) => b - a);
+    const kickers = groups
+      .filter((g) => g.v !== pair)
+      .map((g) => g.v)
+      .sort((a, b) => b - a);
     return { category: 1, rankValues: [pair, ...kickers.slice(0, 3)] };
   }
   return { category: 0, rankValues: vals.slice(0, 5) };

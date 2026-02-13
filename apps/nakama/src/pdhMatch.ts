@@ -45,7 +45,13 @@ function broadcastState(dispatcher: nkruntime.MatchDispatcher, state: MatchState
   }
 }
 
-function seatPlayer(table: PokerTable, playerId: string, name: string, buyIn: number, desiredSeat?: number) {
+function seatPlayer(
+  table: PokerTable,
+  playerId: string,
+  name: string,
+  buyIn: number,
+  desiredSeat?: number
+) {
   const alreadySeated = table.state.seats.some((seat) => seat && seat.id === playerId);
   if (alreadySeated) {
     throw new Error('Already seated');

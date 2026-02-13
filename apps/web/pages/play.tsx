@@ -73,9 +73,8 @@ const errorMessage = (error: unknown) => {
     const maybeStatus = (error as { status?: unknown }).status;
     const maybeStatusText = (error as { statusText?: unknown }).statusText;
     if (typeof maybeStatus === 'number') {
-      const statusText = typeof maybeStatusText === 'string' && maybeStatusText
-        ? ` ${maybeStatusText}`
-        : '';
+      const statusText =
+        typeof maybeStatusText === 'string' && maybeStatusText ? ` ${maybeStatusText}` : '';
       return `HTTP ${maybeStatus}${statusText}`;
     }
     const maybeCode = (error as { code?: unknown }).code;
@@ -159,7 +158,8 @@ const avatarSuitForId = (id?: string) => {
   }
   return AVATAR_SUITS[hash % AVATAR_SUITS.length];
 };
-const avatarSuitColor = (suit: Card['suit']) => (suit === 'H' || suit === 'D' ? '#dc2626' : '#111827');
+const avatarSuitColor = (suit: Card['suit']) =>
+  suit === 'H' || suit === 'D' ? '#dc2626' : '#111827';
 
 const cardRankLabel = (rank: Card['rank']) => (rank === 'T' ? '10' : rank);
 const cardText = (c: Card) => `${cardRankLabel(c.rank)}${suitSymbol(c.suit)}`;
@@ -277,7 +277,19 @@ const pipLayoutByRank: Record<Card['rank'], Pip[]> = {
   ],
 };
 
-const SuitPip = ({ suit, x, y, size, color }: { suit: Card['suit']; x: number; y: number; size: number; color: string }) => {
+const SuitPip = ({
+  suit,
+  x,
+  y,
+  size,
+  color,
+}: {
+  suit: Card['suit'];
+  x: number;
+  y: number;
+  size: number;
+  color: string;
+}) => {
   const scale = size / 100;
   return (
     <g transform={`translate(${x} ${y}) scale(${scale}) translate(-50 -50)`} fill={color}>
@@ -306,7 +318,10 @@ const SuitPip = ({ suit, x, y, size, color }: { suit: Card['suit']; x: number; y
 type ActionTone = 'raise' | 'call' | 'allin' | 'fold' | 'check' | 'bet';
 type ActionBadge = { name: string; label: string; tone: ActionTone; amount?: number };
 
-const ACTION_TONE_STYLES: Record<ActionTone, { background: string; border: string; color: string }> = {
+const ACTION_TONE_STYLES: Record<
+  ActionTone,
+  { background: string; border: string; color: string }
+> = {
   raise: { background: 'rgba(30, 41, 59, 0.9)', border: '#38bdf8', color: '#e0f2fe' },
   call: { background: 'rgba(30, 41, 59, 0.9)', border: '#a3e635', color: '#f7fee7' },
   allin: { background: 'rgba(88, 28, 28, 0.9)', border: '#f97316', color: '#fff7ed' },
@@ -344,15 +359,21 @@ const CardBack = ({
   size?: 'small' | 'medium';
   tone?: 'navy' | 'red' | 'gold';
 }) => {
-  const sizing = size === 'small'
-    ? { width: 30, height: 44, radius: 6, inset: 3 }
-    : { width: 36, height: 52, radius: 7, inset: 4 };
+  const sizing =
+    size === 'small'
+      ? { width: 30, height: 44, radius: 6, inset: 3 }
+      : { width: 36, height: 52, radius: 7, inset: 4 };
   const palette =
     tone === 'red'
       ? { base: '#b91c1c', dark: '#7f1d1d', border: '#f8fafc', pattern: 'rgba(254,226,226,0.35)' }
       : tone === 'gold'
         ? { base: '#9a6a24', dark: '#6b4517', border: '#fef3c7', pattern: 'rgba(252,211,77,0.28)' }
-        : { base: '#0f172a', dark: '#1f2937', border: '#f8fafc', pattern: 'rgba(148,163,184,0.25)' };
+        : {
+            base: '#0f172a',
+            dark: '#1f2937',
+            border: '#f8fafc',
+            pattern: 'rgba(148,163,184,0.25)',
+          };
   return (
     <div
       style={{
@@ -386,7 +407,9 @@ const CardBack = ({
 };
 
 const Home: NextPage = () => {
-  const connectionRef = useRef<{ send: (msg: ClientMessage) => void; close: () => void } | null>(null);
+  const connectionRef = useRef<{ send: (msg: ClientMessage) => void; close: () => void } | null>(
+    null
+  );
   const legacySocketRef = useRef<WebSocket | null>(null);
   const pendingMessagesRef = useRef<ClientMessage[]>([]);
   const discardTimerRef = useRef<number | null>(null);
@@ -405,7 +428,8 @@ const Home: NextPage = () => {
   const [discardSubmitted, setDiscardSubmitted] = useState(false);
 
   useEffect(() => {
-    const existing = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.playerId) : null;
+    const existing =
+      typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.playerId) : null;
     if (existing) {
       setPlayerId(existing);
     }
@@ -478,7 +502,11 @@ const Home: NextPage = () => {
       };
     };
 
-    const joinOrCreateNakamaMatch = async (client: NakamaClient, session: Session, socket: NakamaSocket): Promise<Match> => {
+    const joinOrCreateNakamaMatch = async (
+      client: NakamaClient,
+      session: Session,
+      socket: NakamaSocket
+    ): Promise<Match> => {
       if (NAKAMA_MATCH_ID) {
         return socket.joinMatch(NAKAMA_MATCH_ID);
       }
@@ -623,14 +651,16 @@ const Home: NextPage = () => {
     return Boolean(state?.seats?.some((s: any) => s && s.id === playerId));
   }, [state, playerId]);
 
-  const isMyTurn = Boolean(hand && you && hand.phase === 'betting' && hand.actionOnSeat === you.seat);
+  const isMyTurn = Boolean(
+    hand && you && hand.phase === 'betting' && hand.actionOnSeat === you.seat
+  );
   const youInfoDimmed = Boolean(hand && hand.phase === 'betting' && !isMyTurn);
-  const discardPending = hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id);
+  const discardPending =
+    hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id);
   const toCall = hand && you ? Math.max(0, hand.currentBet - you.betThisStreet) : 0;
   const isShowdown = hand?.phase === 'showdown';
   const hasContestedShowdown = Boolean(
-    hand &&
-      hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out').length > 1,
+    hand && hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out').length > 1
   );
   const raiseCapReached = Boolean(hand && hand.raisesThisStreet >= 2);
   const allInTotal = you ? you.stack + you.betThisStreet : 0;
@@ -857,10 +887,7 @@ const Home: NextPage = () => {
     { left: '20%', top: '78%' },
   ];
   const orderedPlayers = hand
-    ? [
-        ...(you ? [you] : []),
-        ...hand.players.filter((p) => p.id !== playerId),
-      ]
+    ? [...(you ? [you] : []), ...hand.players.filter((p) => p.id !== playerId)]
     : [];
   const overflowPlayers = orderedPlayers.slice(seatingPositions.length);
   const tablePlayers = orderedPlayers.slice(0, seatingPositions.length);
@@ -964,7 +991,9 @@ const Home: NextPage = () => {
         backgroundPosition: 'center, center',
         backgroundRepeat: 'no-repeat, no-repeat',
         backgroundSize: 'cover, cover',
-        padding: isPhone ? '12px 10px calc(20px + env(safe-area-inset-bottom))' : '18px 18px calc(30px + env(safe-area-inset-bottom))',
+        padding: isPhone
+          ? '12px 10px calc(20px + env(safe-area-inset-bottom))'
+          : '18px 18px calc(30px + env(safe-area-inset-bottom))',
       }}
     >
       <div
@@ -984,7 +1013,13 @@ const Home: NextPage = () => {
           backdropFilter: 'none',
         }}
       >
-        <div style={{ display: showSideLogos ? 'flex' : 'none', justifyContent: 'flex-start', alignItems: 'center' }}>
+        <div
+          style={{
+            display: showSideLogos ? 'flex' : 'none',
+            justifyContent: 'flex-start',
+            alignItems: 'center',
+          }}
+        >
           <img
             src="/Resolute Hold'em.png"
             alt=""
@@ -996,8 +1031,10 @@ const Home: NextPage = () => {
               boxShadow: 'none',
               opacity: 0.92,
               filter: 'drop-shadow(0 10px 24px rgba(0,0,0,0.35))',
-              WebkitMaskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
-              maskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
+              WebkitMaskImage:
+                'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
+              maskImage:
+                'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
               WebkitMaskRepeat: 'no-repeat',
               maskRepeat: 'no-repeat',
               WebkitMaskSize: '100% 100%',
@@ -1005,7 +1042,14 @@ const Home: NextPage = () => {
             }}
           />
         </div>
-        <div style={{ textAlign: 'center', maxWidth: isMobile ? '100%' : 'min(70vw, 520px)', justifySelf: 'center', width: '100%' }}>
+        <div
+          style={{
+            textAlign: 'center',
+            maxWidth: isMobile ? '100%' : 'min(70vw, 520px)',
+            justifySelf: 'center',
+            width: '100%',
+          }}
+        >
           <div
             style={{
               marginTop: isMobile ? 0 : '1cm',
@@ -1013,17 +1057,32 @@ const Home: NextPage = () => {
               fontWeight: 1000,
               letterSpacing: 1.2,
               lineHeight: isPhone ? 0.92 : 1,
-              fontFamily: '"Savoye LET", "Snell Roundhand", "Apple Chancery", "Brush Script MT", cursive',
+              fontFamily:
+                '"Savoye LET", "Snell Roundhand", "Apple Chancery", "Brush Script MT", cursive',
               whiteSpace: isPhone ? 'normal' : 'nowrap',
             }}
           >
             Resolute Hold&apos;em
           </div>
           <div style={{ marginTop: '-0.2cm' }}>
-            <div style={{ fontSize: isPhone ? 14 : 16, opacity: 0.6, fontFamily: '"Inter", sans-serif' }}>Raise the stakes. Own the table.</div>
+            <div
+              style={{
+                fontSize: isPhone ? 14 : 16,
+                opacity: 0.6,
+                fontFamily: '"Inter", sans-serif',
+              }}
+            >
+              Raise the stakes. Own the table.
+            </div>
           </div>
         </div>
-        <div style={{ display: showSideLogos ? 'flex' : 'none', justifyContent: 'flex-end', alignItems: 'center' }}>
+        <div
+          style={{
+            display: showSideLogos ? 'flex' : 'none',
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+          }}
+        >
           <img
             src="/Resolute Hold'em.png"
             alt=""
@@ -1035,8 +1094,10 @@ const Home: NextPage = () => {
               boxShadow: 'none',
               opacity: 0.92,
               filter: 'drop-shadow(0 10px 24px rgba(0,0,0,0.35))',
-              WebkitMaskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
-              maskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
+              WebkitMaskImage:
+                'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
+              maskImage:
+                'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
               WebkitMaskRepeat: 'no-repeat',
               maskRepeat: 'no-repeat',
               WebkitMaskSize: '100% 100%',
@@ -1056,8 +1117,24 @@ const Home: NextPage = () => {
             paddingBottom: 'clamp(0px, 6vh, 2cm)',
           }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, transform: isMobile ? 'none' : 'translateY(-7cm)', width: isPhone ? '100%' : undefined }}>
-            <div style={{ display: 'flex', gap: 10, flexDirection: isPhone ? 'column' : 'row', width: isPhone ? 'min(92vw, 360px)' : 'auto' }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 8,
+              transform: isMobile ? 'none' : 'translateY(-7cm)',
+              width: isPhone ? '100%' : undefined,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                gap: 10,
+                flexDirection: isPhone ? 'column' : 'row',
+                width: isPhone ? 'min(92vw, 360px)' : 'auto',
+              }}
+            >
               <input
                 value={name}
                 onChange={(e) => {
@@ -1114,7 +1191,11 @@ const Home: NextPage = () => {
                 Join
               </button>
             </div>
-            {nameError && <div style={{ fontSize: 12, color: '#fca5a5', fontFamily: '"Inter", sans-serif' }}>{nameError}</div>}
+            {nameError && (
+              <div style={{ fontSize: 12, color: '#fca5a5', fontFamily: '"Inter", sans-serif' }}>
+                {nameError}
+              </div>
+            )}
             <div
               style={{
                 fontSize: 12,
@@ -1132,7 +1213,11 @@ const Home: NextPage = () => {
                 style={{
                   fontSize: 12,
                   fontFamily: '"Inter", sans-serif',
-                  color: status.toLowerCase().includes('error') || status.toLowerCase().includes('failed') ? '#fca5a5' : '#e2e8f0',
+                  color:
+                    status.toLowerCase().includes('error') ||
+                    status.toLowerCase().includes('failed')
+                      ? '#fca5a5'
+                      : '#e2e8f0',
                   textAlign: 'center',
                 }}
               >
@@ -1156,7 +1241,8 @@ const Home: NextPage = () => {
               margin: '0 auto',
               marginTop: isMobile ? 8 : '1cm',
               borderRadius: isPhone ? 120 : 999,
-              background: 'radial-gradient(circle at 50% 45%, #1f5a2f 0%, #184524 50%, #11331a 100%)',
+              background:
+                'radial-gradient(circle at 50% 45%, #1f5a2f 0%, #184524 50%, #11331a 100%)',
               border: `${tableOuterBorder}px solid #2d2a40`,
               boxShadow: '0 30px 80px rgba(0,0,0,0.45), inset 0 0 40px rgba(0,0,0,0.5)',
             }}
@@ -1172,399 +1258,671 @@ const Home: NextPage = () => {
                 transformOrigin: 'center',
               }}
             >
-            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px - 0.4cm))', display: 'flex', gap: '1mm' }}>
-              {communityCards.map((c, idx) => (
-                <div
-                  key={`${dealAnimationKey}-community-${idx}-${c.rank}${c.suit}`}
-                  style={
-                    {
-                      animation: `deal-card 700ms ease-out ${idx * 120}ms both`,
-                      '--deal-x': '0px',
-                      '--deal-y': '-3.8cm',
-                    } as React.CSSProperties
-                  }
-                >
-                  <CardView key={idx} card={c} size="xlarge" highlight={isShowdown && winningCards.has(cardKey(c))} />
-                </div>
-              ))}
-            </div>
-            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px - 3.2cm))' }}>
-              <img
-                src="/Casino dealer.png"
-                alt="Dealer"
-                style={{
-                  width: 84,
-                  height: 84,
-                  borderRadius: 999,
-                  objectFit: 'cover',
-                  border: '2px solid rgba(255,255,255,0.7)',
-                  boxShadow: '0 10px 24px rgba(0,0,0,0.35)',
-                  background: 'rgba(8, 12, 22, 0.6)',
-                }}
-              />
-            </div>
-            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px + 1.8cm)) translateX(-3.5cm)' }}>
-              <div style={{ width: '3.22cm', height: '0.92cm', padding: 0, borderRadius: 999, background: '#0f172a', border: '1px solid #2c3e66', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-                <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '0.04mm', fontSize: 15, lineHeight: 1.1 }}>
-                  <span style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'translateY(-0.8mm)' }} aria-hidden="true">
-                    <svg viewBox="0 0 48 26" width="24" height="24" role="img" focusable="false" aria-hidden="true">
-                      <g>
-                        <ellipse cx="12" cy="6" rx="8" ry="3" fill="#b91c1c" stroke="#fee2e2" strokeWidth="1" />
-                        <ellipse cx="12" cy="10" rx="8" ry="3" fill="#dc2626" stroke="#fee2e2" strokeWidth="1" />
-                        <ellipse cx="12" cy="14" rx="8" ry="3" fill="#b91c1c" stroke="#fee2e2" strokeWidth="1" />
-                        <ellipse cx="12" cy="6" rx="5" ry="1.7" fill="none" stroke="#fff7f7" strokeWidth="0.8" />
-                        <rect x="6.2" y="4.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
-                        <rect x="15.4" y="4.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
-                        <rect x="10.3" y="7" width="2.6" height="2.2" rx="0.4" fill="#f9fafb" />
-                      </g>
-                      <g>
-                        <ellipse cx="26" cy="12" rx="8" ry="3" fill="#111827" stroke="#e5e7eb" strokeWidth="1" />
-                        <ellipse cx="26" cy="16" rx="8" ry="3" fill="#1f2937" stroke="#e5e7eb" strokeWidth="1" />
-                        <ellipse cx="26" cy="12" rx="5" ry="1.7" fill="none" stroke="#f3f4f6" strokeWidth="0.8" />
-                        <rect x="20.2" y="10.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
-                        <rect x="29.4" y="10.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
-                      </g>
-                      <g>
-                        <ellipse cx="40" cy="10" rx="7.5" ry="2.8" fill="#1d4ed8" stroke="#dbeafe" strokeWidth="1" />
-                        <ellipse cx="40" cy="14" rx="7.5" ry="2.8" fill="#2563eb" stroke="#dbeafe" strokeWidth="1" />
-                        <ellipse cx="40" cy="10" rx="4.7" ry="1.6" fill="none" stroke="#eff6ff" strokeWidth="0.8" />
-                        <rect x="34.8" y="8.6" width="2.2" height="2.2" rx="0.4" fill="#f9fafb" />
-                        <rect x="42.8" y="8.6" width="2.2" height="2.2" rx="0.4" fill="#f9fafb" />
-                      </g>
-                    </svg>
-                  </span>
-                  <span
-                    style={{
-                      marginTop: '-2.2mm',
-                      minWidth: 24,
-                      maxWidth: '2.2cm',
-                      fontSize: 12,
-                      textAlign: 'center',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {potAmount}
-                  </span>
-                </span>
-              </div>
-            </div>
-            {isShowdown && showdownSummary && (
               <div
                 style={{
                   position: 'absolute',
                   top: '40%',
                   left: '50%',
-                  transform: 'translate(-50%, -50%) translateY(calc(-19px + 1.7cm)) translateX(4cm)',
+                  transform: 'translate(-50%, -50%) translateY(calc(-19px - 0.4cm))',
+                  display: 'flex',
+                  gap: '1mm',
+                }}
+              >
+                {communityCards.map((c, idx) => (
+                  <div
+                    key={`${dealAnimationKey}-community-${idx}-${c.rank}${c.suit}`}
+                    style={
+                      {
+                        animation: `deal-card 700ms ease-out ${idx * 120}ms both`,
+                        '--deal-x': '0px',
+                        '--deal-y': '-3.8cm',
+                      } as React.CSSProperties
+                    }
+                  >
+                    <CardView
+                      key={idx}
+                      card={c}
+                      size="xlarge"
+                      highlight={isShowdown && winningCards.has(cardKey(c))}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '40%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%) translateY(calc(-19px - 3.2cm))',
+                }}
+              >
+                <img
+                  src="/Casino dealer.png"
+                  alt="Dealer"
+                  style={{
+                    width: 84,
+                    height: 84,
+                    borderRadius: 999,
+                    objectFit: 'cover',
+                    border: '2px solid rgba(255,255,255,0.7)',
+                    boxShadow: '0 10px 24px rgba(0,0,0,0.35)',
+                    background: 'rgba(8, 12, 22, 0.6)',
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '40%',
+                  left: '50%',
+                  transform:
+                    'translate(-50%, -50%) translateY(calc(-19px + 1.8cm)) translateX(-3.5cm)',
                 }}
               >
                 <div
                   style={{
                     width: '3.22cm',
                     height: '0.92cm',
-                    padding: '0 6px',
+                    padding: 0,
                     borderRadius: 999,
-                    background: '#123b2f',
-                    border: '1px solid #22c55e',
-                    color: '#d1fae5',
+                    background: '#0f172a',
+                    border: '1px solid #2c3e66',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     textAlign: 'center',
-                    fontSize: 11,
-                    lineHeight: 1.1,
-                    fontFamily: '"Inter", sans-serif',
-                    overflow: 'hidden',
-                    whiteSpace: 'normal',
                   }}
                 >
-                  {showdownSummary}
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '0.04mm',
+                      fontSize: 15,
+                      lineHeight: 1.1,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 28,
+                        height: 28,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transform: 'translateY(-0.8mm)',
+                      }}
+                      aria-hidden="true"
+                    >
+                      <svg
+                        viewBox="0 0 48 26"
+                        width="24"
+                        height="24"
+                        role="img"
+                        focusable="false"
+                        aria-hidden="true"
+                      >
+                        <g>
+                          <ellipse
+                            cx="12"
+                            cy="6"
+                            rx="8"
+                            ry="3"
+                            fill="#b91c1c"
+                            stroke="#fee2e2"
+                            strokeWidth="1"
+                          />
+                          <ellipse
+                            cx="12"
+                            cy="10"
+                            rx="8"
+                            ry="3"
+                            fill="#dc2626"
+                            stroke="#fee2e2"
+                            strokeWidth="1"
+                          />
+                          <ellipse
+                            cx="12"
+                            cy="14"
+                            rx="8"
+                            ry="3"
+                            fill="#b91c1c"
+                            stroke="#fee2e2"
+                            strokeWidth="1"
+                          />
+                          <ellipse
+                            cx="12"
+                            cy="6"
+                            rx="5"
+                            ry="1.7"
+                            fill="none"
+                            stroke="#fff7f7"
+                            strokeWidth="0.8"
+                          />
+                          <rect x="6.2" y="4.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
+                          <rect x="15.4" y="4.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
+                          <rect x="10.3" y="7" width="2.6" height="2.2" rx="0.4" fill="#f9fafb" />
+                        </g>
+                        <g>
+                          <ellipse
+                            cx="26"
+                            cy="12"
+                            rx="8"
+                            ry="3"
+                            fill="#111827"
+                            stroke="#e5e7eb"
+                            strokeWidth="1"
+                          />
+                          <ellipse
+                            cx="26"
+                            cy="16"
+                            rx="8"
+                            ry="3"
+                            fill="#1f2937"
+                            stroke="#e5e7eb"
+                            strokeWidth="1"
+                          />
+                          <ellipse
+                            cx="26"
+                            cy="12"
+                            rx="5"
+                            ry="1.7"
+                            fill="none"
+                            stroke="#f3f4f6"
+                            strokeWidth="0.8"
+                          />
+                          <rect
+                            x="20.2"
+                            y="10.4"
+                            width="2.4"
+                            height="2.4"
+                            rx="0.4"
+                            fill="#f9fafb"
+                          />
+                          <rect
+                            x="29.4"
+                            y="10.4"
+                            width="2.4"
+                            height="2.4"
+                            rx="0.4"
+                            fill="#f9fafb"
+                          />
+                        </g>
+                        <g>
+                          <ellipse
+                            cx="40"
+                            cy="10"
+                            rx="7.5"
+                            ry="2.8"
+                            fill="#1d4ed8"
+                            stroke="#dbeafe"
+                            strokeWidth="1"
+                          />
+                          <ellipse
+                            cx="40"
+                            cy="14"
+                            rx="7.5"
+                            ry="2.8"
+                            fill="#2563eb"
+                            stroke="#dbeafe"
+                            strokeWidth="1"
+                          />
+                          <ellipse
+                            cx="40"
+                            cy="10"
+                            rx="4.7"
+                            ry="1.6"
+                            fill="none"
+                            stroke="#eff6ff"
+                            strokeWidth="0.8"
+                          />
+                          <rect x="34.8" y="8.6" width="2.2" height="2.2" rx="0.4" fill="#f9fafb" />
+                          <rect x="42.8" y="8.6" width="2.2" height="2.2" rx="0.4" fill="#f9fafb" />
+                        </g>
+                      </svg>
+                    </span>
+                    <span
+                      style={{
+                        marginTop: '-2.2mm',
+                        minWidth: 24,
+                        maxWidth: '2.2cm',
+                        fontSize: 12,
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {potAmount}
+                    </span>
+                  </span>
                 </div>
               </div>
-            )}
-            {tablePlayers.map((p, idx) => {
-              const pos = seatingPositions[idx];
-              const bestFive = winnersById.get(p.id)?.bestFive ?? [];
-              const winner = winnersById.has(p.id);
-              const isYou = p.id === playerId;
-              const roleChips = roleChipsBySeat.get(p.seat) ?? [];
-              const avatarSize = infoAvatarSize;
-              const avatarBorder = winner ? '3px solid #22c55e' : '3px solid #314066';
-              const avatarSuit = avatarSuitForId(p.id);
-              const avatarColor = avatarSuitColor(avatarSuit);
-              const isTurn = Boolean(hand && hand.phase === 'betting' && hand.actionOnSeat === p.seat);
-              const infoDimmed = Boolean(hand && hand.phase === 'betting' && !isTurn);
-              const avatarStyle = {
-                width: avatarSize,
-                height: avatarSize,
-                borderRadius: '50%',
-                background: '#f8fafc',
-                border: avatarBorder,
-                boxShadow: '0 0 18px rgba(0,0,0,0.45)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontFamily: '"Inter", sans-serif',
-                fontWeight: 800,
-                fontSize: 18,
-                color: avatarColor,
-              };
-              return (
+              {isShowdown && showdownSummary && (
                 <div
-                  key={p.id}
                   style={{
                     position: 'absolute',
-                    left: pos.left,
-                    top: pos.top,
-                    transform: `translate(-50%, -50%) translateY(${playerInfoOffsetY}px)`,
-                    width: 170,
-                    textAlign: 'center',
+                    top: '40%',
+                    left: '50%',
+                    transform:
+                      'translate(-50%, -50%) translateY(calc(-19px + 1.7cm)) translateX(4cm)',
                   }}
                 >
-                  {!isYou && (
-                    <div style={{ display: 'inline-block' }}>
-                      <div style={{ position: 'relative', display: 'inline-block' }}>
-                        {roleChips.length > 0 && (
+                  <div
+                    style={{
+                      width: '3.22cm',
+                      height: '0.92cm',
+                      padding: '0 6px',
+                      borderRadius: 999,
+                      background: '#123b2f',
+                      border: '1px solid #22c55e',
+                      color: '#d1fae5',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      textAlign: 'center',
+                      fontSize: 11,
+                      lineHeight: 1.1,
+                      fontFamily: '"Inter", sans-serif',
+                      overflow: 'hidden',
+                      whiteSpace: 'normal',
+                    }}
+                  >
+                    {showdownSummary}
+                  </div>
+                </div>
+              )}
+              {tablePlayers.map((p, idx) => {
+                const pos = seatingPositions[idx];
+                const bestFive = winnersById.get(p.id)?.bestFive ?? [];
+                const winner = winnersById.has(p.id);
+                const isYou = p.id === playerId;
+                const roleChips = roleChipsBySeat.get(p.seat) ?? [];
+                const avatarSize = infoAvatarSize;
+                const avatarBorder = winner ? '3px solid #22c55e' : '3px solid #314066';
+                const avatarSuit = avatarSuitForId(p.id);
+                const avatarColor = avatarSuitColor(avatarSuit);
+                const isTurn = Boolean(
+                  hand && hand.phase === 'betting' && hand.actionOnSeat === p.seat
+                );
+                const infoDimmed = Boolean(hand && hand.phase === 'betting' && !isTurn);
+                const avatarStyle = {
+                  width: avatarSize,
+                  height: avatarSize,
+                  borderRadius: '50%',
+                  background: '#f8fafc',
+                  border: avatarBorder,
+                  boxShadow: '0 0 18px rgba(0,0,0,0.45)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontFamily: '"Inter", sans-serif',
+                  fontWeight: 800,
+                  fontSize: 18,
+                  color: avatarColor,
+                };
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      position: 'absolute',
+                      left: pos.left,
+                      top: pos.top,
+                      transform: `translate(-50%, -50%) translateY(${playerInfoOffsetY}px)`,
+                      width: 170,
+                      textAlign: 'center',
+                    }}
+                  >
+                    {!isYou && (
+                      <div style={{ display: 'inline-block' }}>
+                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                          {roleChips.length > 0 && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: -8,
+                                right: -8,
+                                display: 'flex',
+                                gap: 4,
+                                transform: 'translate(-0.4cm, -0.5cm)',
+                              }}
+                            >
+                              {roleChips.map((chip, chipIdx) => (
+                                <RoleChip
+                                  key={`${chip.label}-${chipIdx}`}
+                                  label={chip.label}
+                                  tone={chip.tone}
+                                />
+                              ))}
+                            </div>
+                          )}
+                          <div
+                            style={{
+                              position: 'relative',
+                              padding: '6px 10px 6px 60px',
+                              borderRadius: 10,
+                              background: infoDimmed
+                                ? 'rgba(10, 16, 30, 0.6)'
+                                : 'rgba(10, 16, 30, 0.85)',
+                              border: winner ? '2px solid #22c55e' : '1px solid #2c3e66',
+                              boxShadow: winner ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
+                              opacity: infoDimmed ? 0.7 : 1,
+                              textAlign: 'center',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: 'calc(6px - 0.15cm)',
+                                left: 'calc(8px - 0.2cm)',
+                                overflow: 'hidden',
+                                ...avatarStyle,
+                              }}
+                            >
+                              {suitSymbol(avatarSuit)}
+                            </div>
+                            <div
+                              style={{
+                                fontWeight: 700,
+                                fontFamily: '"Inter", sans-serif',
+                                fontSize: 12,
+                              }}
+                            >
+                              {p.name}
+                            </div>
+                            {p.id !== playerId && (
+                              <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
+                                <span
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                                >
+                                  <StackChipsIcon size={14} />
+                                  {p.stack}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          {renderActionBadge(actionByPlayerId.get(p.id))}
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 4,
+                            display: 'flex',
+                            justifyContent: 'center',
+                            marginLeft: '1cm',
+                          }}
+                        >
+                          {[0, 1].map((cardIdx) => {
+                            const rot = cardIdx === 0 ? -18 : 16;
+                            const margin = cardIdx === 0 ? -24 : 0;
+                            const reveal =
+                              isShowdown &&
+                              hasContestedShowdown &&
+                              p.status !== 'folded' &&
+                              p.status !== 'out' &&
+                              p.holeCards.length >= 2;
+                            const card = p.holeCards[cardIdx];
+                            return (
+                              <div
+                                key={`${p.id}-down-${cardIdx}`}
+                                style={{
+                                  transform: `rotate(${rot}deg)`,
+                                  marginRight: margin,
+                                  perspective: 600,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    position: 'relative',
+                                    width: 44,
+                                    height: 62,
+                                    transformStyle: 'preserve-3d',
+                                    transition: 'transform 0.6s ease',
+                                    transform: reveal ? 'rotateY(180deg)' : 'rotateY(0deg)',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      inset: 0,
+                                      backfaceVisibility: 'hidden',
+                                    }}
+                                  >
+                                    <CardBack size="medium" tone="gold" />
+                                  </div>
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      inset: 0,
+                                      backfaceVisibility: 'hidden',
+                                      transform: 'rotateY(180deg)',
+                                    }}
+                                  >
+                                    {card && (
+                                      <CardView
+                                        card={card}
+                                        size="medium"
+                                        highlight={winningCards.has(cardKey(card))}
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {overflowPlayers.length > 0 && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: 20,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    display: 'flex',
+                    gap: 10,
+                  }}
+                >
+                  {overflowPlayers.map((p) => (
+                    <div
+                      key={p.id}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 8,
+                        background: '#0f172a',
+                        border: '1px solid #2c3e66',
+                        fontSize: 12,
+                        fontFamily: '"Inter", sans-serif',
+                      }}
+                    >
+                      {p.name} (Seat {p.seat + 1})
+                    </div>
+                  ))}
+                </div>
+              )}
+              {you && (
+                <>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: 142 - heroAreaOffsetPx,
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                      {(roleChipsBySeat.get(you.seat) ?? []).length > 0 && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: -8,
+                            right: -8,
+                            display: 'flex',
+                            gap: 4,
+                            transform: 'translate(-0.4cm, -0.5cm)',
+                          }}
+                        >
+                          {(roleChipsBySeat.get(you.seat) ?? []).map((chip, chipIdx) => (
+                            <RoleChip
+                              key={`${chip.label}-${chipIdx}`}
+                              label={chip.label}
+                              tone={chip.tone}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      <div
+                        style={{
+                          padding: '6px 10px 6px 60px',
+                          borderRadius: 10,
+                          background: youInfoDimmed
+                            ? 'rgba(10, 16, 30, 0.6)'
+                            : 'rgba(10, 16, 30, 0.85)',
+                          border: winnersById.has(you.id)
+                            ? '2px solid #22c55e'
+                            : '1px solid #2c3e66',
+                          boxShadow: winnersById.has(you.id)
+                            ? '0 0 0 2px rgba(34, 197, 94, 0.2)'
+                            : undefined,
+                          textAlign: 'center',
+                          opacity: youInfoDimmed ? 0.7 : 1,
+                          position: 'relative',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                        }}
+                      >
+                        {youAvatarStyle && (
                           <div
                             style={{
                               position: 'absolute',
-                              top: -8,
-                              right: -8,
-                              display: 'flex',
-                              gap: 4,
-                              transform: 'translate(-0.4cm, -0.5cm)',
+                              top: 'calc(6px - 0.15cm)',
+                              left: 'calc(8px - 0.2cm)',
+                              overflow: 'hidden',
+                              color: youAvatarColor,
+                              ...youAvatarStyle,
                             }}
                           >
-                            {roleChips.map((chip, chipIdx) => (
-                              <RoleChip key={`${chip.label}-${chipIdx}`} label={chip.label} tone={chip.tone} />
-                            ))}
+                            {suitSymbol(youAvatarSuit)}
                           </div>
                         )}
                         <div
                           style={{
-                            position: 'relative',
-                            padding: '6px 10px 6px 60px',
-                            borderRadius: 10,
-                            background: infoDimmed ? 'rgba(10, 16, 30, 0.6)' : 'rgba(10, 16, 30, 0.85)',
-                            border: winner ? '2px solid #22c55e' : '1px solid #2c3e66',
-                            boxShadow: winner ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
-                            opacity: infoDimmed ? 0.7 : 1,
-                            textAlign: 'center',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
+                            fontWeight: 700,
+                            fontFamily: '"Inter", sans-serif',
+                            fontSize: 12,
                           }}
                         >
-                        <div style={{ position: 'absolute', top: 'calc(6px - 0.15cm)', left: 'calc(8px - 0.2cm)', overflow: 'hidden', ...avatarStyle }}>
-                          {suitSymbol(avatarSuit)}
+                          {you.name}
                         </div>
-                          <div style={{ fontWeight: 700, fontFamily: '"Inter", sans-serif', fontSize: 12 }}>{p.name}</div>
-                          {p.id !== playerId && (
-                            <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                <StackChipsIcon size={14} />
-                                {p.stack}
-                              </span>
-                            </div>
-                          )}
+                        <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <StackChipsIcon size={14} />
+                            {you.stack}
+                          </span>
                         </div>
-                        {renderActionBadge(actionByPlayerId.get(p.id))}
                       </div>
-                      <div style={{ marginTop: 4, display: 'flex', justifyContent: 'center', marginLeft: '1cm' }}>
-                        {[0, 1].map((cardIdx) => {
-                          const rot = cardIdx === 0 ? -18 : 16;
-                          const margin = cardIdx === 0 ? -24 : 0;
-                          const reveal =
-                            isShowdown &&
-                            hasContestedShowdown &&
-                            p.status !== 'folded' &&
-                            p.status !== 'out' &&
-                            p.holeCards.length >= 2;
-                          const card = p.holeCards[cardIdx];
-                          return (
-                            <div
-                              key={`${p.id}-down-${cardIdx}`}
-                              style={{
-                                transform: `rotate(${rot}deg)`,
-                                marginRight: margin,
-                                perspective: 600,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  position: 'relative',
-                                  width: 44,
-                                  height: 62,
-                                  transformStyle: 'preserve-3d',
-                                  transition: 'transform 0.6s ease',
-                                  transform: reveal ? 'rotateY(180deg)' : 'rotateY(0deg)',
-                                }}
-                              >
-                                <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden' }}>
-                                  <CardBack size="medium" tone="gold" />
-                                </div>
-                                <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
-                                  {card && (
-                                    <CardView card={card} size="medium" highlight={winningCards.has(cardKey(card))} />
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      {renderActionBadge(actionByPlayerId.get(you.id))}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-            {overflowPlayers.length > 0 && (
-              <div style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 10 }}>
-                {overflowPlayers.map((p) => (
-                  <div key={p.id} style={{ padding: '6px 10px', borderRadius: 8, background: '#0f172a', border: '1px solid #2c3e66', fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
-                    {p.name} (Seat {p.seat + 1})
                   </div>
-                ))}
-              </div>
-            )}
-            {you && (
-              <>
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: 142 - heroAreaOffsetPx,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 8,
-                  }}
-                >
-                  <div style={{ position: 'relative', display: 'inline-block' }}>
-                    {(roleChipsBySeat.get(you.seat) ?? []).length > 0 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: 21 - heroAreaOffsetPx,
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    {discardPending && !discardSubmitted && (
                       <div
-                        style={{
-                          position: 'absolute',
-                          top: -8,
-                          right: -8,
-                          display: 'flex',
-                          gap: 4,
-                          transform: 'translate(-0.4cm, -0.5cm)',
-                        }}
+                        style={{ fontSize: 12, fontFamily: '"Inter", sans-serif', opacity: 0.85 }}
                       >
-                        {(roleChipsBySeat.get(you.seat) ?? []).map((chip, chipIdx) => (
-                          <RoleChip key={`${chip.label}-${chipIdx}`} label={chip.label} tone={chip.tone} />
-                        ))}
+                        Click a card to discard
                       </div>
                     )}
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      {you.holeCards.map((c, idx) => (
+                        <div
+                          key={`${dealAnimationKey}-hole-${idx}`}
+                          style={
+                            (animateHoleDeal
+                              ? {
+                                  animation: `deal-card 700ms ease-out ${idx * 120}ms both`,
+                                  '--deal-x': '0px',
+                                  '--deal-y': '-10.5cm',
+                                }
+                              : {}) as React.CSSProperties
+                          }
+                        >
+                          <div
+                            style={{
+                              transform: `rotate(${idx === 0 ? -6 : 6}deg)`,
+                              cursor: discardPending && !discardSubmitted ? 'pointer' : 'default',
+                            }}
+                            onClick={() => handleDiscardClick(idx)}
+                          >
+                            <CardView
+                              card={c}
+                              size="large"
+                              outline={
+                                discardFlashIndex === idx
+                                  ? 'red'
+                                  : discardPending && !discardSubmitted && !animateHoleDeal
+                                    ? 'green'
+                                    : undefined
+                              }
+                              fade={discardFlashIndex === idx}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: isMobile ? -162 : 'calc(-218px + 1.2cm)',
+                  left: isMobile ? '50%' : 'calc(-9.4px + 0.2cm)',
+                  transform: isMobile ? 'translateX(-50%)' : undefined,
+                  width: isMobile ? 'min(92vw, 340px)' : 300,
+                  background: 'rgba(9, 12, 20, 0.8)',
+                  border: '1px solid #27324e',
+                  borderRadius: 10,
+                  padding: 8,
+                }}
+              >
+                <div style={{ maxHeight: isMobile ? 72 : 80, overflowY: 'auto' }}>
+                  {(state?.log ?? []).slice(-5).map((l: any, idx: number) => (
                     <div
+                      key={idx}
                       style={{
-                        padding: '6px 10px 6px 60px',
-                        borderRadius: 10,
-                        background: youInfoDimmed ? 'rgba(10, 16, 30, 0.6)' : 'rgba(10, 16, 30, 0.85)',
-                        border: winnersById.has(you.id) ? '2px solid #22c55e' : '1px solid #2c3e66',
-                        boxShadow: winnersById.has(you.id) ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
-                        textAlign: 'center',
-                        opacity: youInfoDimmed ? 0.7 : 1,
-                        position: 'relative',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
+                        fontSize: 12,
+                        opacity: 0.85,
+                        marginBottom: 4,
+                        fontFamily: '"Inter", sans-serif',
                       }}
                     >
-                      {youAvatarStyle && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: 'calc(6px - 0.15cm)',
-                            left: 'calc(8px - 0.2cm)',
-                            overflow: 'hidden',
-                            color: youAvatarColor,
-                            ...youAvatarStyle,
-                          }}
-                        >
-                          {suitSymbol(youAvatarSuit)}
-                        </div>
-                      )}
-                      <div style={{ fontWeight: 700, fontFamily: '"Inter", sans-serif', fontSize: 12 }}>{you.name}</div>
-                      <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                          <StackChipsIcon size={14} />
-                          {you.stack}
-                        </span>
-                      </div>
+                      {l.message}
                     </div>
-                    {renderActionBadge(actionByPlayerId.get(you.id))}
-                  </div>
+                  ))}
                 </div>
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: 21 - heroAreaOffsetPx,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 8,
-                  }}
-                >
-                  {discardPending && !discardSubmitted && (
-                    <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif', opacity: 0.85 }}>
-                      Click a card to discard
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    {you.holeCards.map((c, idx) => (
-                      <div
-                        key={`${dealAnimationKey}-hole-${idx}`}
-                        style={
-                          (animateHoleDeal
-                            ? {
-                                animation: `deal-card 700ms ease-out ${idx * 120}ms both`,
-                                '--deal-x': '0px',
-                                '--deal-y': '-10.5cm',
-                              }
-                            : {}) as React.CSSProperties
-                        }
-                      >
-                        <div
-                          style={{
-                            transform: `rotate(${idx === 0 ? -6 : 6}deg)`,
-                            cursor: discardPending && !discardSubmitted ? 'pointer' : 'default',
-                          }}
-                          onClick={() => handleDiscardClick(idx)}
-                        >
-                          <CardView
-                            card={c}
-                            size="large"
-                            outline={
-                              discardFlashIndex === idx
-                                ? 'red'
-                                : discardPending && !discardSubmitted && !animateHoleDeal
-                                  ? 'green'
-                                  : undefined
-                            }
-                            fade={discardFlashIndex === idx}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-            <div style={{ position: 'absolute', bottom: isMobile ? -162 : 'calc(-218px + 1.2cm)', left: isMobile ? '50%' : 'calc(-9.4px + 0.2cm)', transform: isMobile ? 'translateX(-50%)' : undefined, width: isMobile ? 'min(92vw, 340px)' : 300, background: 'rgba(9, 12, 20, 0.8)', border: '1px solid #27324e', borderRadius: 10, padding: 8 }}>
-              <div style={{ maxHeight: isMobile ? 72 : 80, overflowY: 'auto' }}>
-                {(state?.log ?? []).slice(-5).map((l: any, idx: number) => (
-                  <div key={idx} style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, fontFamily: '"Inter", sans-serif' }}>
-                    {l.message}
-                  </div>
-                ))}
               </div>
-            </div>
             </div>
           </div>
           {you && (
@@ -1585,14 +1943,35 @@ const Home: NextPage = () => {
               {discardPending ? (
                 <div />
               ) : (
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', justifyContent: isMobile ? 'center' : 'flex-start', width: '100%' }}>
-                  <button disabled={!isMyTurn} onClick={() => act('fold')} style={actionButtonBaseStyle}>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 12,
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    justifyContent: isMobile ? 'center' : 'flex-start',
+                    width: '100%',
+                  }}
+                >
+                  <button
+                    disabled={!isMyTurn}
+                    onClick={() => act('fold')}
+                    style={actionButtonBaseStyle}
+                  >
                     Fold
                   </button>
-                  <button disabled={!isMyTurn || toCall !== 0} onClick={() => act('check')} style={actionButtonBaseStyle}>
+                  <button
+                    disabled={!isMyTurn || toCall !== 0}
+                    onClick={() => act('check')}
+                    style={actionButtonBaseStyle}
+                  >
                     Check
                   </button>
-                  <button disabled={!isMyTurn || toCall === 0} onClick={() => act('call')} style={actionButtonBaseStyle}>
+                  <button
+                    disabled={!isMyTurn || toCall === 0}
+                    onClick={() => act('call')}
+                    style={actionButtonBaseStyle}
+                  >
                     Call {toCall}
                   </button>
                   <input
@@ -1631,8 +2010,23 @@ const Home: NextPage = () => {
             paddingBottom: 'clamp(0px, 6vh, 2cm)',
           }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: isMobile ? 'none' : 'translateY(-7cm)' }}>
-            <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 16, fontWeight: 700, opacity: 0.85, marginTop: '0.6cm' }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              transform: isMobile ? 'none' : 'translateY(-7cm)',
+            }}
+          >
+            <div
+              style={{
+                fontFamily: '"Inter", sans-serif',
+                fontSize: 16,
+                fontWeight: 700,
+                opacity: 0.85,
+                marginTop: '0.6cm',
+              }}
+            >
               Waiting for next hand
               <span style={{ display: 'inline-flex', marginLeft: 4 }}>
                 <span style={ellipsisDotStyle(0)}>.</span>
@@ -1768,16 +2162,23 @@ const CardView = ({
   const rankLabel = cardRankLabel(card.rank);
   const suit = suitSymbol(card.suit);
   const cardColor = isClassicSize ? (isRed ? '#dc2626' : '#111827') : isRed ? '#f87171' : '#e5e7eb';
-  const cardBorder = highlight ? '2px solid #22c55e' : isClassicSize ? '1px solid #d1d5db' : '1px solid #2c3e66';
+  const cardBorder = highlight
+    ? '2px solid #22c55e'
+    : isClassicSize
+      ? '1px solid #d1d5db'
+      : '1px solid #2c3e66';
   const baseShadow = isClassicSize ? '0 6px 16px rgba(0,0,0,0.25)' : undefined;
   const outlineColor = outline === 'green' ? '#22c55e' : outline === 'red' ? '#ef4444' : null;
   const outlineShadow = outlineColor ? `0 0 0 2px ${outlineColor}` : undefined;
   const highlightShadow = highlight ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined;
-  const cardShadow = [outlineShadow, highlightShadow, baseShadow].filter(Boolean).join(', ') || undefined;
+  const cardShadow =
+    [outlineShadow, highlightShadow, baseShadow].filter(Boolean).join(', ') || undefined;
   const cardOpacity = fade ? 0 : 1;
   const opacityTransition = 'opacity 0.5s ease';
   const cardImageSources = isClassicSize
-    ? [rasterPngCardPath(card), modernMinimalCardPath(card)].filter((value): value is string => Boolean(value))
+    ? [rasterPngCardPath(card), modernMinimalCardPath(card)].filter((value): value is string =>
+        Boolean(value)
+      )
     : [];
   const imageUrl = cardImageSources[imageIndex];
 
@@ -1811,7 +2212,13 @@ const CardView = ({
           justifyContent: 'center',
         }}
       >
-        <svg viewBox="0 0 100 140" width="100%" height="100%" role="img" aria-label={`${rankLabel} of ${suit}`}>
+        <svg
+          viewBox="0 0 100 140"
+          width="100%"
+          height="100%"
+          role="img"
+          aria-label={`${rankLabel} of ${suit}`}
+        >
           <rect x="0" y="0" width="100" height="140" rx="10" fill={MINIMAL_DECK_PALETTE.face} />
           <g fontFamily='"Inter", sans-serif' fontWeight={700} fill={suitColor}>
             <text x="8" y="18" fontSize={cornerFontSize}>
@@ -1820,7 +2227,14 @@ const CardView = ({
           </g>
           <SuitPip suit={card.suit} x={13} y={30} size={cornerSuitSize} color={suitColor} />
           <g transform="translate(100 140) rotate(180)">
-            <text x="8" y="18" fontSize={cornerFontSize} fontFamily='"Inter", sans-serif' fontWeight={700} fill={suitColor}>
+            <text
+              x="8"
+              y="18"
+              fontSize={cornerFontSize}
+              fontFamily='"Inter", sans-serif'
+              fontWeight={700}
+              fill={suitColor}
+            >
               {rankLabel}
             </text>
             <SuitPip suit={card.suit} x={13} y={30} size={cornerSuitSize} color={suitColor} />
@@ -1836,7 +2250,14 @@ const CardView = ({
           ) : (
             <>
               {pips.map((pip, idx) => (
-                <SuitPip key={idx} suit={card.suit} x={pip.x} y={pip.y} size={pip.size ?? pipSize} color={suitColor} />
+                <SuitPip
+                  key={idx}
+                  suit={card.suit}
+                  x={pip.x}
+                  y={pip.y}
+                  size={pip.size ?? pipSize}
+                  color={suitColor}
+                />
               ))}
             </>
           )}
@@ -1873,7 +2294,6 @@ const CardView = ({
               return;
             }
             if (typeof window !== 'undefined') {
-              // eslint-disable-next-line no-console
               if (!hasWarnedMissingCards) {
                 console.warn(`Card assets missing (falling back to text render): ${imageUrl}`);
                 hasWarnedMissingCards = true;

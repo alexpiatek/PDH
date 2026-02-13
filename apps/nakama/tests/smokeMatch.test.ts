@@ -106,7 +106,9 @@ describe('smokeMatchHandler', () => {
 describe('ensureSmokeMatch / rpcEnsureSmokeMatch', () => {
   it('reuses an existing authoritative match when available', () => {
     const nk = makeNakamaMock();
-    nk.matchList = vi.fn(() => [{ match_id: 'existing-id', label: '{"tableId":"smoke-a","mode":"smoke"}' }]);
+    nk.matchList = vi.fn(() => [
+      { match_id: 'existing-id', label: '{"tableId":"smoke-a","mode":"smoke"}' },
+    ]);
 
     const result = ensureSmokeMatch(nk, { tableId: 'smoke-a', module: SMOKE_MATCH_MODULE });
 

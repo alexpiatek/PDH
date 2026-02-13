@@ -334,13 +334,21 @@ function labelForTable(tableId: string) {
   return JSON.stringify({ tableId, mode: 'smoke' });
 }
 
-async function findMatchId(client: NakamaClient, session: Session, tableId: string): Promise<string | null> {
+async function findMatchId(
+  client: NakamaClient,
+  session: Session,
+  tableId: string
+): Promise<string | null> {
   const list = await client.listMatches(session, 20, true, labelForTable(tableId), 0, 64);
   const match = (list.matches ?? []).find((entry) => Boolean(entry.match_id || entry.matchId));
   return (match?.match_id ?? (match as any)?.matchId ?? null) as string | null;
 }
 
-async function ensureMatchId(options: SmokeOptions, client: NakamaClient, session: Session): Promise<string> {
+async function ensureMatchId(
+  options: SmokeOptions,
+  client: NakamaClient,
+  session: Session
+): Promise<string> {
   let rpcError: unknown;
   try {
     const rpc = await client.rpc(
@@ -367,7 +375,10 @@ async function ensureMatchId(options: SmokeOptions, client: NakamaClient, sessio
     }
   } catch (error) {
     rpcError = error;
-    logVerbose(options, `RPC ensure match failed, falling back to listMatches: ${formatUnknownError(error)}`);
+    logVerbose(
+      options,
+      `RPC ensure match failed, falling back to listMatches: ${formatUnknownError(error)}`
+    );
   }
 
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -426,7 +437,11 @@ async function connectAndJoin(
 
   await socket.connect(session, true);
   await socket.joinMatch(matchId);
-  await socket.sendMatchState(matchId, MatchOpCode.ClientMessage, JSON.stringify({ type: 'requestState' }));
+  await socket.sendMatchState(
+    matchId,
+    MatchOpCode.ClientMessage,
+    JSON.stringify({ type: 'requestState' })
+  );
 
   return context;
 }
@@ -451,7 +466,11 @@ function failIfAnyClientErrors(clients: SmokeClientContext[]) {
   throw new Error(`Client runtime errors observed: ${rendered}`);
 }
 
-function verifyReplicatedState(clients: SmokeClientContext[], expectedClients: number, expectedCounter: number) {
+function verifyReplicatedState(
+  clients: SmokeClientContext[],
+  expectedClients: number,
+  expectedCounter: number
+) {
   const states = clients.map((client) => client.latestState);
   if (states.some((state) => !state)) {
     throw new Error('One or more clients did not receive a state payload.');
@@ -470,7 +489,9 @@ function verifyReplicatedState(clients: SmokeClientContext[], expectedClients: n
   }
 
   if (counters.size !== 1 || !counters.has(expectedCounter)) {
-    throw new Error(`Counter mismatch across clients. Expected ${expectedCounter}, got ${[...counters].join(',')}`);
+    throw new Error(
+      `Counter mismatch across clients. Expected ${expectedCounter}, got ${[...counters].join(',')}`
+    );
   }
 
   if (connectedCounts.size !== 1 || !connectedCounts.has(expectedClients)) {
@@ -516,11 +537,15 @@ async function run() {
   const clients: SmokeClientContext[] = [];
 
   try {
-    clients.push(await withStep('lead client connect/join', () => connectAndJoin(options, 0, matchId)));
+    clients.push(
+      await withStep('lead client connect/join', () => connectAndJoin(options, 0, matchId))
+    );
 
     for (let i = 1; i < options.clients; i += 1) {
       const index = i;
-      clients.push(await withStep(`client${index} connect/join`, () => connectAndJoin(options, index, matchId)));
+      clients.push(
+        await withStep(`client${index} connect/join`, () => connectAndJoin(options, index, matchId))
+      );
     }
 
     try {

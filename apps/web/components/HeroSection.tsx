@@ -74,11 +74,18 @@ function Card({ card, compact = false, highlighted = false }: CardProps) {
     <div
       className={[
         'relative rounded-2xl border border-slate-300/90 bg-white text-slate-900 shadow-[0_14px_38px_rgba(15,23,42,0.28)]',
-        compact ? 'h-[5.8rem] w-[4.15rem] sm:h-[6.5rem] sm:w-[4.6rem]' : 'h-[8.2rem] w-[5.6rem] sm:h-[9.5rem] sm:w-[6.5rem]',
+        compact
+          ? 'h-[5.8rem] w-[4.15rem] sm:h-[6.5rem] sm:w-[4.6rem]'
+          : 'h-[8.2rem] w-[5.6rem] sm:h-[9.5rem] sm:w-[6.5rem]',
         highlighted ? 'ring-2 ring-cyan-400/90 ring-offset-2 ring-offset-slate-950' : '',
       ].join(' ')}
     >
-      <div className={['absolute left-2 top-1.5 text-[1rem] leading-none font-extrabold', suitColor].join(' ')}>
+      <div
+        className={[
+          'absolute left-2 top-1.5 text-[1rem] leading-none font-extrabold',
+          suitColor,
+        ].join(' ')}
+      >
         <div>{card.rank}</div>
         <div className="text-[0.85rem]">{suitSymbol}</div>
       </div>
@@ -169,7 +176,7 @@ export default function HeroSection() {
         completeDiscard();
       }
     },
-    [completeDiscard],
+    [completeDiscard]
   );
 
   const ctaLabel = useMemo(() => {
@@ -234,7 +241,9 @@ export default function HeroSection() {
                 transition={{ type: 'spring', stiffness: 220, damping: 20 }}
                 className="rounded-2xl border border-cyan-400/35 bg-slate-900/55 p-4 backdrop-blur"
               >
-                <p className="text-lg font-semibold text-cyan-300">Hand Improved. That&apos;s Bondi Poker.</p>
+                <p className="text-lg font-semibold text-cyan-300">
+                  Hand Improved. That&apos;s Bondi Poker.
+                </p>
                 <a
                   href="/play"
                   className="mt-3 inline-flex items-center rounded-xl border border-cyan-300/60 bg-cyan-400/25 px-4 py-2 text-sm font-bold text-cyan-50 shadow-[0_0_24px_rgba(34,211,238,0.45)] transition hover:shadow-[0_0_34px_rgba(34,211,238,0.65)]"
@@ -277,7 +286,12 @@ export default function HeroSection() {
                       initial={{ opacity: 0, y: -28, rotate: -8, scale: 0.94 }}
                       animate={{ opacity: 1, y: 0, rotate: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -20, scale: 0.9 }}
-                      transition={{ type: 'spring', stiffness: 180, damping: 20, delay: index * 0.12 }}
+                      transition={{
+                        type: 'spring',
+                        stiffness: 180,
+                        damping: 20,
+                        delay: index * 0.12,
+                      }}
                     >
                       <Card card={card} compact />
                     </motion.div>
@@ -366,7 +380,11 @@ export default function HeroSection() {
                                 <div className="flex items-start gap-2">
                                   <motion.span
                                     animate={{ y: [0, -4, 0] }}
-                                    transition={{ repeat: Infinity, duration: 1.1, ease: 'easeInOut' }}
+                                    transition={{
+                                      repeat: Infinity,
+                                      duration: 1.1,
+                                      ease: 'easeInOut',
+                                    }}
                                     className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-cyan-400/20 text-cyan-300"
                                   >
                                     <ArrowUp className="h-3.5 w-3.5" />
@@ -390,7 +408,10 @@ export default function HeroSection() {
         </div>
       </div>
 
-      <div id="rules" className="relative mx-auto max-w-5xl scroll-mt-20 px-4 pb-20 sm:px-6 lg:px-8">
+      <div
+        id="rules"
+        className="relative mx-auto max-w-5xl scroll-mt-20 px-4 pb-20 sm:px-6 lg:px-8"
+      >
         <div className="rounded-2xl border border-cyan-400/20 bg-slate-900/55 p-5 backdrop-blur sm:p-7">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">Rules</p>
           <h2 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">

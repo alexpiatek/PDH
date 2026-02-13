@@ -28,11 +28,7 @@ describe('pdhMatchHandler', () => {
     const init = pdhMatchHandler.matchInit({}, logger, nk, { tableId: 'main' });
     const state = init.state as any;
 
-    const presences = [
-      { userId: 'u1' },
-      { userId: 'u2' },
-      { userId: 'u3' },
-    ];
+    const presences = [{ userId: 'u1' }, { userId: 'u2' }, { userId: 'u3' }];
 
     pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 1, state, presences);
 
@@ -40,15 +36,9 @@ describe('pdhMatchHandler', () => {
 
     // Seat all three players so a hand starts.
     for (const p of presences) {
-      pdhMatchHandler.matchLoop(
-        {},
-        logger,
-        nk,
-        dispatcher,
-        2,
-        state,
-        [{ opCode: 1, sender: p, data: encode({ type: 'join', name: p.userId, buyIn: 5000 }) }]
-      );
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 2, state, [
+        { opCode: 1, sender: p, data: encode({ type: 'join', name: p.userId, buyIn: 5000 }) },
+      ]);
     }
 
     expect(state.table.hand).toBeTruthy();
@@ -63,17 +53,12 @@ describe('pdhMatchHandler', () => {
       const sender = presenceById.get(actor.id);
       expect(sender).toBeTruthy();
       const toCall = hand.currentBet - actor.betThisStreet;
-      const action = toCall > 0 ? { type: 'action', action: 'call' } : { type: 'action', action: 'check' };
+      const action =
+        toCall > 0 ? { type: 'action', action: 'call' } : { type: 'action', action: 'check' };
 
-      pdhMatchHandler.matchLoop(
-        {},
-        logger,
-        nk,
-        dispatcher,
-        3,
-        state,
-        [{ opCode: 1, sender, data: encode(action) }]
-      );
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+        { opCode: 1, sender, data: encode(action) },
+      ]);
       safety -= 1;
     }
 

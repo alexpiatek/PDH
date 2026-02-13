@@ -62,7 +62,10 @@ function smokeLabel(tableId: string) {
   return JSON.stringify({ tableId, mode: SMOKE_LABEL_MODE });
 }
 
-function decodeClientMessage(nk: nkruntime.Nakama, message: nkruntime.MatchMessage): SmokeClientMessage {
+function decodeClientMessage(
+  nk: nkruntime.Nakama,
+  message: nkruntime.MatchMessage
+): SmokeClientMessage {
   const payload = nk.binaryToString(message.data);
   return JSON.parse(payload) as SmokeClientMessage;
 }
@@ -132,7 +135,13 @@ function sendToPresence(
   presence: nkruntime.Presence,
   msg: SmokeServerMessage
 ) {
-  dispatcher.broadcastMessage(SmokeOpCode.ServerMessage, JSON.stringify(msg), [presence], null, true);
+  dispatcher.broadcastMessage(
+    SmokeOpCode.ServerMessage,
+    JSON.stringify(msg),
+    [presence],
+    null,
+    true
+  );
 }
 
 function broadcastState(dispatcher: nkruntime.MatchDispatcher, state: SmokeMatchState) {
@@ -144,7 +153,13 @@ function broadcastState(dispatcher: nkruntime.MatchDispatcher, state: SmokeMatch
     type: 'state',
     state: serializeState(state),
   };
-  dispatcher.broadcastMessage(SmokeOpCode.ServerMessage, JSON.stringify(msg), presences, null, true);
+  dispatcher.broadcastMessage(
+    SmokeOpCode.ServerMessage,
+    JSON.stringify(msg),
+    presences,
+    null,
+    true
+  );
 }
 
 function matchInit(ctx, logger, nk, params) {

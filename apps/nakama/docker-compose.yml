@@ -8,7 +8,7 @@ services:
     volumes:
       - nakama-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nakama} -d ${POSTGRES_DB:-nakama}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-nakama} -d ${POSTGRES_DB:-nakama}']
       interval: 5s
       timeout: 5s
       retries: 20
@@ -18,8 +18,8 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "7350:7350"
-      - "7351:7351"
+      - '7350:7350'
+      - '7351:7351'
     volumes:
       - ./nakama.yml:/nakama/data/nakama.yml:ro
       - ./dist:/nakama/data/modules

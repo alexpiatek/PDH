@@ -1,4 +1,4 @@
 logger:
-  level: "INFO"
+  level: 'INFO'
 runtime:
-  js_entrypoint: "pdh.js"
+  js_entrypoint: 'pdh.js'

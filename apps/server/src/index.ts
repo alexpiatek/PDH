@@ -21,9 +21,7 @@ const server = createServer((req, res) => {
   if (req.url.startsWith('/admin/audit-log')) {
     const remoteAddr = req.socket.remoteAddress ?? '';
     const isLocal =
-      remoteAddr === '127.0.0.1' ||
-      remoteAddr === '::1' ||
-      remoteAddr === '::ffff:127.0.0.1';
+      remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1';
     if (!isLocal) {
       res.statusCode = 403;
       res.end('Forbidden');
@@ -112,9 +110,7 @@ function scheduleStartCountdown() {
 function seatPlayer(name: string, buyIn: number, desiredSeat?: number) {
   const playerId = randomUUID();
   const seatIndex =
-    desiredSeat !== undefined
-      ? desiredSeat
-      : table.state.seats.findIndex((s) => s === null);
+    desiredSeat !== undefined ? desiredSeat : table.state.seats.findIndex((s) => s === null);
   if (seatIndex === -1) throw new Error('No open seats');
   table.seatPlayer(seatIndex, { id: playerId, name, stack: buyIn });
   if (!table.state.hand) {

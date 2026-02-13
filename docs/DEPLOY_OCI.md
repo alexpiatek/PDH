@@ -6,6 +6,7 @@ see `docs/PROD_RUNBOOK.md`.
 This runbook deploys Nakama + Postgres on one OCI VM using `docker-compose.prod.yml`.
 
 ## 1) Build Runtime Module
+
 Run on your workstation or directly on the OCI VM:
 
 ```bash
@@ -13,6 +14,7 @@ Run on your workstation or directly on the OCI VM:
 ```
 
 ## 2) Prepare Production Env File
+
 Create `.env` from template and set secure values:
 
 ```bash
@@ -26,6 +28,7 @@ openssl rand -hex 32
 ```
 
 Set all of these to non-default random strings:
+
 - `NAKAMA_SOCKET_SERVER_KEY`
 - `NAKAMA_SESSION_ENCRYPTION_KEY`
 - `NAKAMA_SESSION_REFRESH_ENCRYPTION_KEY`
@@ -35,6 +38,7 @@ Set all of these to non-default random strings:
 - `POSTGRES_PASSWORD`
 
 ## 3) Deploy on OCI VM
+
 From repo root on server:
 
 ```bash
@@ -42,21 +46,26 @@ docker compose --env-file .env -f docker-compose.prod.yml up -d
 ```
 
 This starts:
+
 - `postgres` (persistent volume)
 - `nakama-migrate` (one-shot migration)
 - `nakama` (restart policy enabled)
 
 ## 4) OCI Network Rules (Ingress)
+
 Use either Security List or NSG for the VM subnet.
 
 Recommended public ingress:
+
 - `443/tcp` from `0.0.0.0/0` (if using reverse proxy TLS endpoint)
 - `80/tcp` from `0.0.0.0/0` (only if needed for ACME HTTP challenge)
 
 If exposing Nakama directly (not recommended):
+
 - `7350/tcp` from trusted CIDRs only
 
 Do not expose by default:
+
 - `7351/tcp` (Nakama console)
 - `5432/tcp` (Postgres)
 
@@ -97,7 +106,9 @@ Run smoke test from any machine with repo checkout:
 ```
 
 ## 7) Recommended TLS Front Door (Caddy)
+
 Expose only `443` publicly and proxy:
+
 - `play.<domain>` -> Next.js on `127.0.0.1:3001`
 - `api.<domain>` -> Nakama on `127.0.0.1:7350`
 
@@ -127,9 +138,11 @@ docker run -d --name caddy \
 ```
 
 ## 8) Keep Nakama Console Private
+
 `docker-compose.prod.yml` does not publish `7351`.
 
 Preferred admin access:
+
 - SSH tunnel only:
 
 ```bash
@@ -143,6 +156,7 @@ sudo ufw allow from <admin-ip>/32 to any port 7351 proto tcp
 ```
 
 ## 9) Logs + Health + Rotation
+
 Basic ops commands:
 
 ```bash
@@ -154,6 +168,7 @@ curl -fsS http://127.0.0.1:7350/healthcheck
 ```
 
 ### Secret rotation
+
 1. Generate new key values.
 2. Update `.env`.
 3. Restart services:
@@ -163,5 +178,6 @@ docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate
 ```
 
 Notes:
+
 - Rotating session-related keys invalidates active sessions/tokens.
 - Rotate during maintenance windows and inform players.

@@ -19,7 +19,10 @@ describe('showdown split pots', () => {
     p2.holeCards = [C('Q', 'C'), C('Q', 'D')];
 
     hand.pots = [{ amount: 2000, eligible: [p1.id, p2.id] }];
-    const results = (table as any).scoreShowdown(hand) as Array<{ playerId: string; amount: number }>;
+    const results = (table as any).scoreShowdown(hand) as Array<{
+      playerId: string;
+      amount: number;
+    }>;
 
     expect(results.length).toBe(2);
     const amounts = results.map((r) => r.amount).sort((a, b) => a - b);

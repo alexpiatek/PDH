@@ -47,7 +47,9 @@ describe('betting rules', () => {
       actionOnSeat: hand.actionOnSeat,
     };
 
-    expect(() => table.applyAction('p2', { type: 'raise', amount: 3200 })).toThrow('Raise cap reached');
+    expect(() => table.applyAction('p2', { type: 'raise', amount: 3200 })).toThrow(
+      'Raise cap reached'
+    );
 
     expect(bb.stack).toBe(before.stack);
     expect(bb.betThisStreet).toBe(before.betThisStreet);
