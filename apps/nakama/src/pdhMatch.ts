@@ -225,10 +225,15 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
   }
 
   const now = Date.now();
+  const advanced = table.advancePendingPhase(now);
+  if (advanced) {
+    shouldBroadcast = true;
+  }
+
   if (!state.lastAutoDiscardMs) state.lastAutoDiscardMs = now;
   if (now - state.lastAutoDiscardMs >= AUTO_DISCARD_INTERVAL_MS) {
     const before = JSON.stringify(table.state.hand?.discardPending ?? []);
-    table.autoDiscard();
+    table.autoDiscard(now);
     const after = JSON.stringify(table.state.hand?.discardPending ?? []);
     if (before !== after) {
       shouldBroadcast = true;
