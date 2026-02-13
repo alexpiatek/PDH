@@ -21,6 +21,6 @@ describe('betting rules', () => {
     table.advancePendingPhase(hand.pendingNextPhaseAt ?? 0);
     expect(hand.minRaise).toBe(800);
     expect(hand.street).toBe('flop');
-    expect(hand.phase).toBe('discard');
+    expect(hand.phase).toBe('betting');
   });
 });

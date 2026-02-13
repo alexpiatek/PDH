@@ -73,7 +73,7 @@ describe('pdhMatchHandler', () => {
     }
 
     expect(phaseBeforeTick).toBe('betting');
-    expect(state.table.hand.phase).toBe('discard');
+    expect(state.table.hand.phase).toBe('betting');
     expect(state.table.hand.street).toBe('flop');
   });
 });

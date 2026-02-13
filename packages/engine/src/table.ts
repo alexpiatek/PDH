@@ -479,7 +479,11 @@ export class PokerTable {
     if (hand.street === 'preflop') {
       this.revealFlop(hand);
       hand.street = 'flop';
-      this.beginDiscardPhase();
+      if (bettingLocked(hand)) {
+        this.beginDiscardPhase();
+      } else {
+        resetStreetState(hand, 'flop', this.state);
+      }
     } else if (hand.street === 'flop' || hand.street === 'turn') {
       this.beginDiscardPhase();
     } else if (hand.street === 'river') {
@@ -564,9 +568,7 @@ export class PokerTable {
     if (!hand) return;
     hand.discardDeadline = null;
     hand.discardPending = [];
-    if (hand.street === 'preflop') {
-      resetStreetState(hand, 'flop', this.state);
-    } else if (hand.street === 'flop') {
+    if (hand.street === 'flop') {
       this.revealSingle(hand, 'Turn');
       if (bettingLocked(hand)) {
         hand.street = 'turn';
@@ -647,21 +649,18 @@ export class PokerTable {
     const live = new Set(
       hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out').map((p) => p.id)
     );
-    let remaining = contributions.map((c) => ({ ...c }));
     const pots: Pot[] = [];
     let prevLevel = 0;
-    while (remaining.length) {
-      const level = remaining[0].amount;
+    const levels = [...new Set(contributions.map((c) => c.amount))].sort((a, b) => a - b);
+    for (const level of levels) {
       const tier = level - prevLevel;
       if (tier > 0) {
-        const eligible = remaining.filter((c) => live.has(c.id)).map((c) => c.id);
-        const potAmount = tier * remaining.length;
+        const atLevelOrAbove = contributions.filter((c) => c.amount >= level);
+        const eligible = atLevelOrAbove.filter((c) => live.has(c.id)).map((c) => c.id);
+        const potAmount = tier * atLevelOrAbove.length;
         pots.push({ amount: potAmount, eligible });
       }
       prevLevel = level;
-      remaining = remaining
-        .map((c) => ({ ...c, amount: c.amount - level }))
-        .filter((c) => c.amount > 0);
     }
     hand.pots = pots;
   }
