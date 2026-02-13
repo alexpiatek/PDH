@@ -1,0 +1,9 @@
+node_modules
+pnpm-lock.yaml
+apps/web/.next
+apps/**/dist
+packages/**/dist
+tools/**/dist
+coverage
+*.log
+apps/web/public/cards

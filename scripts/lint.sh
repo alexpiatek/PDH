@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 (
   cd "$ROOT_DIR"
-  ./scripts/typecheck.sh
+  ./scripts/run-pnpm.sh exec eslint .
 
   if command -v shellcheck >/dev/null 2>&1; then
     shellcheck scripts/*.sh

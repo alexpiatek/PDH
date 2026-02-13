@@ -17,14 +17,21 @@
     "build": "./scripts/run-pnpm.sh -C packages/engine build && ./scripts/run-pnpm.sh -C apps/nakama build && ./scripts/run-pnpm.sh -C apps/web build",
     "typecheck": "./scripts/typecheck.sh",
     "lint": "./scripts/lint.sh",
+    "format": "./scripts/format.sh",
+    "format:check": "./scripts/format-check.sh",
     "test": "./scripts/test.sh"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@types/node": "^20.11.5",
     "concurrently": "^8.2.2",
     "cross-env": "^10.1.0",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.1",
     "tsx": "^4.7.2",
     "typescript": "^5.3.3",
+    "typescript-eslint": "^8.55.0",
     "vitest": "^1.1.3"
   }
 }

@@ -9,4 +9,5 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   # Full strict TS checks are not yet enabled across all packages.
   ./scripts/run-pnpm.sh -C packages/engine build
   ./scripts/run-pnpm.sh -C apps/nakama build
+  ./scripts/run-pnpm.sh exec tsc -p apps/web/tsconfig.json --noEmit
 )

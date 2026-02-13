@@ -97,6 +97,15 @@ pnpm run typecheck
 pnpm run build
 ```
 
+## Quality Commands
+
+```bash
+pnpm run lint
+pnpm run format
+pnpm run format:check
+pnpm run typecheck
+```
+
 Remote smoke test:
 
 ```bash
