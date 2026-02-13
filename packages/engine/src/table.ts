@@ -406,15 +406,14 @@ export class PokerTable {
     newTotalBet: number,
     actionLabel: 'raise' | 'bet' | 'allIn' = 'raise',
   ) {
-    const contributionNeeded = newTotalBet - player.betThisStreet;
     const actualTotal = Math.min(newTotalBet, player.betThisStreet + player.stack);
-    const pay = actualTotal - player.betThisStreet;
-    this.commitBet(hand, player, pay);
     const raiseBy = actualTotal - hand.currentBet;
     const fullRaise = raiseBy >= hand.minRaise;
     if (hand.raisesThisStreet >= 2) {
       throw new Error('Raise cap reached');
     }
+    const pay = actualTotal - player.betThisStreet;
+    this.commitBet(hand, player, pay);
     if (actualTotal > hand.currentBet) {
       hand.currentBet = actualTotal;
       hand.raisesThisStreet += 1;
