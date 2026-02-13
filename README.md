@@ -68,6 +68,7 @@ Notes:
 Use these guides:
 
 - `docs/LOCAL_DEV.md` (local development commands + troubleshooting)
+- `docs/ENGINE_CONTRACT.md` (PDH engine state machine + validation contract)
 - `docs/ONBOARDING_30_MIN.md` (fast start for new contributors)
 - `docs/PROD_RUNBOOK.md` (exact end-to-end production flow used for `bondipoker.online`)
 - `docs/QUICK_FIX.md` (fastest safe recovery commands for production connection failures)
