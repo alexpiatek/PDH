@@ -112,19 +112,18 @@ Expose only `443` publicly and proxy:
 - `play.<domain>` -> Next.js on `127.0.0.1:3001`
 - `api.<domain>` -> Nakama on `127.0.0.1:7350`
 
-Example `Caddyfile`:
+Use `deploy/Caddyfile.example` instead of an ad-hoc file:
 
-```caddy
-play.example.com {
-  encode gzip
-  reverse_proxy 127.0.0.1:3001
-}
-
-api.example.com {
-  encode gzip
-  reverse_proxy 127.0.0.1:7350
-}
+```bash
+export ROOT_DOMAIN=example.com
+envsubst < deploy/Caddyfile.example > Caddyfile
 ```
+
+This baseline includes:
+
+- websocket-safe proxy settings for Nakama
+- security headers (CSP, HSTS, nosniff, etc.)
+- explicit CORS allowlist for play/apex -> api browser traffic
 
 Run Caddy container (example):
 
@@ -135,6 +134,14 @@ docker run -d --name caddy \
   -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
   -v caddy_data:/data -v caddy_config:/config \
   caddy:2
+```
+
+Validate CORS preflight:
+
+```bash
+curl -i -X OPTIONS https://api.example.com/v2/account/authenticate/device \
+  -H 'Origin: https://play.example.com' \
+  -H 'Access-Control-Request-Method: POST'
 ```
 
 ## 8) Keep Nakama Console Private

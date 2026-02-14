@@ -68,6 +68,8 @@ Notes:
 Use these guides:
 
 - `docs/LOCAL_DEV.md` (local development commands + troubleshooting)
+- `docs/INTEGRATION_TESTS.md` (local integration test harness and troubleshooting)
+- `docs/E2E_TESTS.md` (Playwright end-to-end test harness and troubleshooting)
 - `docs/ENGINE_CONTRACT.md` (PDH engine state machine + validation contract)
 - `docs/ONBOARDING_30_MIN.md` (fast start for new contributors)
 - `docs/PROD_RUNBOOK.md` (exact end-to-end production flow used for `bondipoker.online`)
@@ -77,12 +79,16 @@ Use these guides:
 - `docs/MONITORING_ALERTING.md` (uptime, host metrics, alerting baseline)
 - `docs/BACKUP_RESTORE.md` (daily backup + restore drill)
 - `docs/DEPLOY_OCI.md` (OCI-specific deployment checklist)
+- `deploy/README.md` (expected ports/routes/proxy rules for Caddy + realtime)
+- `deploy/PROD_CHECKLIST.md` (quick production readiness checklist)
+- `deploy/Caddyfile.example` (safe baseline Caddy config)
 
 ## Test + Smoke
 
 ```bash
 make test
 make smoke
+pnpm run test:integration
 ```
 
 ## Standard Commands
@@ -105,6 +111,7 @@ pnpm run lint
 pnpm run format
 pnpm run format:check
 pnpm run typecheck
+pnpm run test:e2e
 ```
 
 Remote smoke test:

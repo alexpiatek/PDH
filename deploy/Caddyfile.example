@@ -1,0 +1,90 @@
+{
+	# Keep Caddy's own admin endpoint local only.
+	admin 127.0.0.1:2019
+}
+
+# Shared security headers for browser-facing routes.
+# CSP is tuned for Next.js + Nakama API on api.<root-domain>.
+(security_headers_web) {
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.{$ROOT_DOMAIN} wss://api.{$ROOT_DOMAIN};"
+		Strict-Transport-Security "max-age=31536000"
+	}
+}
+
+# CORS for browser calls from play/apex origins to Nakama HTTP APIs.
+# Keep this allowlist tight. Add extra origins only when needed.
+(nakama_cors) {
+	@origin_apex header Origin "https://{$ROOT_DOMAIN}"
+	@origin_www header Origin "https://www.{$ROOT_DOMAIN}"
+	@origin_play header Origin "https://play.{$ROOT_DOMAIN}"
+
+	@preflight_apex {
+		method OPTIONS
+		header Origin "https://{$ROOT_DOMAIN}"
+	}
+	@preflight_www {
+		method OPTIONS
+		header Origin "https://www.{$ROOT_DOMAIN}"
+	}
+	@preflight_play {
+		method OPTIONS
+		header Origin "https://play.{$ROOT_DOMAIN}"
+	}
+
+	header @origin_apex Access-Control-Allow-Origin "https://{$ROOT_DOMAIN}"
+	header @origin_www Access-Control-Allow-Origin "https://www.{$ROOT_DOMAIN}"
+	header @origin_play Access-Control-Allow-Origin "https://play.{$ROOT_DOMAIN}"
+
+	header @origin_apex Access-Control-Allow-Credentials "true"
+	header @origin_www Access-Control-Allow-Credentials "true"
+	header @origin_play Access-Control-Allow-Credentials "true"
+
+	header @origin_apex Access-Control-Allow-Headers "Authorization, Content-Type, User-Agent, X-Requested-With"
+	header @origin_www Access-Control-Allow-Headers "Authorization, Content-Type, User-Agent, X-Requested-With"
+	header @origin_play Access-Control-Allow-Headers "Authorization, Content-Type, User-Agent, X-Requested-With"
+
+	header @origin_apex Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+	header @origin_www Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+	header @origin_play Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+
+	header @origin_apex Vary "Origin"
+	header @origin_www Vary "Origin"
+	header @origin_play Vary "Origin"
+
+	respond @preflight_apex 204
+	respond @preflight_www 204
+	respond @preflight_play 204
+}
+
+# Next.js web app.
+{$ROOT_DOMAIN}, www.{$ROOT_DOMAIN}, play.{$ROOT_DOMAIN} {
+	import security_headers_web
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3001
+}
+
+# Nakama API + websocket endpoint.
+api.{$ROOT_DOMAIN} {
+	# Keep these baseline headers on API responses as well.
+	# CSP is less relevant on JSON responses but harmless.
+	import security_headers_web
+	import nakama_cors
+
+	reverse_proxy 127.0.0.1:7350 {
+		# Useful for low-latency streams and websocket traffic.
+		flush_interval -1
+		# Reduce reconnect storms during config reloads/restarts.
+		stream_close_delay 5m
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 15s
+			keepalive 2m
+		}
+	}
+}

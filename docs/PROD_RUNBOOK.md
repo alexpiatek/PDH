@@ -159,20 +159,18 @@ apt update
 apt install -y caddy
 ```
 
-Set `/etc/caddy/Caddyfile`:
+Use the maintained baseline in `deploy/Caddyfile.example`.
+It includes:
 
-```caddy
-<your-domain>, www.<your-domain> {
-  reverse_proxy 127.0.0.1:3001
-}
+- websocket-safe reverse proxy settings for Nakama
+- conservative security headers
+- strict CORS allowlist for browser calls from `play.*` to `api.*`
 
-play.<your-domain> {
-  reverse_proxy 127.0.0.1:3001
-}
+Render to `/etc/caddy/Caddyfile`:
 
-api.<your-domain> {
-  reverse_proxy 127.0.0.1:7350
-}
+```bash
+export ROOT_DOMAIN=<your-domain>
+envsubst < deploy/Caddyfile.example | sudo tee /etc/caddy/Caddyfile >/dev/null
 ```
 
 Note:
@@ -195,6 +193,9 @@ From VPS and local machine:
 curl -I https://<your-domain>
 curl -I https://play.<your-domain>
 curl -i https://api.<your-domain>/healthcheck
+curl -i -X OPTIONS https://api.<your-domain>/v2/account/authenticate/device \
+  -H 'Origin: https://play.<your-domain>' \
+  -H 'Access-Control-Request-Method: POST'
 ```
 
 Smoke test:
