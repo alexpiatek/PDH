@@ -23,7 +23,6 @@ Caddy `reverse_proxy` supports websocket upgrades automatically; no separate `ws
 For realtime stability:
 
 - keep `api.<root-domain>` on TLS/WSS only (avoid mixed `ws://` and `wss://` clients)
-- use `stream_close_delay` to reduce disconnect spikes during Caddy reload/restart
 - avoid middle proxies/load balancers with aggressive idle websocket timeouts
 
 ## Common Disconnect Misconfigs
