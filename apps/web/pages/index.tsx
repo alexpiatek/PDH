@@ -6,10 +6,10 @@ const Home: NextPage = () => {
   return (
     <>
       <Head>
-        <title>Bondi Poker | Discard Hold&apos;em</title>
+        <title>BondiPoker - Hold&apos;em with Hidden Discards</title>
         <meta
           name="description"
-          content="Bondi Poker is the first poker game where you discard to survive. Build your hand street by street."
+          content="Real-time multiplayer poker with a twist: start with 5 hole cards, discard 1 after flop/turn/river, and reach a 2-card showdown."
         />
       </Head>
       <HeroSection />
