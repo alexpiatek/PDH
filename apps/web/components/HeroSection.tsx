@@ -55,7 +55,7 @@ export default function HeroSection() {
           </p>
 
           <h1 className="mx-auto mt-5 max-w-4xl font-[var(--font-display)] text-4xl font-semibold leading-[0.95] tracking-tight text-white sm:text-5xl lg:text-6xl">
-            Hold&apos;em - but your hand evaporates in secret.
+            Don&apos;t just play the hand you&apos;re dealt. Build it.
           </h1>
 
           <p className="mx-auto mt-5 max-w-3xl text-base text-zinc-300 sm:text-lg">
