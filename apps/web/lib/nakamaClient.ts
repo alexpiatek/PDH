@@ -295,12 +295,16 @@ function parseRpcPayload<T>(payload: unknown): T {
   return payload as T;
 }
 
-export async function callNakamaRpc<T>(rpcId: string, input: Record<string, unknown>): Promise<T> {
+export async function callNakamaRpc<T>(
+  rpcId: string,
+  input: object | Record<string, unknown>
+): Promise<T> {
   const client = getNakamaClient();
   let session = await ensureNakamaSession();
+  const payload = input as Record<string, unknown>;
 
   try {
-    const response = await client.rpc(session, rpcId, input);
+    const response = await client.rpc(session, rpcId, payload);
     return parseRpcPayload<T>(response.payload);
   } catch (error) {
     if (!isAuthError(error)) {
@@ -309,7 +313,7 @@ export async function callNakamaRpc<T>(rpcId: string, input: Record<string, unkn
 
     clearSessionCache();
     session = await ensureNakamaSession();
-    const retried = await client.rpc(session, rpcId, input);
+    const retried = await client.rpc(session, rpcId, payload);
     return parseRpcPayload<T>(retried.payload);
   }
 }
