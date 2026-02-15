@@ -424,7 +424,7 @@ function normalizeMatchInitCode(codeValue: unknown): string {
   return generateTableCode();
 }
 
-function matchInit(ctx, logger, nk, params) {
+function pokerTableMatchInit(ctx, logger, nk, params) {
   const code = normalizeMatchInitCode(params?.code);
   const maxPlayers = normalizeMatchInitMaxPlayers(params?.maxPlayers);
   const state: PokerTableState = {
@@ -446,7 +446,7 @@ function matchInit(ctx, logger, nk, params) {
   };
 }
 
-function matchJoinAttempt(ctx, logger, nk, dispatcher, tick, state, presence, metadata) {
+function pokerTableMatchJoinAttempt(ctx, logger, nk, dispatcher, tick, state, presence, metadata) {
   const alreadyPresent = Boolean(state.presences[presence.userId]);
   const presenceCount = Object.keys(state.presences).length;
 
@@ -464,29 +464,29 @@ function matchJoinAttempt(ctx, logger, nk, dispatcher, tick, state, presence, me
   };
 }
 
-function matchJoin(ctx, logger, nk, dispatcher, tick, state, presences) {
+function pokerTableMatchJoin(ctx, logger, nk, dispatcher, tick, state, presences) {
   for (const presence of presences) {
     state.presences[presence.userId] = presence;
   }
   return { state };
 }
 
-function matchLeave(ctx, logger, nk, dispatcher, tick, state, presences) {
+function pokerTableMatchLeave(ctx, logger, nk, dispatcher, tick, state, presences) {
   for (const presence of presences) {
     delete state.presences[presence.userId];
   }
   return { state };
 }
 
-function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
+function pokerTableMatchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
   return { state };
 }
 
-function matchTerminate(ctx, logger, nk, dispatcher, tick, state, graceSeconds) {
+function pokerTableMatchTerminate(ctx, logger, nk, dispatcher, tick, state, graceSeconds) {
   return { state };
 }
 
-function matchSignal(ctx, logger, nk, dispatcher, tick, state, data) {
+function pokerTableMatchSignal(ctx, logger, nk, dispatcher, tick, state, data) {
   return {
     state,
     data: JSON.stringify({
@@ -499,14 +499,31 @@ function matchSignal(ctx, logger, nk, dispatcher, tick, state, data) {
 }
 
 export const pokerTableMatchHandler = {
-  matchInit,
-  matchJoinAttempt,
-  matchJoin,
-  matchLeave,
-  matchLoop,
-  matchTerminate,
-  matchSignal,
+  matchInit: pokerTableMatchInit,
+  matchJoinAttempt: pokerTableMatchJoinAttempt,
+  matchJoin: pokerTableMatchJoin,
+  matchLeave: pokerTableMatchLeave,
+  matchLoop: pokerTableMatchLoop,
+  matchTerminate: pokerTableMatchTerminate,
+  matchSignal: pokerTableMatchSignal,
 };
+
+(globalThis as any).pokerTableMatchInit = pokerTableMatchInit;
+(globalThis as any).pokerTableMatchJoinAttempt = pokerTableMatchJoinAttempt;
+(globalThis as any).pokerTableMatchJoin = pokerTableMatchJoin;
+(globalThis as any).pokerTableMatchLeave = pokerTableMatchLeave;
+(globalThis as any).pokerTableMatchLoop = pokerTableMatchLoop;
+(globalThis as any).pokerTableMatchTerminate = pokerTableMatchTerminate;
+(globalThis as any).pokerTableMatchSignal = pokerTableMatchSignal;
+
+// Nakama JS runtime resolves additional match handlers by auto-suffixed callback keys.
+(globalThis as any).matchInit3 = pokerTableMatchInit;
+(globalThis as any).matchJoinAttempt3 = pokerTableMatchJoinAttempt;
+(globalThis as any).matchJoin3 = pokerTableMatchJoin;
+(globalThis as any).matchLeave3 = pokerTableMatchLeave;
+(globalThis as any).matchLoop3 = pokerTableMatchLoop;
+(globalThis as any).matchTerminate3 = pokerTableMatchTerminate;
+(globalThis as any).matchSignal3 = pokerTableMatchSignal;
 
 (globalThis as any).rpcCreateTable = rpcCreateTable;
 (globalThis as any).rpcJoinByCode = rpcJoinByCode;

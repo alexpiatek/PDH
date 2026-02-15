@@ -238,7 +238,7 @@ function attachSocketLifecycleHooks(socket: NakamaSocket): void {
   socket.ondisconnect = (event: Event) => {
     socketConnected = false;
     if (typeof existingDisconnect === 'function') {
-      existingDisconnect(event);
+      existingDisconnect.call(socket, event);
     }
   };
 }

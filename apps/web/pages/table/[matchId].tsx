@@ -53,7 +53,7 @@ const TablePlaceholderPage: NextPage = () => {
         const previousPresenceHandler = socket.onmatchpresence;
         socket.onmatchpresence = (event) => {
           if (typeof previousPresenceHandler === 'function') {
-            previousPresenceHandler(event);
+            previousPresenceHandler.call(socket, event);
           }
           if (event.match_id !== matchId) {
             return;
