@@ -12,7 +12,15 @@ type PokerCard = {
   suit: Suit;
 };
 
-type HeroPhase = 'initial' | 'dealing' | 'flop' | 'prompt' | 'success';
+type HeroPhase = 'initial' | 'dealing' | 'flop' | 'prompt' | 'turn' | 'river' | 'success';
+
+const HERO_STEPS = [
+  { id: 'deal', label: 'Deal 5' },
+  { id: 'flop', label: 'Flop discard' },
+  { id: 'turn', label: 'Turn discard' },
+  { id: 'river', label: 'River discard' },
+  { id: 'showdown', label: 'Showdown' },
+] as const;
 
 type CardProps = {
   card: PokerCard;
@@ -64,6 +72,26 @@ const fanRotation = (index: number, total: number) => (index - (total - 1) / 2) 
 const fanLift = (index: number, total: number) => {
   const distanceFromMiddle = Math.abs(index - (total - 1) / 2);
   return distanceFromMiddle * 6;
+};
+
+const stepIndexByPhase: Record<HeroPhase, number> = {
+  initial: 0,
+  dealing: 0,
+  flop: 1,
+  prompt: 1,
+  turn: 2,
+  river: 3,
+  success: 4,
+};
+
+const stageLabelByPhase: Record<HeroPhase, string> = {
+  initial: 'Deal',
+  dealing: 'Deal',
+  flop: 'Flop',
+  prompt: 'Flop',
+  turn: 'Turn',
+  river: 'River',
+  success: 'Showdown',
 };
 
 function Card({ card, compact = false, highlighted = false }: CardProps) {
@@ -121,6 +149,7 @@ export default function HeroSection() {
   const [showBoard, setShowBoard] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [runId, setRunId] = useState(0);
+  const hasAutoPlayedRef = useRef(false);
 
   const timersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
@@ -148,13 +177,21 @@ export default function HeroSection() {
     setIsDiscarding(false);
     setHand([]);
 
-    queue(() => setHand(HERO_HAND), 120);
+    queue(() => setHand(HERO_HAND), 80);
     queue(() => {
       setShowBoard(true);
       setPhase('flop');
-    }, 1300);
-    queue(() => setPhase('prompt'), 1950);
+    }, 900);
+    queue(() => setPhase('prompt'), 1350);
   }, [clearTimers, queue]);
+
+  useEffect(() => {
+    if (hasAutoPlayedRef.current) {
+      return;
+    }
+    hasAutoPlayedRef.current = true;
+    startDemo();
+  }, [startDemo]);
 
   const completeDiscard = useCallback(() => {
     if (isDiscarding || phase !== 'prompt') {
@@ -164,10 +201,12 @@ export default function HeroSection() {
     setIsDiscarding(true);
     setHand((prev) => prev.filter((card) => card.id !== DISCARD_CARD_ID));
 
+    queue(() => setPhase('turn'), 360);
+    queue(() => setPhase('river'), 980);
     queue(() => {
       setPhase('success');
       setIsDiscarding(false);
-    }, 420);
+    }, 1640);
   }, [isDiscarding, phase, queue]);
 
   const onDiscardDragEnd = useCallback(
@@ -180,16 +219,18 @@ export default function HeroSection() {
   );
 
   const ctaLabel = useMemo(() => {
-    if (phase === 'initial') {
-      return 'Try a Hand';
-    }
     if (phase === 'success') {
       return 'Run It Again';
+    }
+    if (phase === 'initial') {
+      return 'Run Demo';
     }
     return 'Restart Demo';
   }, [phase]);
 
   const showHint = phase === 'prompt';
+  const activeStep = stepIndexByPhase[phase];
+  const stageLabel = stageLabelByPhase[phase];
 
   return (
     <section className="relative isolate overflow-hidden bg-slate-950 text-slate-100">
@@ -214,7 +255,19 @@ export default function HeroSection() {
             The first poker game where you discard to survive.
           </p>
 
+          <p className="max-w-2xl rounded-2xl border border-cyan-400/20 bg-slate-900/45 px-4 py-3 text-sm text-slate-200 sm:text-base">
+            Start with 5 hole cards. After flop, turn, and river, you discard 1 each street. You
+            reach showdown with exactly 2 hole cards.
+          </p>
+
           <div className="flex flex-wrap gap-3">
+            <a
+              href="/play"
+              className="inline-flex items-center justify-center rounded-xl border border-cyan-300/60 bg-cyan-400/25 px-5 py-3 text-sm font-bold text-cyan-50 shadow-[0_0_24px_rgba(34,211,238,0.45)] transition hover:shadow-[0_0_34px_rgba(34,211,238,0.65)]"
+            >
+              Play Now
+            </a>
+
             <button
               type="button"
               onClick={startDemo}
@@ -259,9 +312,9 @@ export default function HeroSection() {
                 exit={{ opacity: 0, y: -8 }}
                 className="text-sm text-slate-300"
               >
-                {phase === 'initial'
-                  ? 'Tap "Try a Hand" to run a live Discard Hold\'em moment.'
-                  : 'Watch the board form, then drag the junk card up to burn it.'}
+                {phase === 'prompt'
+                  ? 'Discard 1 card now. Drag the highlighted card up, or tap the discard button.'
+                  : 'Demo runs automatically once. Replay anytime to see the discard flow again.'}
               </motion.p>
             )}
           </AnimatePresence>
@@ -271,9 +324,32 @@ export default function HeroSection() {
           <div className="pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-cyan-400/10 via-transparent to-purple-500/10" />
 
           <div className="relative min-h-[25rem] rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_40%_20%,rgba(34,211,238,0.16),transparent_35%),radial-gradient(circle_at_70%_80%,rgba(168,85,247,0.18),transparent_42%),linear-gradient(180deg,rgba(2,6,23,0.55),rgba(2,6,23,0.95))] p-4 sm:min-h-[27rem] sm:p-6">
+            <div className="mb-3 grid grid-cols-5 gap-1.5 sm:gap-2">
+              {HERO_STEPS.map((step, index) => {
+                const isDone = index < activeStep;
+                const isActive = index === activeStep;
+
+                return (
+                  <div
+                    key={step.id}
+                    className={[
+                      'rounded-lg border px-2 py-1.5 text-center text-[0.58rem] font-semibold uppercase tracking-[0.08em] sm:text-[0.62rem]',
+                      isDone
+                        ? 'border-cyan-300/35 bg-cyan-400/14 text-cyan-200'
+                        : isActive
+                          ? 'border-cyan-300/60 bg-cyan-400/22 text-cyan-50'
+                          : 'border-white/10 bg-slate-950/45 text-slate-400',
+                    ].join(' ')}
+                  >
+                    {step.label}
+                  </div>
+                );
+              })}
+            </div>
+
             <div className="flex justify-center">
               <div className="flex items-center rounded-full border border-white/10 bg-slate-950/60 px-3 py-1 text-[0.64rem] font-medium uppercase tracking-[0.25em] text-cyan-300">
-                Flop
+                {stageLabel}
               </div>
             </div>
 
@@ -298,6 +374,35 @@ export default function HeroSection() {
                   ))}
               </AnimatePresence>
             </div>
+
+            <div className="mt-2 flex justify-center">
+              <p className="rounded-full border border-white/10 bg-slate-950/45 px-3 py-1 text-[0.66rem] uppercase tracking-[0.14em] text-slate-300 sm:text-[0.7rem]">
+                {phase === 'turn' && 'Turn round: each player discards 1 again'}
+                {phase === 'river' && 'River round: each player discards 1 again'}
+                {phase === 'success' && 'Showdown: best 5-card hand from 2 hole + board'}
+                {(phase === 'dealing' || phase === 'flop' || phase === 'prompt' || phase === 'initial') &&
+                  'Flop round: choose 1 card to discard'}
+              </p>
+            </div>
+
+            <AnimatePresence>
+              {showHint ? (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  className="pointer-events-none absolute inset-x-0 bottom-[12.3rem] flex justify-center px-4"
+                >
+                  <button
+                    type="button"
+                    onClick={completeDiscard}
+                    className="pointer-events-auto rounded-xl border border-cyan-300/55 bg-cyan-400/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-cyan-100 shadow-[0_0_20px_rgba(34,211,238,0.35)] transition hover:bg-cyan-400/30"
+                  >
+                    Discard 2{SUIT_SYMBOL.H}
+                  </button>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
 
             <div className="absolute inset-x-0 bottom-5 flex justify-center px-2 sm:bottom-6">
               <LayoutGroup id={`hand-${runId}`}>
@@ -390,7 +495,8 @@ export default function HeroSection() {
                                     <ArrowUp className="h-3.5 w-3.5" />
                                   </motion.span>
                                   <p>
-                                    You have a Royal Flush draw. Drag this card UP to discard it.
+                                    Flop discard step: remove 1 weak card now. Drag up or use the
+                                    button.
                                   </p>
                                 </div>
                                 <div className="absolute -bottom-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 border-b border-r border-purple-400/55 bg-slate-900/95" />
