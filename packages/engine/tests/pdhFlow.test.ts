@@ -144,6 +144,42 @@ describe('PDH flow contract', () => {
     }
   });
 
+  it('does not keep disconnected all-in players pending in discard phases', () => {
+    const table = createTableWithPlayers(2, 10000, 0x5555aaaa);
+    let hand = table.state.hand!;
+
+    const opener = hand.players.find((p) => p.seat === hand.actionOnSeat)!;
+    table.applyAction(opener.id, { type: 'allIn' });
+
+    hand = table.state.hand!;
+    const caller = hand.players.find((p) => p.status === 'active')!;
+    table.applyAction(caller.id, { type: 'call' });
+
+    hand = table.state.hand!;
+    table.advancePendingPhase(hand.pendingNextPhaseAt ?? Date.now());
+    hand = table.state.hand!;
+    expect(hand.phase).toBe('discard');
+
+    table.handleDisconnect(opener.id);
+    hand = table.state.hand!;
+    expect(hand.discardPending.includes(opener.id)).toBe(false);
+
+    let guard = 16;
+    while (table.state.hand && table.state.hand.phase !== 'showdown' && guard > 0) {
+      hand = table.state.hand!;
+      if (hand.phase !== 'discard') {
+        throw new Error(`Expected discard phase, got ${hand.phase}`);
+      }
+      expect(hand.discardPending.includes(opener.id)).toBe(false);
+      for (const pid of [...hand.discardPending]) {
+        table.applyDiscard(pid, 0);
+      }
+      guard -= 1;
+    }
+
+    expect(table.state.hand?.phase).toBe('showdown');
+  });
+
   it('is deterministic for equal seed + equal actions', () => {
     const t1 = createTableWithPlayers(4, 10000, 0xabc123);
     const t2 = createTableWithPlayers(4, 10000, 0xabc123);

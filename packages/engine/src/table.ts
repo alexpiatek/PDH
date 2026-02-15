@@ -209,10 +209,26 @@ export class PokerTable {
     const hand = this.state.hand;
     if (!hand) return;
     const player = hand.players.find((p) => p.id === playerId);
-    if (!player || player.status !== 'active') return;
+    if (!player) return;
+
+    logPush(hand.log, `${player.name} disconnected`);
+
+    if (hand.phase === 'discard' && hand.discardPending.includes(player.id)) {
+      if (player.holeCards.length > 2) {
+        this.discardCard(player, 0, true);
+      } else {
+        logPush(hand.log, `${player.name} auto-discarded due to disconnect`);
+      }
+      hand.discardPending = hand.discardPending.filter((id) => id !== player.id);
+      if (hand.discardPending.length === 0) {
+        this.completeDiscardPhase();
+      }
+    }
+
+    if (player.status !== 'active') return;
+
     player.status = 'folded';
     player.hasActed = true;
-    logPush(hand.log, `${player.name} disconnected`);
     logPush(hand.log, `${player.name} folded`);
 
     const remaining = hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
@@ -226,14 +242,6 @@ export class PokerTable {
         this.queueBettingRoundAdvance(hand);
       } else if (hand.actionOnSeat === player.seat) {
         hand.actionOnSeat = this.nextToAct(hand);
-      }
-    } else if (hand.phase === 'discard') {
-      if (hand.discardPending.includes(player.id)) {
-        hand.discardPending = hand.discardPending.filter((id) => id !== player.id);
-        logPush(hand.log, `${player.name} auto-discarded due to disconnect`);
-      }
-      if (hand.discardPending.length === 0) {
-        this.completeDiscardPhase();
       }
     }
   }
@@ -516,6 +524,13 @@ export class PokerTable {
     hand.discardPending = activePlayers(hand)
       .filter((p) => p.holeCards.length > 2)
       .map((p) => p.id);
+    for (const playerId of [...hand.discardPending]) {
+      const seat = this.state.seats.find((s) => s?.id === playerId);
+      if (!seat?.sittingOut) continue;
+      const player = playerById(hand, playerId);
+      this.discardCard(player, 0, true);
+      hand.discardPending = hand.discardPending.filter((id) => id !== playerId);
+    }
     hand.discardDeadline =
       this.state.config.discardTimeoutMs === null
         ? null

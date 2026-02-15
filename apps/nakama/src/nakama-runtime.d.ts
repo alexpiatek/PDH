@@ -7,6 +7,32 @@ declare module '@heroiclabs/nakama-runtime' {
     size?: number;
   }
 
+  export interface StorageObject {
+    collection?: string;
+    key?: string;
+    userId?: string;
+    user_id?: string;
+    value?: unknown;
+    version?: string;
+    permissionRead?: number;
+    permission_write?: number;
+  }
+
+  export interface StorageReadRequest {
+    collection: string;
+    key: string;
+    userId: string;
+  }
+
+  export interface StorageWriteRequest {
+    collection: string;
+    key: string;
+    userId: string;
+    value: Record<string, unknown>;
+    permissionRead: number;
+    permissionWrite: number;
+  }
+
   export interface Presence {
     userId: string;
     sessionId?: string;
@@ -41,6 +67,9 @@ declare module '@heroiclabs/nakama-runtime' {
       maxSize: number,
       query?: string
     ): MatchListEntry[];
+    matchGet?(matchId: string): MatchListEntry | null;
+    storageRead?(objects: StorageReadRequest[]): StorageObject[];
+    storageWrite?(objects: StorageWriteRequest[]): StorageObject[];
   }
 
   export interface Logger {

@@ -270,7 +270,12 @@ export function rpcEnsureSmokeMatch(
 
   if (payload && payload.trim()) {
     try {
-      input = JSON.parse(payload) as EnsureSmokeMatchInput;
+      const parsed = JSON.parse(payload) as EnsureSmokeMatchInput | string;
+      if (typeof parsed === 'string') {
+        input = JSON.parse(parsed) as EnsureSmokeMatchInput;
+      } else {
+        input = parsed;
+      }
     } catch (error: any) {
       throw new Error(`invalid payload JSON: ${error?.message ?? 'parse failure'}`);
     }

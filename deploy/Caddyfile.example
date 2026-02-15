@@ -77,6 +77,12 @@ api.${ROOT_DOMAIN} {
 	import nakama_cors
 
 	reverse_proxy 127.0.0.1:7350 {
+		# Nakama can emit wildcard CORS headers by default.
+		# Strip upstream CORS headers so our explicit allowlist is authoritative.
+		header_down -Access-Control-Allow-Origin
+		header_down -Access-Control-Allow-Credentials
+		header_down -Access-Control-Allow-Headers
+		header_down -Access-Control-Allow-Methods
 		# Useful for low-latency streams and websocket traffic.
 		flush_interval -1
 		transport http {

@@ -6,7 +6,7 @@ This is the single source of truth for local development.
 
 - Next.js client: `apps/web` on `http://localhost:3001`
 - Nakama API/WebSocket: `http://127.0.0.1:7350`
-- Postgres (for Nakama): `127.0.0.1:5432`
+- Postgres (for Nakama + app-owned tables): `127.0.0.1:5432`
 - Caddy: not required for local dev (production only)
 
 ## Prerequisites
@@ -46,8 +46,12 @@ pnpm run dev:full
 - Tail backend logs: `pnpm run logs` (or `make logs`)
 - Stop backend: `pnpm run down` (or `make down`)
 - Run tests: `pnpm run test` (or `make test`)
+- Run integration tests only: `pnpm run test:integration`
+- Run end-to-end browser tests: `pnpm run test:e2e`
 - Run lint baseline: `pnpm run lint` (or `make lint`)
 - Run type checks: `pnpm run typecheck` (or `make typecheck`)
+- Run SQL migrations manually: `pnpm run db:migrate`
+- Apply deterministic seed data manually: `pnpm run db:seed`
 - Build all apps: `pnpm run build` (or `make build`)
 
 ## Troubleshooting

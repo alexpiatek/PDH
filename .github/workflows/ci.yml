@@ -42,6 +42,9 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      - name: Changelog check
+        run: pnpm run changelog:check
+
   unit_tests:
     name: Unit Tests
     runs-on: ubuntu-latest

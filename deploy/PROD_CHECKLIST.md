@@ -37,6 +37,16 @@ curl -i -X OPTIONS https://api.<root-domain>/v2/account/authenticate/device \
 ```
 
 - Disallowed origin does not receive `Access-Control-Allow-Origin`.
+- Actual auth response has exactly one `Access-Control-Allow-Origin` value (not both origin and `*`):
+
+```bash
+curl -i -X POST 'https://api.<root-domain>/v2/account/authenticate/device?create=true' \
+  -H 'Origin: https://play.<root-domain>' \
+  -H 'Content-Type: application/json' \
+  --data '{"id":"cors-check"}' | rg -i '^access-control-allow-origin:'
+```
+
+- Expected output: one line only, matching `https://play.<root-domain>`.
 
 ## Realtime Stability
 

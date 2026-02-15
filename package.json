@@ -19,9 +19,16 @@
     "lint": "./scripts/lint.sh",
     "format": "./scripts/format.sh",
     "format:check": "./scripts/format-check.sh",
-    "test": "./scripts/test.sh"
+    "changelog:check": "./scripts/changelog-check.sh",
+    "changelog:release": "./scripts/changelog-release.sh",
+    "db:migrate": "./scripts/db-migrate.sh",
+    "db:seed": "./scripts/db-seed.sh",
+    "test": "./scripts/test.sh",
+    "test:integration": "./scripts/integration-test.sh",
+    "test:e2e": "./scripts/e2e-test.sh"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@eslint/js": "^9.39.2",
     "@types/node": "^20.11.5",
     "concurrently": "^8.2.2",

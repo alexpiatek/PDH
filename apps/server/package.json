@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@pdh/engine": "workspace:*",
+    "@pdh/protocol": "workspace:*",
     "ws": "^8.14.2"
   }
 }

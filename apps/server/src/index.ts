@@ -2,7 +2,12 @@ import { randomUUID } from 'crypto';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PokerTable } from '@pdh/engine';
-import { ClientMessage, ServerMessage } from './protocol';
+import {
+  parseClientMessagePayload,
+  withProtocolVersion,
+  type ClientMessage,
+  type ServerMessage,
+} from './protocol';
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const AUDIT_LOG_TOKEN = process.env.AUDIT_LOG_TOKEN || '';
@@ -72,7 +77,7 @@ server.listen(PORT, () => {
 });
 
 function send(ws: WebSocket, msg: ServerMessage) {
-  ws.send(JSON.stringify(msg));
+  ws.send(JSON.stringify(withProtocolVersion(msg)));
 }
 
 function broadcast() {
@@ -198,7 +203,7 @@ wss.on('connection', (ws) => {
   send(ws, { type: 'welcome', playerId: clients.get(ws)!.playerId, tableId: table.state.id });
   ws.on('message', (data) => {
     try {
-      const msg = JSON.parse(data.toString()) as ClientMessage;
+      const msg = parseClientMessagePayload(JSON.parse(data.toString())) as ClientMessage;
       handleMessage(ws, msg);
     } catch (err: any) {
       send(ws, { type: 'error', message: 'Invalid payload' });

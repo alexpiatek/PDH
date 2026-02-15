@@ -1,30 +1,22 @@
-import { Card, HandState, TableState } from '@pdh/engine';
+export {
+  MatchOpCode,
+  PDH_PROTOCOL_VERSION,
+  clientMessageSchema,
+  serverMessageSchema,
+  isClientMessage,
+  isMutatingClientMessage,
+  isServerMessage,
+  parseClientMessagePayload,
+  parseServerMessagePayload,
+  withProtocolVersion,
+} from '@pdh/protocol';
 
-export type ClientMessage =
-  | { type: 'join'; name: string; seat?: number; buyIn: number }
-  | { type: 'reconnect'; playerId: string }
-  | {
-      type: 'action';
-      action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'allIn';
-      amount?: number;
-    }
-  | { type: 'discard'; index: number }
-  | { type: 'nextHand' }
-  | { type: 'requestState' };
-
-export type ServerMessage =
-  | { type: 'welcome'; playerId: string; tableId: string }
-  | { type: 'state'; state: PublicState }
-  | { type: 'error'; message: string };
-
-export interface PublicState {
-  id: string;
-  seats: TableState['seats'];
-  buttonSeat: number;
-  hand: HandState | null;
-  log: HandState['log'];
-  you: { playerId: string };
-}
+export type {
+  ClientMessage,
+  MutatingClientMessage,
+  PublicState,
+  ServerMessage,
+} from '@pdh/protocol';
 
 export interface ClientContext {
   playerId: string;

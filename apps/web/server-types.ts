@@ -1,16 +1,19 @@
-export type ClientMessage =
-  | { type: 'join'; name: string; seat?: number; buyIn: number }
-  | { type: 'reconnect'; playerId: string }
-  | {
-      type: 'action';
-      action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'allIn';
-      amount?: number;
-    }
-  | { type: 'discard'; index: number }
-  | { type: 'nextHand' }
-  | { type: 'requestState' };
+export {
+  MatchOpCode,
+  PDH_PROTOCOL_VERSION,
+  clientMessageSchema,
+  serverMessageSchema,
+  isClientMessage,
+  isMutatingClientMessage,
+  isServerMessage,
+  parseClientMessagePayload,
+  parseServerMessagePayload,
+  withProtocolVersion,
+} from '@pdh/protocol';
 
-export type ServerMessage =
-  | { type: 'welcome'; playerId: string; tableId: string }
-  | { type: 'state'; state: any }
-  | { type: 'error'; message: string };
+export type {
+  ClientMessage,
+  MutatingClientMessage,
+  PublicState,
+  ServerMessage,
+} from '@pdh/protocol';

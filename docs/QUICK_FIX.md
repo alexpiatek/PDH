@@ -42,6 +42,11 @@ CHUNK=$(curl -sS https://play.bondipoker.online | grep -oE '/_next/static/chunks
 JS=$(curl -sS "https://play.bondipoker.online$CHUNK")
 echo "$JS" | grep -oE '37ba066c[0-9a-f]*|88f89fa2[0-9a-f]*' | sort -u
 echo "$JS" | grep -q 'Startup sanity check failed' && echo 'STARTUP_SANITY_CODE=present'
+
+curl -i -X POST 'https://api.bondipoker.online/v2/account/authenticate/device?create=true' \
+  -H 'Origin: https://play.bondipoker.online' \
+  -H 'Content-Type: application/json' \
+  --data '{"id":"cors-check"}' | rg -i '^access-control-allow-origin:'
 ```
 
 Interpretation:
@@ -50,6 +55,7 @@ Interpretation:
 - `STARTUP_SANITY_CODE=present` means the startup-check logic is in the deployed bundle.
 - If `pdh-web` `WorkingDirectory` is not your current repo, deploy from the service path.
 - If keys differ between `.env` and `apps/web/.env.local`, fix that first, then rebuild/restart.
+- `Access-Control-Allow-Origin` must appear once. If both origin and `*` appear, strip upstream CORS headers in Caddy.
 
 ## 3) Never Repeat This Issue
 

@@ -69,6 +69,17 @@ The following MUST remain server-authoritative:
 
 Client-side values (bet amount inputs, local labels, cached match id/device id) are hints only.
 
+## Security Model (Multiplayer Integrity)
+
+- Single writer: only authoritative Nakama `matchLoop` mutates table state; clients can only submit intents.
+- Sequenced mutating intents: `action`, `discard`, and `nextHand` require per-player increasing `seq` values. Duplicate/stale sequence numbers are rejected before rule execution.
+- Turn/phase gatekeeping: server validates active phase + actor identity before calling engine mutators:
+  - `action` only for the current betting actor.
+  - `discard` only for players currently in `discardPending`.
+  - `nextHand` only when hand is complete (`showdown`) or no hand is active.
+- Replay/race protection: if near-simultaneous or replayed packets arrive, only the first fresh sequence for a player is accepted; stale replays are rejected even if turn state changes later.
+- Deterministic authority: state transitions are deterministic for ordered accepted inputs on one authoritative match instance; no client-provided game state is trusted.
+
 ## Top 10 Bug Risks and Proposed Tests
 
 1. Risk: betting round stalls if pending phase is never advanced.

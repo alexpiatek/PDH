@@ -1,8 +1,12 @@
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
 import {
   DEFAULT_MATCH_MODULE,
+  PDH_RPC_GET_REPLAY,
+  PDH_RPC_ENSURE_MATCH,
   ensureDefaultMatchAfterAuthenticate,
   pdhMatchHandler,
+  rpcGetPdhReplay,
+  rpcEnsurePdhMatch,
 } from './pdhMatch';
 import {
   SMOKE_MATCH_MODULE,
@@ -10,6 +14,14 @@ import {
   rpcEnsureSmokeMatch,
   smokeMatchHandler,
 } from './smokeMatch';
+import {
+  POKER_TABLE_MATCH_MODULE,
+  RPC_CREATE_TABLE,
+  RPC_JOIN_BY_CODE,
+  pokerTableMatchHandler,
+  rpcCreateTable,
+  rpcJoinByCode,
+} from './pokerLobby';
 
 const InitModule: nkruntime.InitModule = (ctx, logger, nk, initializer) => {
   const maybeRegisterAfterAuthenticateDevice = (
@@ -23,13 +35,19 @@ const InitModule: nkruntime.InitModule = (ctx, logger, nk, initializer) => {
   }
 
   initializer.registerMatch(DEFAULT_MATCH_MODULE, pdhMatchHandler);
+  initializer.registerRpc(PDH_RPC_ENSURE_MATCH, rpcEnsurePdhMatch);
+  initializer.registerRpc(PDH_RPC_GET_REPLAY, rpcGetPdhReplay);
   initializer.registerMatch(SMOKE_MATCH_MODULE, smokeMatchHandler);
   initializer.registerRpc(SMOKE_RPC_ENSURE_MATCH, rpcEnsureSmokeMatch);
+  initializer.registerMatch(POKER_TABLE_MATCH_MODULE, pokerTableMatchHandler);
+  initializer.registerRpc(RPC_CREATE_TABLE, rpcCreateTable);
+  initializer.registerRpc(RPC_JOIN_BY_CODE, rpcJoinByCode);
 
   logger.info(
-    'PDH Nakama module loaded (modules: %v, %v)',
+    'PDH Nakama module loaded (modules: %v, %v, %v)',
     DEFAULT_MATCH_MODULE,
-    SMOKE_MATCH_MODULE
+    SMOKE_MATCH_MODULE,
+    POKER_TABLE_MATCH_MODULE
   );
 };
 

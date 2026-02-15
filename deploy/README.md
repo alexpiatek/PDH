@@ -31,6 +31,7 @@ For realtime stability:
 - Browser targets Nakama direct host/port instead of `api.<root-domain>` (bypasses Caddy TLS/proxy behavior).
 - Caddy config reload/restart without stream grace can drop active websocket connections.
 - CORS allowlist excludes active web origin (`play.*` or apex), causing auth/match REST calls to fail and trigger reconnect loops.
+- Duplicate `Access-Control-Allow-Origin` values (for example allowlist origin + upstream `*`) make browser auth calls fail.
 - Multiple front doors (e.g., CDN/LB + Caddy) with conflicting timeout policies.
 
 ## Compression and Websockets

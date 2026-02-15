@@ -67,10 +67,15 @@ Notes:
 
 Use these guides:
 
+- `CONTRIBUTING.md` (branch/PR conventions, golden path, review checklist)
+- `docs/DEFINITION_OF_DONE.md` (feature completion checklist)
+- `CHANGELOG.md` (Keep a Changelog release notes)
 - `docs/LOCAL_DEV.md` (local development commands + troubleshooting)
 - `docs/INTEGRATION_TESTS.md` (local integration test harness and troubleshooting)
 - `docs/E2E_TESTS.md` (Playwright end-to-end test harness and troubleshooting)
 - `docs/ENGINE_CONTRACT.md` (PDH engine state machine + validation contract)
+- `docs/PROTOCOL_CONTRACT.md` (versioned client/server payload contract)
+- `docs/DATABASE_MIGRATIONS.md` (SQL migration + deterministic seed strategy)
 - `docs/ONBOARDING_30_MIN.md` (fast start for new contributors)
 - `docs/PROD_RUNBOOK.md` (exact end-to-end production flow used for `bondipoker.online`)
 - `docs/QUICK_FIX.md` (fastest safe recovery commands for production connection failures)
@@ -112,6 +117,9 @@ pnpm run format
 pnpm run format:check
 pnpm run typecheck
 pnpm run test:e2e
+pnpm run changelog:check
+pnpm run db:migrate
+pnpm run db:seed
 ```
 
 Remote smoke test:

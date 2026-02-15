@@ -25,6 +25,14 @@ echo "Building Nakama runtime module..."
 echo "Starting Postgres..."
 docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres
 
+echo "Running app SQL migrations..."
+COMPOSE_FILE="$COMPOSE_FILE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" ENV_FILE="$ENV_FILE" \
+  "$ROOT_DIR/scripts/db-migrate.sh"
+
+echo "Applying deterministic seed data..."
+COMPOSE_FILE="$COMPOSE_FILE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" ENV_FILE="$ENV_FILE" \
+  "$ROOT_DIR/scripts/db-seed.sh"
+
 echo "Running Nakama migrations..."
 docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm nakama-migrate
 
