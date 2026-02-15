@@ -65,4 +65,5 @@ pnpm run dev:full
 - If ports are busy (5432/7350/7351): stop local services using those ports, then rerun `make up`.
 - If auth fails on first run: verify the keys match:
   - `grep -n '^NAKAMA_SOCKET_SERVER_KEY=' .env`
-  - `grep -n '^NEXT_PUBLIC_NAKAMA_SERVER_KEY=' apps/web/.env.local`
+  - `grep -n '^NEXT_PUBLIC_NAKAMA_CLIENT_KEY=' apps/web/.env.local`
+  - fallback accepted: `NEXT_PUBLIC_NAKAMA_SERVER_KEY`

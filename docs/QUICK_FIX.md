@@ -16,7 +16,7 @@ cd "$(systemctl show -p WorkingDirectory --value pdh-web)"
 What it checks before build/restart:
 
 - You are in the same repo path as `pdh-web` `WorkingDirectory`.
-- `NAKAMA_SOCKET_SERVER_KEY` matches `NEXT_PUBLIC_NAKAMA_SERVER_KEY`.
+- `NAKAMA_SOCKET_SERVER_KEY` matches `NEXT_PUBLIC_NAKAMA_CLIENT_KEY` (or fallback `NEXT_PUBLIC_NAKAMA_SERVER_KEY`).
 - Frontend production values are correct:
   - `NEXT_PUBLIC_NAKAMA_HOST=api.bondipoker.online`
   - `NEXT_PUBLIC_NAKAMA_PORT=443`
@@ -33,7 +33,8 @@ systemctl cat pdh-web | sed -n '1,40p'
 systemctl show -p WorkingDirectory --value pdh-web
 
 grep -n '^NAKAMA_SOCKET_SERVER_KEY=' .env
-grep -n '^NEXT_PUBLIC_NAKAMA_SERVER_KEY=' apps/web/.env.local
+grep -n '^NEXT_PUBLIC_NAKAMA_CLIENT_KEY=' apps/web/.env.local || true
+grep -n '^NEXT_PUBLIC_NAKAMA_SERVER_KEY=' apps/web/.env.local || true
 grep -n '^NEXT_PUBLIC_NAKAMA_HOST=' apps/web/.env.local
 grep -n '^NEXT_PUBLIC_NAKAMA_PORT=' apps/web/.env.local
 grep -n '^NEXT_PUBLIC_NAKAMA_USE_SSL=' apps/web/.env.local

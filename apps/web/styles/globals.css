@@ -1,23 +1,41 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --font-sans: 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Sora', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --surface-900: #090d17;
+  --surface-800: #101728;
+  --text-primary: #f5f7ff;
+  --text-secondary: #b8c0d6;
+  --focus-ring: #fbbf24;
+}
+
 html,
 body {
   margin: 0;
   padding: 0;
-  font-family:
-    'Inter',
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    Segoe UI,
-    sans-serif;
-  background: #020617;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background:
+    radial-gradient(circle at 20% 14%, rgba(251, 191, 36, 0.09), transparent 34%),
+    radial-gradient(circle at 78% 88%, rgba(45, 212, 191, 0.07), transparent 42%),
+    linear-gradient(180deg, #050812, #03050e 58%, #04070f);
+  min-height: 100%;
 }
 
 * {
   box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }

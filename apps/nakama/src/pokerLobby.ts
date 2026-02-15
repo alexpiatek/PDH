@@ -1,14 +1,12 @@
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
-import {
-  generateTableCode,
-  isValidTableCodeFormat,
-  normalizeTableCode,
-} from '@pdh/protocol';
 
 export const POKER_TABLE_MATCH_MODULE = 'poker_table';
 export const RPC_CREATE_TABLE = 'rpc_create_table';
 export const RPC_JOIN_BY_CODE = 'rpc_join_by_code';
 
+const TABLE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const TABLE_CODE_LENGTH = 6;
+const TABLE_CODE_REGEX = new RegExp(`^[${TABLE_CODE_ALPHABET}]{${TABLE_CODE_LENGTH}}$`);
 const TABLES_COLLECTION = 'tables';
 const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
 const DEFAULT_MAX_PLAYERS = 6;
@@ -87,6 +85,25 @@ type NakamaWithStorage = nkruntime.Nakama & {
   storageWrite?: (objects: StorageWriteRequest[]) => StorageObject[];
   matchGet?: (matchId: string) => nkruntime.MatchListEntry | null;
 };
+
+function normalizeTableCode(input: string): string {
+  return input.replace(/[\s-]+/g, '').toUpperCase();
+}
+
+function isValidTableCodeFormat(code: string): boolean {
+  return TABLE_CODE_REGEX.test(code);
+}
+
+function generateTableCode(random: () => number = Math.random): string {
+  let value = '';
+  for (let i = 0; i < TABLE_CODE_LENGTH; i += 1) {
+    const raw = random();
+    const normalized = Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 0.999999999) : 0;
+    const index = Math.floor(normalized * TABLE_CODE_ALPHABET.length);
+    value += TABLE_CODE_ALPHABET[index];
+  }
+  return value;
+}
 
 function parseRpcPayload(payload: string | undefined): unknown {
   if (!payload || !payload.trim()) {
@@ -195,7 +212,7 @@ function tableLabel(code: string) {
   return JSON.stringify({ mode: TABLE_LABEL_MODE, code });
 }
 
-function normalizeStoredTableValue(code: string, value: unknown): TableStorageValue | null {
+function normalizeStoredTableValue(value: unknown): TableStorageValue | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -241,7 +258,7 @@ function readTableByCode(nk: NakamaWithStorage, code: string): TableStorageValue
     return null;
   }
 
-  return normalizeStoredTableValue(code, object.value);
+  return normalizeStoredTableValue(object.value);
 }
 
 function writeTableByCode(nk: NakamaWithStorage, code: string, value: TableStorageValue): void {

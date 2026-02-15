@@ -9,7 +9,7 @@
     "down": "./scripts/dev-down.sh",
     "logs": "./scripts/dev-logs.sh",
     "dev:web": "./scripts/run-pnpm.sh -C apps/web dev --port 3001",
-    "dev:nakama": "cross-env PORT=3001 NEXT_PUBLIC_NETWORK_BACKEND=nakama NEXT_PUBLIC_NAKAMA_HOST=127.0.0.1 NEXT_PUBLIC_NAKAMA_PORT=7350 NEXT_PUBLIC_NAKAMA_USE_SSL=false NEXT_PUBLIC_NAKAMA_SERVER_KEY=dev_socket_server_key_change_me NEXT_PUBLIC_NAKAMA_MATCH_MODULE=pdh NEXT_PUBLIC_NAKAMA_TABLE_ID=main pnpm -C apps/web dev",
+    "dev:nakama": "cross-env PORT=3001 NEXT_PUBLIC_NETWORK_BACKEND=nakama NEXT_PUBLIC_NAKAMA_HOST=127.0.0.1 NEXT_PUBLIC_NAKAMA_PORT=7350 NEXT_PUBLIC_NAKAMA_USE_SSL=false NEXT_PUBLIC_NAKAMA_CLIENT_KEY=dev_socket_server_key_change_me NEXT_PUBLIC_NAKAMA_SERVER_KEY=dev_socket_server_key_change_me NEXT_PUBLIC_NAKAMA_MATCH_MODULE=pdh NEXT_PUBLIC_NAKAMA_TABLE_ID=main pnpm -C apps/web dev",
     "dev:full": "./scripts/dev-up.sh && ./scripts/run-pnpm.sh -C apps/web dev --port 3001",
     "nakama:build": "pnpm -C apps/nakama build",
     "nakama:up": "pnpm -C apps/nakama build && docker compose -f apps/nakama/docker-compose.yml up",
