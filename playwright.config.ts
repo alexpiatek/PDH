@@ -6,6 +6,7 @@ const nakamaPort = process.env.E2E_NAKAMA_HTTP_PORT ?? '18350';
 const nakamaServerKey =
   process.env.E2E_NAKAMA_SERVER_KEY ?? 'e2e_socket_server_key_local_1234567890';
 const managedWebServer = process.env.E2E_MANAGED_WEB_SERVER === '1';
+const webServerTimeoutMs = Number.parseInt(process.env.E2E_WEB_SERVER_TIMEOUT_MS ?? '300000', 10);
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -47,7 +48,7 @@ export default defineConfig({
           `./scripts/run-pnpm.sh -C apps/web start --port ${webPort}`,
         url: baseURL,
         reuseExistingServer: false,
-        timeout: 300_000,
+        timeout: Number.isFinite(webServerTimeoutMs) ? webServerTimeoutMs : 300_000,
       },
   projects: [
     {
