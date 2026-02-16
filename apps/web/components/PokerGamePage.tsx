@@ -468,6 +468,7 @@ export const PokerGamePage = ({
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showActivityFeed, setShowActivityFeed] = useState(true);
   const [showTableChat, setShowTableChat] = useState(true);
+  const [showUtilitiesPanel, setShowUtilitiesPanel] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<TableChatMessage[]>([]);
   const [mutedChatPlayerIds, setMutedChatPlayerIds] = useState<string[]>([]);
@@ -882,6 +883,11 @@ export const PokerGamePage = ({
     if (!playerId) return false;
     return Boolean(state?.seats?.some((s: any) => s && s.id === playerId));
   }, [state, playerId]);
+  useEffect(() => {
+    if (!seated) {
+      setShowUtilitiesPanel(false);
+    }
+  }, [seated]);
   useEffect(() => {
     if (!seated || !you || hasLoggedTableJoinedRef.current) {
       return;
@@ -1624,11 +1630,28 @@ export const PokerGamePage = ({
     fontWeight: 800,
     lineHeight: 1.1,
   };
+  const turnActionStyle = (
+    enabled: boolean,
+    tone: { border: string; background: string; color: string; glow: string }
+  ): React.CSSProperties => ({
+    ...actionButtonBaseStyle,
+    border: `1px solid ${enabled ? tone.border : 'rgba(71,85,105,0.82)'}`,
+    background: enabled ? tone.background : 'rgba(15,23,42,0.58)',
+    color: enabled ? tone.color : 'rgba(148,163,184,0.86)',
+    boxShadow: enabled
+      ? `0 0 0 1px ${tone.glow}, 0 12px 26px rgba(2,6,23,0.4)`
+      : 'none',
+    transform: enabled ? 'translateY(-1px)' : 'none',
+    ...(enabled ? null : disabledActionStyle),
+  });
   const reactionOnCooldown = reactionCooldownUntil > Date.now();
   const timerTone =
     tableTimerSeconds !== null ? (tableTimerSeconds <= 5 ? '#fda4af' : '#d1fae5') : 'rgba(226,232,240,0.72)';
   const toCallValue = hand?.phase === 'betting' ? String(toCall) : '--';
   const currentBetValue = hand?.phase === 'betting' ? String(hand.currentBet) : '--';
+  const utilityEnabledCount =
+    Number(soundEnabled) + Number(showActivityFeed) + Number(showTableChat);
+  const actionableCount = Number(canFold) + Number(canCheck) + Number(canCall) + Number(canRaise) + Number(canAllIn);
 
   useEffect(() => {
     if (!seated || !hand || hand.phase !== 'betting') {
@@ -1697,152 +1720,30 @@ export const PokerGamePage = ({
         padding: isPhone ? '12px 10px calc(20px + env(safe-area-inset-bottom))' : '18px 18px calc(30px + env(safe-area-inset-bottom))',
       }}
     >
-      {showExitButton ? (
-        <div
-          style={{
-            position: 'fixed',
-            top: isPhone ? 10 : 14,
-            right: isPhone ? 10 : 14,
-            zIndex: 90,
-          }}
-        >
-          <button
-            type="button"
-            onClick={handleExitTable}
-            aria-label="Exit table and return to game entry"
-            style={{
-              borderRadius: 12,
-              border: '1px solid rgba(251,191,36,0.6)',
-              background: 'rgba(251,191,36,0.2)',
-              color: '#fef3c7',
-              padding: isPhone ? '9px 12px' : '10px 14px',
-              fontFamily: '"Inter", sans-serif',
-              fontSize: isPhone ? 12 : 13,
-              fontWeight: 700,
-              letterSpacing: 0.3,
-              cursor: 'pointer',
-            }}
-          >
-            Exit Table
-          </button>
-        </div>
-      ) : null}
-      {seated && isMyTurn && hand?.phase === 'betting' ? (
-        <div
-          style={{
-            position: 'fixed',
-            top: isPhone ? 12 : 16,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 95,
-            borderRadius: 999,
-            border: '1px solid rgba(34,197,94,0.78)',
-            background: 'rgba(21,128,61,0.28)',
-            color: '#dcfce7',
-            padding: isPhone ? '6px 12px' : '7px 14px',
-            fontSize: 11,
-            fontWeight: 800,
-            letterSpacing: '0.16em',
-            textTransform: 'uppercase',
-            fontFamily:
-              'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-            boxShadow: '0 0 0 1px rgba(134,239,172,0.25), 0 10px 24px rgba(21,128,61,0.32)',
-            animation: 'turn-pulse 1.2s ease-in-out infinite',
-          }}
-        >
-          Your Turn
-        </div>
-      ) : null}
-      {seated ? (
-        <div
-          style={{
-            position: 'fixed',
-            top: isPhone ? 10 : 14,
-            left: isPhone ? 10 : 14,
-            zIndex: 90,
-            display: 'inline-flex',
-            gap: 6,
-            flexWrap: 'wrap',
-            maxWidth: 'min(86vw, 300px)',
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => {
-              setSoundEnabled((previous) => !previous);
-            }}
-            style={{
-              borderRadius: 10,
-              border: '1px solid rgba(148,163,184,0.55)',
-              background: soundEnabled ? 'rgba(15,118,110,0.34)' : 'rgba(30,41,59,0.62)',
-              color: '#e2e8f0',
-              padding: '7px 10px',
-              fontFamily: '"Inter", sans-serif',
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: 0.25,
-              cursor: 'pointer',
-            }}
-          >
-            Sound {soundEnabled ? 'On' : 'Off'}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setShowActivityFeed((previous) => !previous);
-            }}
-            style={{
-              borderRadius: 10,
-              border: '1px solid rgba(148,163,184,0.55)',
-              background: showActivityFeed ? 'rgba(56,189,248,0.26)' : 'rgba(30,41,59,0.62)',
-              color: '#e2e8f0',
-              padding: '7px 10px',
-              fontFamily: '"Inter", sans-serif',
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: 0.25,
-              cursor: 'pointer',
-            }}
-          >
-            Feed {showActivityFeed ? 'On' : 'Off'}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setShowTableChat((previous) => !previous);
-            }}
-            style={{
-              borderRadius: 10,
-              border: '1px solid rgba(148,163,184,0.55)',
-              background: showTableChat ? 'rgba(20,184,166,0.26)' : 'rgba(30,41,59,0.62)',
-              color: '#e2e8f0',
-              padding: '7px 10px',
-              fontFamily: '"Inter", sans-serif',
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: 0.25,
-              cursor: 'pointer',
-            }}
-          >
-            Chat {showTableChat ? 'On' : 'Off'}
-          </button>
-        </div>
-      ) : null}
       <div
         style={{
-          width: 'min(100%, 860px)',
+          width: 'min(100%, 980px)',
           margin: '0 auto',
           marginBottom: isMobile ? 12 : 18,
-          padding: isPhone ? '12px 10px' : '14px 20px',
+          padding: isPhone ? '12px 10px' : '14px 16px',
           borderRadius: 24,
           border: '1px solid rgba(251,191,36,0.22)',
           background: 'rgba(9,13,23,0.62)',
           boxShadow: '0 16px 44px rgba(0,0,0,0.3)',
           backdropFilter: 'blur(10px)',
-          textAlign: 'center',
         }}
       >
-        <div style={{ textAlign: 'center', maxWidth: isMobile ? '100%' : 'min(70vw, 560px)', justifySelf: 'center', width: '100%' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: isPhone ? 'column' : 'row',
+            justifyContent: 'space-between',
+            alignItems: isPhone ? 'flex-start' : 'center',
+            gap: isPhone ? 12 : 16,
+          }}
+        >
+          <div style={{ minWidth: 0, width: '100%' }}>
+            <div style={{ textAlign: 'left', maxWidth: isMobile ? '100%' : 'min(70vw, 560px)' }}>
           <div
             style={{
               display: 'inline-flex',
@@ -1865,8 +1766,8 @@ export const PokerGamePage = ({
           </div>
           <div
             style={{
-              marginTop: 10,
-              fontSize: isPhone ? 'clamp(28px, 9vw, 34px)' : 'clamp(34px, 4vw, 46px)',
+              marginTop: 8,
+              fontSize: isPhone ? 'clamp(28px, 9vw, 34px)' : 'clamp(34px, 4vw, 44px)',
               fontWeight: 700,
               letterSpacing: '-0.01em',
               lineHeight: 1.05,
@@ -1877,7 +1778,7 @@ export const PokerGamePage = ({
           >
             Private Table
           </div>
-          <div style={{ marginTop: 5 }}>
+          <div style={{ marginTop: 4 }}>
             <div
               style={{
                 fontSize: isPhone ? 13 : 15,
@@ -1889,12 +1790,104 @@ export const PokerGamePage = ({
               Hold&apos;em with Hidden Discards
             </div>
           </div>
+            </div>
+            {seated ? (
+              <div style={{ marginTop: 9, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+                {hand?.phase === 'betting' ? (
+                  <span
+                    style={{
+                      borderRadius: 999,
+                      border: isMyTurn
+                        ? '1px solid rgba(34,197,94,0.78)'
+                        : '1px solid rgba(56,189,248,0.6)',
+                      background: isMyTurn ? 'rgba(21,128,61,0.28)' : 'rgba(14,116,144,0.26)',
+                      color: isMyTurn ? '#dcfce7' : '#e0f2fe',
+                      padding: '4px 10px',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      letterSpacing: '0.12em',
+                      textTransform: 'uppercase',
+                      animation: isMyTurn ? 'turn-pulse 1.2s ease-in-out infinite' : undefined,
+                    }}
+                  >
+                    {isMyTurn ? 'Your Turn' : `${actionOnPlayer?.name ?? 'Player'} Acting`}
+                  </span>
+                ) : null}
+                <span
+                  style={{
+                    borderRadius: 999,
+                    border: '1px solid rgba(148,163,184,0.45)',
+                    background: 'rgba(15,23,42,0.52)',
+                    color: 'rgba(203,213,225,0.9)',
+                    padding: '4px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  {status}
+                </span>
+              </div>
+            ) : null}
+          </div>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              justifyContent: isPhone ? 'flex-start' : 'flex-end',
+              gap: 8,
+              width: isPhone ? '100%' : 'auto',
+            }}
+          >
+            {seated ? (
+              <button
+                type="button"
+                onClick={() => setShowUtilitiesPanel((previous) => !previous)}
+                style={{
+                  borderRadius: 12,
+                  border: '1px solid rgba(56,189,248,0.62)',
+                  background: showUtilitiesPanel ? 'rgba(14,116,144,0.3)' : 'rgba(15,23,42,0.65)',
+                  color: '#e0f2fe',
+                  padding: isPhone ? '9px 12px' : '10px 14px',
+                  fontFamily:
+                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  letterSpacing: 0.2,
+                  cursor: 'pointer',
+                }}
+              >
+                {showUtilitiesPanel ? 'Hide Extras' : 'Extras'} ({utilityEnabledCount})
+              </button>
+            ) : null}
+            {showExitButton ? (
+              <button
+                type="button"
+                onClick={handleExitTable}
+                aria-label="Exit table and return to game entry"
+                style={{
+                  borderRadius: 12,
+                  border: '1px solid rgba(251,191,36,0.6)',
+                  background: 'rgba(251,191,36,0.2)',
+                  color: '#fef3c7',
+                  padding: isPhone ? '9px 12px' : '10px 14px',
+                  fontFamily: '"Inter", sans-serif',
+                  fontSize: isPhone ? 12 : 13,
+                  fontWeight: 700,
+                  letterSpacing: 0.3,
+                  cursor: 'pointer',
+                }}
+              >
+                Exit Table
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
       {uiTableV2 && hand && seated ? (
         <div
           style={{
-            width: 'min(100%, 860px)',
+            width: 'min(100%, 980px)',
             margin: '0 auto',
             marginBottom: 14,
             padding: isPhone ? '10px 10px' : '12px 14px',
@@ -2054,6 +2047,301 @@ export const PokerGamePage = ({
               <span style={{ fontSize: 11, color: 'rgba(226,232,240,0.78)' }}>
                 Live cards: {cardsRemaining}
               </span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {seated && showUtilitiesPanel ? (
+        <div
+          style={{
+            width: 'min(100%, 980px)',
+            margin: '0 auto',
+            marginBottom: 12,
+            padding: isPhone ? '10px' : '12px',
+            borderRadius: 14,
+            border: '1px solid rgba(56,189,248,0.35)',
+            background: 'rgba(4,12,22,0.78)',
+            boxShadow: '0 12px 28px rgba(0,0,0,0.28)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+          }}
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setSoundEnabled((previous) => !previous);
+              }}
+              style={{
+                borderRadius: 10,
+                border: '1px solid rgba(148,163,184,0.55)',
+                background: soundEnabled ? 'rgba(15,118,110,0.34)' : 'rgba(30,41,59,0.62)',
+                color: '#e2e8f0',
+                padding: '7px 10px',
+                fontFamily: '"Inter", sans-serif',
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: 0.25,
+                cursor: 'pointer',
+              }}
+            >
+              Sound {soundEnabled ? 'On' : 'Off'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowActivityFeed((previous) => !previous);
+              }}
+              style={{
+                borderRadius: 10,
+                border: '1px solid rgba(148,163,184,0.55)',
+                background: showActivityFeed ? 'rgba(56,189,248,0.26)' : 'rgba(30,41,59,0.62)',
+                color: '#e2e8f0',
+                padding: '7px 10px',
+                fontFamily: '"Inter", sans-serif',
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: 0.25,
+                cursor: 'pointer',
+              }}
+            >
+              Feed {showActivityFeed ? 'On' : 'Off'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowTableChat((previous) => !previous);
+              }}
+              style={{
+                borderRadius: 10,
+                border: '1px solid rgba(148,163,184,0.55)',
+                background: showTableChat ? 'rgba(20,184,166,0.26)' : 'rgba(30,41,59,0.62)',
+                color: '#e2e8f0',
+                padding: '7px 10px',
+                fontFamily: '"Inter", sans-serif',
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: 0.25,
+                cursor: 'pointer',
+              }}
+            >
+              Chat {showTableChat ? 'On' : 'Off'}
+            </button>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 11,
+                textTransform: 'uppercase',
+                letterSpacing: '0.14em',
+                color: 'rgba(186,230,253,0.82)',
+                fontFamily:
+                  'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+              }}
+            >
+              Reactions
+            </span>
+            {TABLE_REACTIONS.map((reaction) => (
+              <button
+                key={reaction}
+                type="button"
+                onClick={() => sendReaction(reaction)}
+                disabled={reactionOnCooldown || !seated}
+                style={{
+                  borderRadius: 999,
+                  border: '1px solid rgba(20,184,166,0.55)',
+                  background: 'rgba(15,23,42,0.75)',
+                  color: '#ccfbf1',
+                  padding: isPhone ? '6px 10px' : '6px 12px',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: 0.4,
+                  fontFamily: '"Inter", sans-serif',
+                  cursor: reactionOnCooldown || !seated ? 'not-allowed' : 'pointer',
+                  opacity: reactionOnCooldown || !seated ? 0.5 : 1,
+                }}
+              >
+                {TABLE_REACTION_LABELS[reaction]}
+              </button>
+            ))}
+            {reactionOnCooldown ? (
+              <span style={{ fontSize: 11, color: 'rgba(226,232,240,0.68)' }}>Cooling down...</span>
+            ) : null}
+          </div>
+
+          {showActivityFeed ? (
+            <div
+              style={{
+                borderRadius: 10,
+                border: '1px solid rgba(148,163,184,0.35)',
+                background: 'rgba(9, 12, 20, 0.72)',
+                padding: '8px 10px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.14em',
+                  color: 'rgba(186,230,253,0.82)',
+                  marginBottom: 6,
+                }}
+              >
+                Activity
+              </div>
+              <div style={{ maxHeight: isPhone ? 88 : 100, overflowY: 'auto' }}>
+                {(state?.log ?? []).slice(-8).map((l: any, idx: number) => (
+                  <div key={idx} style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, fontFamily: '"Inter", sans-serif' }}>
+                    {l.message}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {showTableChat ? (
+            <div
+              style={{
+                borderRadius: 12,
+                border: '1px solid rgba(56,189,248,0.4)',
+                background: 'rgba(8,15,24,0.74)',
+                padding: isPhone ? '10px 10px' : '11px 12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <span
+                  style={{
+                    fontSize: 11,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.14em',
+                    color: 'rgba(186,230,253,0.82)',
+                    fontFamily:
+                      'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                  }}
+                >
+                  Table Chat
+                </span>
+                {hiddenChatCount > 0 ? (
+                  <span style={{ fontSize: 11, color: 'rgba(148,163,184,0.86)' }}>
+                    {hiddenChatCount} muted
+                  </span>
+                ) : null}
+              </div>
+              <div
+                style={{
+                  maxHeight: isPhone ? 110 : 132,
+                  overflowY: 'auto',
+                  paddingRight: 2,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+              >
+                {visibleChatMessages.length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'rgba(203,213,225,0.74)' }}>
+                    No chat yet. Say hi.
+                  </div>
+                ) : (
+                  visibleChatMessages.slice(-18).map((entry) => {
+                    const senderName =
+                      playerNameById.get(entry.playerId) ?? (entry.playerId === playerId ? 'You' : 'Player');
+                    const isSelf = entry.playerId === playerId;
+                    const senderMuted = mutedChatPlayerSet.has(entry.playerId);
+                    return (
+                      <div
+                        key={entry.id}
+                        style={{
+                          borderRadius: 8,
+                          border: '1px solid rgba(51,65,85,0.8)',
+                          background: 'rgba(2,6,12,0.5)',
+                          padding: '6px 8px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#bfdbfe' }}>{senderName}</span>
+                          {!isSelf ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleMuteChatPlayer(entry.playerId)}
+                              style={{
+                                borderRadius: 999,
+                                border: '1px solid rgba(148,163,184,0.5)',
+                                background: 'rgba(30,41,59,0.58)',
+                                color: '#e2e8f0',
+                                padding: '2px 7px',
+                                fontSize: 10,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {senderMuted ? 'Unmute' : 'Mute'}
+                            </button>
+                          ) : null}
+                        </div>
+                        <div style={{ marginTop: 3, fontSize: 12, color: 'rgba(226,232,240,0.9)' }}>
+                          {entry.message}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  sendChatMessage();
+                }}
+                style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}
+              >
+                <input
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  maxLength={TABLE_CHAT_MAX_LENGTH}
+                  placeholder="Type message..."
+                  style={{
+                    minHeight: 40,
+                    borderRadius: 10,
+                    border: '1px solid rgba(71,85,105,0.85)',
+                    background: 'rgba(2,6,12,0.62)',
+                    color: '#f8fafc',
+                    padding: '8px 10px',
+                    fontSize: 13,
+                    outline: 'none',
+                    fontFamily:
+                      'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={!chatInput.trim() || !seated}
+                  style={{
+                    minHeight: 40,
+                    borderRadius: 10,
+                    border: '1px solid rgba(56,189,248,0.75)',
+                    background: 'rgba(14,116,144,0.3)',
+                    color: '#e0f2fe',
+                    padding: '8px 12px',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: !chatInput.trim() || !seated ? 'not-allowed' : 'pointer',
+                    opacity: !chatInput.trim() || !seated ? 0.55 : 1,
+                  }}
+                >
+                  Send
+                </button>
+              </form>
             </div>
           ) : null}
         </div>
@@ -2660,23 +2948,12 @@ export const PokerGamePage = ({
                 </div>
               </>
             )}
-            {showActivityFeed ? (
-              <div style={{ position: 'absolute', bottom: isMobile ? -162 : 'calc(-218px + 1.2cm)', left: isMobile ? '50%' : 'calc(-9.4px + 0.2cm)', transform: isMobile ? 'translateX(-50%)' : undefined, width: isMobile ? 'min(92vw, 340px)' : 300, background: 'rgba(9, 12, 20, 0.8)', border: '1px solid #27324e', borderRadius: 10, padding: 8 }}>
-                <div style={{ maxHeight: isMobile ? 72 : 80, overflowY: 'auto' }}>
-                  {(state?.log ?? []).slice(-5).map((l: any, idx: number) => (
-                    <div key={idx} style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, fontFamily: '"Inter", sans-serif' }}>
-                      {l.message}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
             </div>
           </div>
           {you && (
             <div
               style={{
-                width: 'min(1200px, 96vw)',
+                width: 'min(980px, 100%)',
                 margin: '0 auto',
                 background: 'transparent',
                 border: 'none',
@@ -2688,196 +2965,30 @@ export const PokerGamePage = ({
                 alignItems: 'stretch',
               }}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  alignItems: 'center',
-                  justifyContent: isMobile ? 'center' : 'flex-start',
-                  gap: 8,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 11,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.14em',
-                    color: 'rgba(186,230,253,0.82)',
-                    fontFamily:
-                      'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-                  }}
-                >
-                  Reactions
-                </span>
-                {TABLE_REACTIONS.map((reaction) => (
-                  <button
-                    key={reaction}
-                    type="button"
-                    onClick={() => sendReaction(reaction)}
-                    disabled={reactionOnCooldown || !seated}
-                    style={{
-                      borderRadius: 999,
-                      border: '1px solid rgba(20,184,166,0.55)',
-                      background: 'rgba(15,23,42,0.75)',
-                      color: '#ccfbf1',
-                      padding: isPhone ? '6px 10px' : '6px 12px',
-                      fontSize: 10,
-                      fontWeight: 800,
-                      letterSpacing: 0.4,
-                      fontFamily: '"Inter", sans-serif',
-                      cursor: reactionOnCooldown || !seated ? 'not-allowed' : 'pointer',
-                      opacity: reactionOnCooldown || !seated ? 0.5 : 1,
-                    }}
-                  >
-                    {TABLE_REACTION_LABELS[reaction]}
-                  </button>
-                ))}
-                {reactionOnCooldown ? (
-                  <span style={{ fontSize: 11, color: 'rgba(226,232,240,0.68)' }}>Cooling down...</span>
-                ) : null}
-              </div>
-              {showTableChat ? (
+              {discardPending ? (
                 <div
                   style={{
                     borderRadius: 12,
-                    border: '1px solid rgba(56,189,248,0.4)',
+                    border: '1px solid rgba(20,184,166,0.45)',
                     background: 'rgba(8,15,24,0.74)',
-                    padding: isPhone ? '10px 10px' : '11px 12px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8,
+                    padding: '10px 12px',
+                    fontSize: 12,
+                    color: 'rgba(226,232,240,0.9)',
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.14em',
-                        color: 'rgba(186,230,253,0.82)',
-                        fontFamily:
-                          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-                      }}
-                    >
-                      Table Chat
-                    </span>
-                    {hiddenChatCount > 0 ? (
-                      <span style={{ fontSize: 11, color: 'rgba(148,163,184,0.86)' }}>
-                        {hiddenChatCount} muted
-                      </span>
-                    ) : null}
-                  </div>
-                  <div
-                    style={{
-                      maxHeight: isPhone ? 110 : 132,
-                      overflowY: 'auto',
-                      paddingRight: 2,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 6,
-                    }}
-                  >
-                    {visibleChatMessages.length === 0 ? (
-                      <div style={{ fontSize: 12, color: 'rgba(203,213,225,0.74)' }}>
-                        No chat yet. Say hi.
-                      </div>
-                    ) : (
-                      visibleChatMessages.slice(-18).map((entry) => {
-                        const senderName =
-                          playerNameById.get(entry.playerId) ?? (entry.playerId === playerId ? 'You' : 'Player');
-                        const isSelf = entry.playerId === playerId;
-                        const senderMuted = mutedChatPlayerSet.has(entry.playerId);
-                        return (
-                          <div
-                            key={entry.id}
-                            style={{
-                              borderRadius: 8,
-                              border: '1px solid rgba(51,65,85,0.8)',
-                              background: 'rgba(2,6,12,0.5)',
-                              padding: '6px 8px',
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                              <span style={{ fontSize: 11, fontWeight: 700, color: '#bfdbfe' }}>{senderName}</span>
-                              {!isSelf ? (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleMuteChatPlayer(entry.playerId)}
-                                  style={{
-                                    borderRadius: 999,
-                                    border: '1px solid rgba(148,163,184,0.5)',
-                                    background: 'rgba(30,41,59,0.58)',
-                                    color: '#e2e8f0',
-                                    padding: '2px 7px',
-                                    fontSize: 10,
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  {senderMuted ? 'Unmute' : 'Mute'}
-                                </button>
-                              ) : null}
-                            </div>
-                            <div style={{ marginTop: 3, fontSize: 12, color: 'rgba(226,232,240,0.9)' }}>
-                              {entry.message}
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      sendChatMessage();
-                    }}
-                    style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}
-                  >
-                    <input
-                      value={chatInput}
-                      onChange={(event) => setChatInput(event.target.value)}
-                      maxLength={TABLE_CHAT_MAX_LENGTH}
-                      placeholder="Type message..."
-                      style={{
-                        minHeight: 40,
-                        borderRadius: 10,
-                        border: '1px solid rgba(71,85,105,0.85)',
-                        background: 'rgba(2,6,12,0.62)',
-                        color: '#f8fafc',
-                        padding: '8px 10px',
-                        fontSize: 13,
-                        outline: 'none',
-                        fontFamily:
-                          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-                      }}
-                    />
-                    <button
-                      type="submit"
-                      disabled={!chatInput.trim() || !seated}
-                      style={{
-                        minHeight: 40,
-                        borderRadius: 10,
-                        border: '1px solid rgba(56,189,248,0.75)',
-                        background: 'rgba(14,116,144,0.3)',
-                        color: '#e0f2fe',
-                        padding: '8px 12px',
-                        fontSize: 12,
-                        fontWeight: 700,
-                        cursor: !chatInput.trim() || !seated ? 'not-allowed' : 'pointer',
-                        opacity: !chatInput.trim() || !seated ? 0.55 : 1,
-                      }}
-                    >
-                      Send
-                    </button>
-                  </form>
+                  {uiDiscardOverlayV2
+                    ? 'Discard step: select one of your cards and confirm discard.'
+                    : 'Discard step: tap a card to discard.'}
                 </div>
-              ) : null}
-              {discardPending ? (
-                <div />
               ) : (
                 <div
                   style={{
                     width: '100%',
+                    position: isMobile ? 'sticky' : 'static',
+                    bottom: isPhone
+                      ? 'calc(8px + env(safe-area-inset-bottom))'
+                      : 'calc(12px + env(safe-area-inset-bottom))',
+                    zIndex: isMobile ? 30 : 'auto',
                     borderRadius: 12,
                     border: isMyTurn
                       ? '1px solid rgba(56,189,248,0.76)'
@@ -2944,15 +3055,28 @@ export const PokerGamePage = ({
                     >
                       {actionGuideTip}
                     </div>
+                    {hand?.phase === 'betting' ? (
+                      <div
+                        style={{
+                          marginTop: 6,
+                          fontSize: 11,
+                          color: isMyTurn ? 'rgba(125,211,252,0.96)' : 'rgba(148,163,184,0.9)',
+                          letterSpacing: 0.2,
+                        }}
+                      >
+                        {isMyTurn
+                          ? `${actionableCount} option${actionableCount === 1 ? '' : 's'} ready now.`
+                          : `Waiting for your turn. Current bet ${currentBetValue}.`}
+                      </div>
+                    ) : null}
                   </div>
 
                   <div
                     style={{
-                      display: 'flex',
+                      display: 'grid',
+                      gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))',
                       gap: 8,
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                      justifyContent: isMobile ? 'center' : 'flex-start',
+                      alignItems: 'stretch',
                       width: '100%',
                     }}
                   >
@@ -2960,13 +3084,12 @@ export const PokerGamePage = ({
                       type="button"
                       disabled={!canFold}
                       onClick={() => act('fold')}
-                      style={{
-                        ...actionButtonBaseStyle,
-                        border: '1px solid rgba(248,113,113,0.7)',
-                        background: 'rgba(127,29,29,0.42)',
+                      style={turnActionStyle(canFold, {
+                        border: 'rgba(248,113,113,0.86)',
+                        background: 'rgba(127,29,29,0.58)',
                         color: '#fee2e2',
-                        ...(canFold ? null : disabledActionStyle),
-                      }}
+                        glow: 'rgba(248,113,113,0.35)',
+                      })}
                     >
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         Fold
@@ -2977,13 +3100,12 @@ export const PokerGamePage = ({
                       type="button"
                       disabled={!canCheck}
                       onClick={() => act('check')}
-                      style={{
-                        ...actionButtonBaseStyle,
-                        border: '1px solid rgba(148,163,184,0.75)',
-                        background: 'rgba(30,41,59,0.7)',
+                      style={turnActionStyle(canCheck, {
+                        border: 'rgba(148,163,184,0.82)',
+                        background: 'rgba(30,41,59,0.78)',
                         color: '#e2e8f0',
-                        ...(canCheck ? null : disabledActionStyle),
-                      }}
+                        glow: 'rgba(148,163,184,0.26)',
+                      })}
                     >
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         Check
@@ -2994,55 +3116,64 @@ export const PokerGamePage = ({
                       type="button"
                       disabled={!canCall}
                       onClick={() => act('call')}
-                      style={{
-                        ...actionButtonBaseStyle,
-                        border: '1px solid rgba(163,230,53,0.78)',
-                        background: 'rgba(54,83,20,0.44)',
+                      style={turnActionStyle(canCall, {
+                        border: 'rgba(163,230,53,0.88)',
+                        background: 'rgba(54,83,20,0.58)',
                         color: '#ecfccb',
-                        ...(canCall ? null : disabledActionStyle),
-                      }}
+                        glow: 'rgba(163,230,53,0.34)',
+                      })}
                     >
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         Call {toCall}
                         <span style={actionKeycapStyle}>C</span>
                       </span>
                     </button>
-                    <input
-                      type="number"
-                      value={betAmount}
-                      min={minRaiseTo ?? undefined}
-                      max={maxRaiseTo ?? undefined}
-                      step={1}
-                      disabled={!isMyTurn || raiseCapReached}
-                      onChange={(e) => {
-                        const next = Number.parseInt(e.target.value, 10);
-                        setBetAmount(Number.isFinite(next) ? next : 0);
-                      }}
-                      onBlur={() => {
-                        if (minRaiseTo === null || maxRaiseTo === null) {
-                          return;
-                        }
-                        setBetAmount((previous) => {
-                          const normalized = Number.isFinite(previous) ? Math.floor(previous) : minRaiseTo;
-                          return Math.min(maxRaiseTo, Math.max(minRaiseTo, normalized));
-                        });
-                      }}
-                      style={{
-                        ...actionInputStyle,
-                        ...(isMyTurn && !raiseCapReached ? null : disabledActionStyle),
-                      }}
-                    />
+                    <div style={{ gridColumn: isPhone ? 'span 2' : 'span 1' }}>
+                      <input
+                        type="number"
+                        value={betAmount}
+                        min={minRaiseTo ?? undefined}
+                        max={maxRaiseTo ?? undefined}
+                        step={1}
+                        disabled={!isMyTurn || raiseCapReached}
+                        onChange={(e) => {
+                          const next = Number.parseInt(e.target.value, 10);
+                          setBetAmount(Number.isFinite(next) ? next : 0);
+                        }}
+                        onBlur={() => {
+                          if (minRaiseTo === null || maxRaiseTo === null) {
+                            return;
+                          }
+                          setBetAmount((previous) => {
+                            const normalized = Number.isFinite(previous) ? Math.floor(previous) : minRaiseTo;
+                            return Math.min(maxRaiseTo, Math.max(minRaiseTo, normalized));
+                          });
+                        }}
+                        style={{
+                          ...actionInputStyle,
+                          width: '100%',
+                          border:
+                            isMyTurn && !raiseCapReached
+                              ? '1px solid rgba(56,189,248,0.8)'
+                              : '1px solid rgba(71,85,105,0.9)',
+                          background:
+                            isMyTurn && !raiseCapReached
+                              ? 'rgba(8,47,73,0.48)'
+                              : 'rgba(2,6,12,0.62)',
+                          ...(isMyTurn && !raiseCapReached ? null : disabledActionStyle),
+                        }}
+                      />
+                    </div>
                     <button
                       type="button"
                       disabled={!canRaise}
                       onClick={() => act(hand && hand.currentBet === 0 ? 'bet' : 'raise', normalizedBetAmount)}
-                      style={{
-                        ...actionButtonBaseStyle,
-                        border: '1px solid rgba(56,189,248,0.8)',
-                        background: 'rgba(14,116,144,0.36)',
+                      style={turnActionStyle(canRaise, {
+                        border: 'rgba(56,189,248,0.86)',
+                        background: 'rgba(14,116,144,0.58)',
                         color: '#e0f2fe',
-                        ...(canRaise ? null : disabledActionStyle),
-                      }}
+                        glow: 'rgba(56,189,248,0.36)',
+                      })}
                     >
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         {raiseActionLabel} to {normalizedBetAmount}
@@ -3053,13 +3184,12 @@ export const PokerGamePage = ({
                       type="button"
                       disabled={!canAllIn}
                       onClick={() => act('allIn')}
-                      style={{
-                        ...actionButtonBaseStyle,
-                        border: '1px solid rgba(248,113,113,0.92)',
-                        background: 'rgba(185,28,28,0.68)',
+                      style={turnActionStyle(canAllIn, {
+                        border: 'rgba(248,113,113,0.95)',
+                        background: 'rgba(185,28,28,0.76)',
                         color: '#fff1f2',
-                        ...(canAllIn ? null : disabledActionStyle),
-                      }}
+                        glow: 'rgba(248,113,113,0.38)',
+                      })}
                     >
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         All-in {you ? you.stack + you.betThisStreet : ''}
@@ -3082,6 +3212,18 @@ export const PokerGamePage = ({
                   </div>
                 </div>
               )}
+              {!showUtilitiesPanel ? (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: 'rgba(186,230,253,0.9)',
+                    textAlign: isMobile ? 'center' : 'left',
+                    letterSpacing: 0.2,
+                  }}
+                >
+                  Extras are hidden to keep gameplay clear. Use the top Extras button for chat, feed, reactions, and sound.
+                </div>
+              ) : null}
             </div>
           )}
         </div>
