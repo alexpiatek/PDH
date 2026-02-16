@@ -3,6 +3,8 @@ import type { Socket as NakamaSocket } from '@heroiclabs/nakama-js';
 
 export const LOBBY_RPC_CREATE_TABLE = 'rpc_create_table';
 export const LOBBY_RPC_JOIN_BY_CODE = 'rpc_join_by_code';
+export const LOBBY_RPC_QUICK_PLAY = 'rpc_quick_play';
+export const LOBBY_RPC_LIST_TABLES = 'rpc_list_tables';
 
 const STORAGE_KEYS = {
   deviceId: 'pdh.nakama.device_id',
@@ -36,6 +38,39 @@ export interface JoinByCodeRpcRequest {
 
 export interface JoinByCodeRpcResponse {
   matchId: string;
+}
+
+export interface QuickPlayRpcRequest {
+  maxPlayers?: number;
+}
+
+export interface QuickPlayRpcResponse {
+  code: string;
+  matchId: string;
+  name: string;
+  maxPlayers: number;
+  isPrivate: boolean;
+  created: boolean;
+}
+
+export interface ListTablesRpcRequest {
+  includePrivate?: boolean;
+  limit?: number;
+}
+
+export interface ListTablesRpcTable {
+  code: string;
+  matchId: string;
+  name: string;
+  maxPlayers: number;
+  isPrivate: boolean;
+  createdAt: string;
+  presenceCount: number;
+  seatsOpen: number;
+}
+
+export interface ListTablesRpcResponse {
+  tables: ListTablesRpcTable[];
 }
 
 let clientSingleton: NakamaClient | null = null;
@@ -324,6 +359,18 @@ export async function createLobbyTable(input: CreateTableRpcRequest): Promise<Cr
 
 export async function resolveLobbyCode(input: JoinByCodeRpcRequest): Promise<JoinByCodeRpcResponse> {
   return callNakamaRpc<JoinByCodeRpcResponse>(LOBBY_RPC_JOIN_BY_CODE, input);
+}
+
+export async function quickPlayLobby(
+  input: QuickPlayRpcRequest = {}
+): Promise<QuickPlayRpcResponse> {
+  return callNakamaRpc<QuickPlayRpcResponse>(LOBBY_RPC_QUICK_PLAY, input);
+}
+
+export async function listLobbyTables(
+  input: ListTablesRpcRequest = {}
+): Promise<ListTablesRpcResponse> {
+  return callNakamaRpc<ListTablesRpcResponse>(LOBBY_RPC_LIST_TABLES, input);
 }
 
 export async function ensureNakamaReady() {

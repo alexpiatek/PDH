@@ -3,6 +3,7 @@ import { Client as NakamaClient } from '@heroiclabs/nakama-js';
 import type { Match, Session, Socket as NakamaSocket } from '@heroiclabs/nakama-js';
 import { Card, HandState, PlayerInHand } from '@pdh/engine';
 import { ClientMessage, ServerMessage } from '../server-types';
+import { logClientEvent } from '../lib/clientTelemetry';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000';
 const NETWORK_BACKEND = (
@@ -23,6 +24,7 @@ const STORAGE_KEYS = {
   playerId: 'playerId',
   matchId: 'nakamaMatchId',
   deviceId: 'nakamaDeviceId',
+  nextMutatingSeq: 'nakamaNextMutatingSeq',
 } as const;
 
 const textDecoder = new TextDecoder();
@@ -391,6 +393,7 @@ export const PokerGamePage = ({
   const connectionRef = useRef<{ send: (msg: ClientMessage) => void; close: () => void } | null>(null);
   const legacySocketRef = useRef<WebSocket | null>(null);
   const pendingMessagesRef = useRef<ClientMessage[]>([]);
+  const nextMutatingSeqRef = useRef(1);
   const discardTimerRef = useRef<number | null>(null);
   const holeDealTimerRef = useRef<number | null>(null);
   const tableRef = useRef<HTMLDivElement | null>(null);
@@ -406,9 +409,35 @@ export const PokerGamePage = ({
   const [discardFlashIndex, setDiscardFlashIndex] = useState<number | null>(null);
   const [discardSubmitted, setDiscardSubmitted] = useState(false);
   const resolvedForcedMatchId = forcedMatchId?.trim() || '';
+  const hasLoggedTableJoinedRef = useRef(false);
+  const hasLoggedFirstActionRef = useRef(false);
+  const reserveMutatingSeq = () => {
+    const seq = nextMutatingSeqRef.current;
+    const nextSeq = seq + 1;
+    nextMutatingSeqRef.current = nextSeq;
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(STORAGE_KEYS.nextMutatingSeq, String(nextSeq));
+    }
+    return seq;
+  };
+  const withMutatingSeq = (msg: ClientMessage): ClientMessage => {
+    if (msg.type !== 'action' && msg.type !== 'discard' && msg.type !== 'nextHand') {
+      return msg;
+    }
+    if (typeof msg.seq === 'number' && Number.isInteger(msg.seq) && msg.seq > 0) {
+      return msg;
+    }
+    return { ...msg, seq: reserveMutatingSeq() };
+  };
 
   useEffect(() => {
     const existing = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.playerId) : null;
+    const storedNextMutatingSeq =
+      typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEYS.nextMutatingSeq) : null;
+    const parsedNextMutatingSeq = Number.parseInt(storedNextMutatingSeq ?? '', 10);
+    if (Number.isInteger(parsedNextMutatingSeq) && parsedNextMutatingSeq > 0) {
+      nextMutatingSeqRef.current = parsedNextMutatingSeq;
+    }
     if (existing) {
       setPlayerId(existing);
     }
@@ -676,6 +705,38 @@ export const PokerGamePage = ({
     if (!playerId) return false;
     return Boolean(state?.seats?.some((s: any) => s && s.id === playerId));
   }, [state, playerId]);
+  useEffect(() => {
+    if (!seated || !you || hasLoggedTableJoinedRef.current) {
+      return;
+    }
+    hasLoggedTableJoinedRef.current = true;
+    const storedMatchId =
+      typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEYS.matchId) : null;
+    logClientEvent('table_joined', {
+      backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
+      matchId: resolvedForcedMatchId || storedMatchId || null,
+      playerId: you.id,
+      seat: you.seat,
+      stack: you.stack,
+    });
+  }, [seated, you, resolvedForcedMatchId]);
+
+  const logFirstAction = (
+    kind: 'action' | 'discard',
+    fields: { action?: PlayerActionType; amount?: number | null; discardIndex?: number }
+  ) => {
+    if (hasLoggedFirstActionRef.current) {
+      return;
+    }
+    hasLoggedFirstActionRef.current = true;
+    logClientEvent('first_action', {
+      kind,
+      handId: hand?.handId ?? null,
+      street: hand?.street ?? null,
+      phase: hand?.phase ?? null,
+      ...fields,
+    });
+  };
 
   const isMyTurn = Boolean(hand && you && hand.phase === 'betting' && hand.actionOnSeat === you.seat);
   const youInfoDimmed = Boolean(hand && hand.phase === 'betting' && !isMyTurn);
@@ -812,15 +873,16 @@ export const PokerGamePage = ({
   }, [isMyTurn, hand?.handId, hand?.currentBet, hand?.minRaise, suggestedRaiseTo]);
 
   const send = (msg: ClientMessage) => {
+    const outgoing = withMutatingSeq(msg);
     if (!connectionRef.current) {
-      pendingMessagesRef.current.push(msg);
+      pendingMessagesRef.current.push(outgoing);
       return;
     }
     if (legacySocketRef.current && legacySocketRef.current.readyState !== WebSocket.OPEN) {
-      pendingMessagesRef.current.push(msg);
+      pendingMessagesRef.current.push(outgoing);
       return;
     }
-    connectionRef.current.send(msg);
+    connectionRef.current.send(outgoing);
   };
 
   const join = () => {
@@ -841,6 +903,10 @@ export const PokerGamePage = ({
   };
 
   const act = (action: PlayerActionType, amount?: number) => {
+    logFirstAction('action', {
+      action,
+      amount: amount ?? null,
+    });
     send({ type: 'action', action, amount });
   };
 
@@ -850,6 +916,7 @@ export const PokerGamePage = ({
 
   const handleDiscardClick = (idx: number) => {
     if (!discardPending || discardSubmitted) return;
+    logFirstAction('discard', { discardIndex: idx });
     setDiscardSubmitted(true);
     setDiscardFlashIndex(idx);
     if (discardTimerRef.current) {

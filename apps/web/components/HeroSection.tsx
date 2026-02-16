@@ -1,3 +1,5 @@
+import { logClientEvent } from '../lib/clientTelemetry';
+
 const MICRO_BULLETS = [
   'Classic No-Limit Hold’em betting',
   'Mandatory hidden discards after each post-flop street',
@@ -67,6 +69,12 @@ export default function HeroSection() {
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <a
               href="/play"
+              onClick={() =>
+                logClientEvent('landing_cta', {
+                  cta: 'hero_primary_play_online',
+                  destination: '/play',
+                })
+              }
               className="inline-flex items-center justify-center rounded-xl border border-amber-300/60 bg-amber-400/20 px-6 py-3 text-sm font-semibold text-amber-50 transition hover:bg-amber-400/30"
             >
               Play Online
@@ -188,6 +196,12 @@ export default function HeroSection() {
           </h2>
           <a
             href="/play"
+            onClick={() =>
+              logClientEvent('landing_cta', {
+                cta: 'hero_footer_play_now',
+                destination: '/play',
+              })
+            }
             className="mt-5 inline-flex items-center justify-center rounded-xl border border-amber-300/60 bg-amber-400/25 px-6 py-3 text-sm font-semibold text-amber-50 transition hover:bg-amber-400/35"
           >
             Play BondiPoker Now

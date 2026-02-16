@@ -9,8 +9,11 @@ import {
   createLobbyTable,
   ensureNakamaReady,
   formatNakamaError,
+  quickPlayLobby,
   resolveLobbyCode,
 } from '../lib/nakamaClient';
+import { logClientEvent } from '../lib/clientTelemetry';
+import { useFeatureFlags } from '../lib/featureFlags';
 import { getRecentTables, type RecentLobbyTable, upsertRecentTable } from '../lib/recentTables';
 
 type BootStatus = 'connecting' | 'ready' | 'error';
@@ -21,10 +24,10 @@ interface CreateResult {
 }
 
 const MAX_PLAYERS_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9];
-
 const PlayLobbyPage: NextPage = () => {
   const router = useRouter();
   const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { uiQuickPlay } = useFeatureFlags();
 
   const [bootStatus, setBootStatus] = useState<BootStatus>('connecting');
   const [bootError, setBootError] = useState('');
@@ -35,6 +38,8 @@ const PlayLobbyPage: NextPage = () => {
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState('');
   const [createResult, setCreateResult] = useState<CreateResult | null>(null);
+  const [quickPlayLoading, setQuickPlayLoading] = useState(false);
+  const [quickPlayError, setQuickPlayError] = useState('');
 
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [joinLoading, setJoinLoading] = useState(false);
@@ -94,6 +99,9 @@ const PlayLobbyPage: NextPage = () => {
   const canSubmitJoin = useMemo(() => {
     return normalizeTableCode(joinCodeInput).length > 0 && !joinLoading && bootStatus !== 'connecting';
   }, [bootStatus, joinCodeInput, joinLoading]);
+  const canQuickPlay = useMemo(() => {
+    return bootStatus === 'ready' && !quickPlayLoading && !createLoading && !joinLoading;
+  }, [bootStatus, quickPlayLoading, createLoading, joinLoading]);
 
   const saveRecentEntry = (entry: Omit<RecentLobbyTable, 'updatedAt'>) => {
     const next = upsertRecentTable(entry);
@@ -133,6 +141,44 @@ const PlayLobbyPage: NextPage = () => {
       setCreateError(formatNakamaError(error));
     } finally {
       setCreateLoading(false);
+    }
+  };
+
+  const handleQuickPlay = async () => {
+    if (!canQuickPlay) {
+      return;
+    }
+
+    logClientEvent('quick_play_click', {
+      surface: 'play_lobby',
+    });
+    setQuickPlayLoading(true);
+    setQuickPlayError('');
+
+    try {
+      const maxPlayersForQuickPlay = 6;
+      const result = await quickPlayLobby({
+        maxPlayers: maxPlayersForQuickPlay,
+      });
+      logClientEvent('quick_play_resolved', {
+        created: result.created,
+        code: result.code,
+        matchId: result.matchId,
+      });
+
+      saveRecentEntry({
+        code: result.code,
+        matchId: result.matchId,
+        name: result.name,
+        maxPlayers: result.maxPlayers,
+        isPrivate: result.isPrivate,
+      });
+
+      await router.push(`/table/${encodeURIComponent(result.matchId)}`);
+    } catch (error) {
+      setQuickPlayError(formatNakamaError(error));
+    } finally {
+      setQuickPlayLoading(false);
     }
   };
 
@@ -247,6 +293,38 @@ const PlayLobbyPage: NextPage = () => {
             <p className="mb-6 rounded-2xl border border-rose-400/45 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
               {bootError}
             </p>
+          ) : null}
+
+          {uiQuickPlay ? (
+            <section className="mb-6 rounded-3xl border border-emerald-200/20 bg-zinc-950/65 p-6 backdrop-blur-xl sm:p-7">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-emerald-200/85">Primary Path</p>
+                  <h2 className="mt-2 font-[var(--font-display)] text-2xl font-semibold text-white sm:text-3xl">
+                    Play Now
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-sm text-zinc-300/85">
+                    Quick seat into a fresh public table with one tap.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleQuickPlay();
+                  }}
+                  disabled={!canQuickPlay}
+                  className="inline-flex min-w-[200px] items-center justify-center gap-2 rounded-xl border border-emerald-300/60 bg-emerald-500/20 px-5 py-3 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-500/28 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {quickPlayLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {quickPlayLoading ? 'Finding a Seat...' : 'Play Now'}
+                </button>
+              </div>
+              {quickPlayError ? (
+                <p role="alert" className="mt-4 text-sm text-rose-300">
+                  {quickPlayError}
+                </p>
+              ) : null}
+            </section>
           ) : null}
 
           <section className="grid flex-1 gap-6 lg:grid-cols-2">

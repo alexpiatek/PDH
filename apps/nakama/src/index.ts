@@ -20,9 +20,13 @@ import {
   POKER_TABLE_MATCH_MODULE,
   RPC_CREATE_TABLE,
   RPC_JOIN_BY_CODE,
+  RPC_LIST_TABLES,
+  RPC_QUICK_PLAY,
   pokerTableMatchHandler,
   rpcCreateTable,
   rpcJoinByCode,
+  rpcListTables,
+  rpcQuickPlay,
 } from './pokerLobby';
 
 const InitModule: nkruntime.InitModule = (ctx, logger, nk, initializer) => {
@@ -45,6 +49,8 @@ const InitModule: nkruntime.InitModule = (ctx, logger, nk, initializer) => {
   initializer.registerMatch(POKER_TABLE_MATCH_MODULE, pokerTableMatchHandler);
   initializer.registerRpc(RPC_CREATE_TABLE, rpcCreateTable);
   initializer.registerRpc(RPC_JOIN_BY_CODE, rpcJoinByCode);
+  initializer.registerRpc(RPC_QUICK_PLAY, rpcQuickPlay);
+  initializer.registerRpc(RPC_LIST_TABLES, rpcListTables);
 
   logger.info(
     'PDH Nakama module loaded (modules: %v, %v, %v)',

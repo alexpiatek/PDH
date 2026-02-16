@@ -7,11 +7,35 @@
 :root {
   --font-sans: 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display: 'Sora', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --bg-radial-a: rgba(251, 191, 36, 0.09);
+  --bg-radial-b: rgba(45, 212, 191, 0.07);
+  --bg-start: #050812;
+  --bg-mid: #03050e;
+  --bg-end: #04070f;
   --surface-900: #090d17;
   --surface-800: #101728;
+  --surface-700: #18233b;
   --text-primary: #f5f7ff;
   --text-secondary: #b8c0d6;
+  --accent: #fbbf24;
+  --accent-strong: #f59e0b;
   --focus-ring: #fbbf24;
+}
+
+:root[data-pdh-theme='neo-luxury'] {
+  --bg-radial-a: rgba(16, 185, 129, 0.09);
+  --bg-radial-b: rgba(56, 189, 248, 0.07);
+  --bg-start: #050a13;
+  --bg-mid: #060d1b;
+  --bg-end: #081122;
+  --surface-900: #0b1324;
+  --surface-800: #141f33;
+  --surface-700: #1d2a42;
+  --text-primary: #f3f7ff;
+  --text-secondary: #b6c2d9;
+  --accent: #14b8a6;
+  --accent-strong: #0f766e;
+  --focus-ring: #14b8a6;
 }
 
 html,
@@ -21,9 +45,9 @@ body {
   font-family: var(--font-sans);
   color: var(--text-primary);
   background:
-    radial-gradient(circle at 20% 14%, rgba(251, 191, 36, 0.09), transparent 34%),
-    radial-gradient(circle at 78% 88%, rgba(45, 212, 191, 0.07), transparent 42%),
-    linear-gradient(180deg, #050812, #03050e 58%, #04070f);
+    radial-gradient(circle at 20% 14%, var(--bg-radial-a), transparent 34%),
+    radial-gradient(circle at 78% 88%, var(--bg-radial-b), transparent 42%),
+    linear-gradient(180deg, var(--bg-start), var(--bg-mid) 58%, var(--bg-end));
   min-height: 100%;
 }
 

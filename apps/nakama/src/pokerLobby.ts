@@ -4,6 +4,8 @@ export const POKER_TABLE_MATCH_MODULE = 'poker_table';
 export const LOBBY_GAMEPLAY_MATCH_MODULE = 'pdh';
 export const RPC_CREATE_TABLE = 'rpc_create_table';
 export const RPC_JOIN_BY_CODE = 'rpc_join_by_code';
+export const RPC_QUICK_PLAY = 'rpc_quick_play';
+export const RPC_LIST_TABLES = 'rpc_list_tables';
 
 const TABLE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const TABLE_CODE_LENGTH = 6;
@@ -26,6 +28,15 @@ interface JoinByCodeInput {
   code: string;
 }
 
+interface QuickPlayInput {
+  maxPlayers: number;
+}
+
+interface ListTablesInput {
+  includePrivate: boolean;
+  limit: number;
+}
+
 interface CreateTableResult {
   code: string;
   matchId: string;
@@ -33,6 +44,30 @@ interface CreateTableResult {
 
 interface JoinByCodeResult {
   matchId: string;
+}
+
+interface LobbyTableSummary {
+  code: string;
+  matchId: string;
+  name: string;
+  maxPlayers: number;
+  isPrivate: boolean;
+  createdAt: string;
+  presenceCount: number;
+  seatsOpen: number;
+}
+
+interface QuickPlayResult {
+  code: string;
+  matchId: string;
+  name: string;
+  maxPlayers: number;
+  isPrivate: boolean;
+  created: boolean;
+}
+
+interface ListTablesResult {
+  tables: LobbyTableSummary[];
 }
 
 interface TableStorageValue {
@@ -189,6 +224,49 @@ function parseJoinByCodeInput(payload: string | undefined): JoinByCodeInput {
   return { code };
 }
 
+function parseQuickPlayInput(payload: string | undefined): QuickPlayInput {
+  const parsed = parseRpcPayload(payload);
+  if (parsed === undefined) {
+    return { maxPlayers: DEFAULT_MAX_PLAYERS };
+  }
+  if (!isRecord(parsed)) {
+    throw new Error('Invalid quick-play payload.');
+  }
+  return {
+    maxPlayers: parseMaxPlayers(parsed.maxPlayers),
+  };
+}
+
+function parseListTablesInput(payload: string | undefined): ListTablesInput {
+  const parsed = parseRpcPayload(payload);
+  if (parsed === undefined) {
+    return { includePrivate: false, limit: 30 };
+  }
+  if (!isRecord(parsed)) {
+    throw new Error('Invalid list-tables payload.');
+  }
+
+  const includePrivateRaw = parsed.includePrivate;
+  if (
+    includePrivateRaw !== undefined &&
+    includePrivateRaw !== null &&
+    typeof includePrivateRaw !== 'boolean'
+  ) {
+    throw new Error('includePrivate must be a boolean.');
+  }
+  const includePrivate =
+    typeof includePrivateRaw === 'boolean' ? includePrivateRaw : false;
+
+  const limitRaw = parsed.limit;
+  if (limitRaw !== undefined && limitRaw !== null && !Number.isInteger(limitRaw)) {
+    throw new Error('limit must be an integer.');
+  }
+  const limitParsed = typeof limitRaw === 'number' ? Number(limitRaw) : 30;
+  const limit = Math.max(1, Math.min(100, limitParsed));
+
+  return { includePrivate, limit };
+}
+
 function extractMatchId(match: nkruntime.MatchListEntry | null | undefined): string | null {
   if (!match) return null;
   if (typeof match.matchId === 'string' && match.matchId.length > 0) {
@@ -323,6 +401,107 @@ function createUniqueTableCode(nk: NakamaWithStorage): string {
   throw new Error('Could not allocate a unique table code. Please try again.');
 }
 
+function tableCodeFromMatchLabel(rawLabel: unknown): string | null {
+  if (typeof rawLabel !== 'string' || !rawLabel.trim()) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(rawLabel) as unknown;
+    if (!isRecord(parsed) || typeof parsed.tableId !== 'string') {
+      return null;
+    }
+    const code = normalizeTableCode(parsed.tableId);
+    if (!isValidTableCodeFormat(code)) {
+      return null;
+    }
+    return code;
+  } catch {
+    return null;
+  }
+}
+
+function listActiveLobbyTables(nk: NakamaWithStorage): LobbyTableSummary[] {
+  const matches = nk.matchList(100, true, '', 0, MAX_MAX_PLAYERS, '') ?? [];
+  if (!matches.length) {
+    return [];
+  }
+
+  const summaries: LobbyTableSummary[] = [];
+  for (const match of matches) {
+    const code = tableCodeFromMatchLabel(match.label);
+    if (!code) {
+      continue;
+    }
+
+    const matchId = extractMatchId(match);
+    if (!matchId) {
+      continue;
+    }
+
+    const stored = readTableByCode(nk, code);
+    if (!stored) {
+      continue;
+    }
+    if (stored.matchId !== matchId) {
+      continue;
+    }
+
+    const presenceCountRaw = extractMatchSize(match) ?? 0;
+    const presenceCount = Math.max(0, Math.min(stored.maxPlayers, presenceCountRaw));
+    const seatsOpen = Math.max(0, stored.maxPlayers - presenceCount);
+
+    summaries.push({
+      code,
+      matchId,
+      name: stored.name,
+      maxPlayers: stored.maxPlayers,
+      isPrivate: stored.isPrivate,
+      createdAt: stored.createdAt,
+      presenceCount,
+      seatsOpen,
+    });
+  }
+
+  summaries.sort((a, b) => {
+    if (b.presenceCount !== a.presenceCount) {
+      return b.presenceCount - a.presenceCount;
+    }
+    if (a.seatsOpen !== b.seatsOpen) {
+      return a.seatsOpen - b.seatsOpen;
+    }
+    return a.createdAt < b.createdAt ? -1 : 1;
+  });
+
+  return summaries;
+}
+
+function createQuickPlayTable(
+  nk: NakamaWithStorage,
+  maxPlayers: number
+): QuickPlayResult {
+  const code = createUniqueTableCode(nk);
+  const createdAt = new Date().toISOString();
+  const name = 'Quick Play';
+  const matchId = nk.matchCreate(LOBBY_GAMEPLAY_MATCH_MODULE, { tableId: code });
+
+  writeTableByCode(nk, code, {
+    matchId,
+    name,
+    maxPlayers,
+    isPrivate: false,
+    createdAt,
+  });
+
+  return {
+    code,
+    matchId,
+    name,
+    maxPlayers,
+    isPrivate: false,
+    created: true,
+  };
+}
+
 export function rpcCreateTable(
   ctx: unknown,
   logger: nkruntime.Logger,
@@ -384,6 +563,75 @@ export function rpcJoinByCode(
   logger.info('Resolved table code=%v to matchId=%v', input.code, stored.matchId);
 
   const result: JoinByCodeResult = { matchId: stored.matchId };
+  return JSON.stringify(result);
+}
+
+export function rpcQuickPlay(
+  ctx: unknown,
+  logger: nkruntime.Logger,
+  nk: nkruntime.Nakama,
+  payload: string | undefined
+) {
+  const input = parseQuickPlayInput(payload);
+  const runtimeNakama = nk as NakamaWithStorage;
+
+  const candidates = listActiveLobbyTables(runtimeNakama).filter(
+    (table) =>
+      !table.isPrivate &&
+      table.seatsOpen > 0 &&
+      table.maxPlayers === input.maxPlayers
+  );
+
+  if (candidates.length > 0) {
+    const chosen = candidates[0];
+    logger.info(
+      'Quick play resolved existing table code=%v matchId=%v presence=%v/%v',
+      chosen.code,
+      chosen.matchId,
+      chosen.presenceCount,
+      chosen.maxPlayers
+    );
+    const result: QuickPlayResult = {
+      code: chosen.code,
+      matchId: chosen.matchId,
+      name: chosen.name,
+      maxPlayers: chosen.maxPlayers,
+      isPrivate: chosen.isPrivate,
+      created: false,
+    };
+    return JSON.stringify(result);
+  }
+
+  const created = createQuickPlayTable(runtimeNakama, input.maxPlayers);
+  logger.info(
+    'Quick play created new table code=%v matchId=%v maxPlayers=%v',
+    created.code,
+    created.matchId,
+    created.maxPlayers
+  );
+  return JSON.stringify(created);
+}
+
+export function rpcListTables(
+  ctx: unknown,
+  logger: nkruntime.Logger,
+  nk: nkruntime.Nakama,
+  payload: string | undefined
+) {
+  const input = parseListTablesInput(payload);
+  const runtimeNakama = nk as NakamaWithStorage;
+  const tables = listActiveLobbyTables(runtimeNakama)
+    .filter((table) => input.includePrivate || !table.isPrivate)
+    .slice(0, input.limit);
+
+  logger.info(
+    'List tables includePrivate=%v limit=%v count=%v',
+    input.includePrivate,
+    input.limit,
+    tables.length
+  );
+
+  const result: ListTablesResult = { tables };
   return JSON.stringify(result);
 }
 
@@ -519,4 +767,6 @@ export const pokerTableMatchHandler = {
 
 (globalThis as any).rpcCreateTable = rpcCreateTable;
 (globalThis as any).rpcJoinByCode = rpcJoinByCode;
+(globalThis as any).rpcQuickPlay = rpcQuickPlay;
+(globalThis as any).rpcListTables = rpcListTables;
 (globalThis as any).pokerTableMatchHandler = pokerTableMatchHandler;

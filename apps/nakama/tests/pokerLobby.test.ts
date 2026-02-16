@@ -5,6 +5,8 @@ import {
   pokerTableMatchHandler,
   rpcCreateTable,
   rpcJoinByCode,
+  rpcListTables,
+  rpcQuickPlay,
 } from '../src/pokerLobby';
 
 const logger = {
@@ -183,6 +185,115 @@ describe('poker lobby RPCs', () => {
     expect(() =>
       rpcJoinByCode({}, logger as any, nk as any, JSON.stringify({ code: created.code }))
     ).toThrow(/already full/i);
+  });
+
+  it('quick play selects an existing public table when seats are available', () => {
+    const { nk, setMatchSize } = makeNakamaMock();
+
+    const privateCreate = rpcCreateTable(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ name: 'Private Table', maxPlayers: 6, isPrivate: true })
+    );
+    const privateTable = JSON.parse(privateCreate) as { code: string; matchId: string };
+    setMatchSize(privateTable.matchId, 2);
+
+    const publicCreate = rpcCreateTable(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ name: 'Public Table', maxPlayers: 6, isPrivate: false })
+    );
+    const publicTable = JSON.parse(publicCreate) as { code: string; matchId: string };
+    setMatchSize(publicTable.matchId, 4);
+
+    const quick = rpcQuickPlay(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ maxPlayers: 6 })
+    );
+    const parsed = JSON.parse(quick) as {
+      code: string;
+      matchId: string;
+      isPrivate: boolean;
+      created: boolean;
+    };
+
+    expect(parsed.matchId).toBe(publicTable.matchId);
+    expect(parsed.code).toBe(publicTable.code);
+    expect(parsed.isPrivate).toBe(false);
+    expect(parsed.created).toBe(false);
+  });
+
+  it('quick play creates a new table when none are available', () => {
+    const { nk } = makeNakamaMock();
+
+    const quick = rpcQuickPlay(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ maxPlayers: 5 })
+    );
+    const parsed = JSON.parse(quick) as {
+      code: string;
+      matchId: string;
+      maxPlayers: number;
+      isPrivate: boolean;
+      created: boolean;
+    };
+
+    expect(parsed.created).toBe(true);
+    expect(parsed.maxPlayers).toBe(5);
+    expect(parsed.isPrivate).toBe(false);
+    expect(isValidTableCodeFormat(parsed.code)).toBe(true);
+    expect(parsed.matchId).toBe('match-1');
+  });
+
+  it('lists active tables and omits private tables by default', () => {
+    const { nk, setMatchSize } = makeNakamaMock();
+
+    const privateCreate = rpcCreateTable(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ name: 'Private 6', maxPlayers: 6, isPrivate: true })
+    );
+    const privateTable = JSON.parse(privateCreate) as { code: string; matchId: string };
+    setMatchSize(privateTable.matchId, 1);
+
+    const publicCreate = rpcCreateTable(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ name: 'Public 6', maxPlayers: 6, isPrivate: false })
+    );
+    const publicTable = JSON.parse(publicCreate) as { code: string; matchId: string };
+    setMatchSize(publicTable.matchId, 3);
+
+    const listedDefault = rpcListTables({}, logger as any, nk as any, undefined);
+    const parsedDefault = JSON.parse(listedDefault) as {
+      tables: Array<{ code: string; isPrivate: boolean; presenceCount: number; seatsOpen: number }>;
+    };
+
+    expect(parsedDefault.tables.length).toBe(1);
+    expect(parsedDefault.tables[0].code).toBe(publicTable.code);
+    expect(parsedDefault.tables[0].isPrivate).toBe(false);
+    expect(parsedDefault.tables[0].presenceCount).toBe(3);
+    expect(parsedDefault.tables[0].seatsOpen).toBe(3);
+
+    const listedAll = rpcListTables(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ includePrivate: true, limit: 10 })
+    );
+    const parsedAll = JSON.parse(listedAll) as {
+      tables: Array<{ code: string; isPrivate: boolean }>;
+    };
+    expect(parsedAll.tables.map((table) => table.code)).toContain(privateTable.code);
+    expect(parsedAll.tables.map((table) => table.code)).toContain(publicTable.code);
   });
 });
 
