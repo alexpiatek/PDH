@@ -1001,8 +1001,7 @@ export const PokerGamePage = ({
   });
   const isMobile = viewportWidth <= 900;
   const isPhone = viewportWidth <= 640;
-  const showSideLogos = viewportWidth > 1180;
-  const centeredSectionMinHeight = isMobile ? 'calc(100vh - 220px)' : 'calc(100vh - 3.5cm - 60px)';
+  const centeredSectionMinHeight = isMobile ? 'calc(100vh - 220px)' : 'calc(100vh - 260px)';
   const tableOuterWidth = `min(${BASE_TABLE_WIDTH}px, calc(100vw - ${isPhone ? 16 : 36}px))`;
   const tableOuterBorder = isPhone ? 6 : isMobile ? 8 : 10;
   const actionButtonBaseStyle: React.CSSProperties = {
@@ -1019,7 +1018,8 @@ export const PokerGamePage = ({
   return (
     <div
       style={{
-        fontFamily: '"Bebas Neue", "Oswald", "Trebuchet MS", sans-serif',
+        fontFamily:
+          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
         color: '#e5e7eb',
         minHeight: '100vh',
         overflowX: 'hidden',
@@ -1064,80 +1064,65 @@ export const PokerGamePage = ({
       ) : null}
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: showSideLogos ? 'auto 1fr auto' : '1fr',
-          alignItems: 'center',
-          rowGap: isMobile ? 8 : 0,
-          columnGap: showSideLogos ? 'clamp(8px, 2vw, 24px)' : 0,
-          height: isMobile ? 'auto' : '3.5cm',
+          width: 'min(100%, 860px)',
+          margin: '0 auto',
           marginBottom: isMobile ? 12 : 18,
-          padding: isPhone ? '6px 2px' : '10px 14px',
-          borderRadius: 0,
-          background: 'transparent',
-          border: 'none',
-          boxShadow: 'none',
-          backdropFilter: 'none',
+          padding: isPhone ? '12px 10px' : '14px 20px',
+          borderRadius: 24,
+          border: '1px solid rgba(251,191,36,0.22)',
+          background: 'rgba(9,13,23,0.62)',
+          boxShadow: '0 16px 44px rgba(0,0,0,0.3)',
+          backdropFilter: 'blur(10px)',
+          textAlign: 'center',
         }}
       >
-        <div style={{ display: showSideLogos ? 'flex' : 'none', justifyContent: 'flex-start', alignItems: 'center' }}>
-          <img
-            src="/Resolute Hold'em.png"
-            alt=""
-            style={{
-              width: 'clamp(210px, 30vw, 290px)',
-              height: 'clamp(140px, 21vw, 190px)',
-              objectFit: 'contain',
-              borderRadius: 14,
-              boxShadow: 'none',
-              opacity: 0.92,
-              filter: 'drop-shadow(0 10px 24px rgba(0,0,0,0.35))',
-              WebkitMaskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
-              maskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
-              WebkitMaskRepeat: 'no-repeat',
-              maskRepeat: 'no-repeat',
-              WebkitMaskSize: '100% 100%',
-              maskSize: '100% 100%',
-            }}
-          />
-        </div>
-        <div style={{ textAlign: 'center', maxWidth: isMobile ? '100%' : 'min(70vw, 520px)', justifySelf: 'center', width: '100%' }}>
+        <div style={{ textAlign: 'center', maxWidth: isMobile ? '100%' : 'min(70vw, 560px)', justifySelf: 'center', width: '100%' }}>
           <div
             style={{
-              marginTop: isMobile ? 0 : '1cm',
-              fontSize: isPhone ? 'clamp(42px, 14vw, 60px)' : 'clamp(72px, 9vw, 126px)',
-              fontWeight: 1000,
-              letterSpacing: 1.2,
-              lineHeight: isPhone ? 0.92 : 1,
-              fontFamily: '"Savoye LET", "Snell Roundhand", "Apple Chancery", "Brush Script MT", cursive',
-              whiteSpace: isPhone ? 'normal' : 'nowrap',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 999,
+              border: '1px solid rgba(251,191,36,0.4)',
+              background: 'rgba(251,191,36,0.1)',
+              color: '#fde68a',
+              padding: '3px 12px',
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              fontFamily:
+                'var(--font-display, "Sora", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
             }}
           >
-            Resolute Hold&apos;em
+            Bondi Poker
           </div>
-          <div style={{ marginTop: '-0.2cm' }}>
-            <div style={{ fontSize: isPhone ? 14 : 16, opacity: 0.6, fontFamily: '"Inter", sans-serif' }}>Raise the stakes. Own the table.</div>
-          </div>
-        </div>
-        <div style={{ display: showSideLogos ? 'flex' : 'none', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <img
-            src="/Resolute Hold'em.png"
-            alt=""
+          <div
             style={{
-              width: 'clamp(210px, 30vw, 290px)',
-              height: 'clamp(140px, 21vw, 190px)',
-              objectFit: 'contain',
-              borderRadius: 14,
-              boxShadow: 'none',
-              opacity: 0.92,
-              filter: 'drop-shadow(0 10px 24px rgba(0,0,0,0.35))',
-              WebkitMaskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
-              maskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%)',
-              WebkitMaskRepeat: 'no-repeat',
-              maskRepeat: 'no-repeat',
-              WebkitMaskSize: '100% 100%',
-              maskSize: '100% 100%',
+              marginTop: 10,
+              fontSize: isPhone ? 'clamp(28px, 9vw, 34px)' : 'clamp(34px, 4vw, 46px)',
+              fontWeight: 700,
+              letterSpacing: '-0.01em',
+              lineHeight: 1.05,
+              color: '#f8fafc',
+              fontFamily:
+                'var(--font-display, "Sora", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
             }}
-          />
+          >
+            Private Table
+          </div>
+          <div style={{ marginTop: 5 }}>
+            <div
+              style={{
+                fontSize: isPhone ? 13 : 15,
+                color: 'rgba(226,232,240,0.85)',
+                fontFamily:
+                  'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+              }}
+            >
+              Hold&apos;em with Hidden Discards
+            </div>
+          </div>
         </div>
       </div>
       {!seated && (
@@ -1151,7 +1136,16 @@ export const PokerGamePage = ({
             paddingBottom: 'clamp(0px, 6vh, 2cm)',
           }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, transform: isMobile ? 'none' : 'translateY(-7cm)', width: isPhone ? '100%' : undefined }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 8,
+              transform: isMobile ? 'none' : 'translateY(-2.4cm)',
+              width: isPhone ? '100%' : 'min(94vw, 560px)',
+            }}
+          >
             <div style={{ display: 'flex', gap: 10, flexDirection: isPhone ? 'column' : 'row', width: isPhone ? 'min(92vw, 360px)' : 'auto' }}>
               <input
                 value={name}
@@ -1171,19 +1165,20 @@ export const PokerGamePage = ({
                     e.currentTarget.blur();
                   }
                 }}
-                placeholder="enter player name"
+                placeholder="Enter player name"
                 aria-invalid={Boolean(nameError)}
                 style={{
                   padding: '12px 14px',
                   width: isPhone ? '100%' : undefined,
-                  minWidth: isPhone ? 0 : 260,
+                  minWidth: isPhone ? 0 : 300,
                   borderRadius: 12,
-                  border: nameError ? '1px solid #fca5a5' : '1px solid rgba(148,163,184,0.5)',
-                  background: 'rgba(226,232,240,0.98)',
-                  color: '#111827',
-                  caretColor: '#111827',
+                  border: nameError ? '1px solid #fca5a5' : '1px solid rgba(251,191,36,0.4)',
+                  background: 'rgba(9,13,23,0.82)',
+                  color: '#f8fafc',
+                  caretColor: '#f8fafc',
                   fontSize: 16,
-                  fontFamily: '"Inter", sans-serif',
+                  fontFamily:
+                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
                 }}
               />
               <button
@@ -1198,24 +1193,39 @@ export const PokerGamePage = ({
                   width: isPhone ? '100%' : undefined,
                   minHeight: 44,
                   borderRadius: 12,
-                  border: '1px solid rgba(59,130,246,0.7)',
-                  background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-                  color: '#eef2ff',
+                  border: '1px solid rgba(251,191,36,0.62)',
+                  background: 'linear-gradient(135deg, rgba(251,191,36,0.35), rgba(217,119,6,0.45))',
+                  color: '#fef3c7',
                   fontWeight: 700,
-                  fontFamily: '"Inter", sans-serif',
+                  fontFamily:
+                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
                   letterSpacing: 0.5,
-                  boxShadow: '0 10px 24px rgba(37,99,235,0.35)',
+                  boxShadow: '0 10px 24px rgba(217,119,6,0.3)',
+                  cursor: name.trim() ? 'pointer' : 'not-allowed',
+                  opacity: name.trim() ? 1 : 0.58,
                 }}
               >
                 Join
               </button>
             </div>
-            {nameError && <div style={{ fontSize: 12, color: '#fca5a5', fontFamily: '"Inter", sans-serif' }}>{nameError}</div>}
+            {nameError && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: '#fca5a5',
+                  fontFamily:
+                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                }}
+              >
+                {nameError}
+              </div>
+            )}
             <div
               style={{
                 fontSize: 12,
-                opacity: 0.7,
-                fontFamily: '"Inter", sans-serif',
+                color: 'rgba(226,232,240,0.8)',
+                fontFamily:
+                  'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
                 alignSelf: 'center',
                 textAlign: 'center',
                 marginLeft: 0,
@@ -1227,7 +1237,8 @@ export const PokerGamePage = ({
               <div
                 style={{
                   fontSize: 12,
-                  fontFamily: '"Inter", sans-serif',
+                  fontFamily:
+                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
                   color: status.toLowerCase().includes('error') || status.toLowerCase().includes('failed') ? '#fca5a5' : '#e2e8f0',
                   textAlign: 'center',
                 }}
