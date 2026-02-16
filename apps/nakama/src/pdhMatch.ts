@@ -1,8 +1,8 @@
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
 import { PokerTable, type TableState } from '@pdh/engine';
-import { TABLE_CHAT_MAX_LENGTH } from '@pdh/protocol';
 import {
   MatchOpCode,
+  TABLE_CHAT_MAX_LENGTH,
   isMutatingClientMessage,
   parseClientMessagePayload,
   type ClientMessage,

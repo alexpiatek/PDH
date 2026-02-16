@@ -1,4 +1,3 @@
-import { TABLE_CHAT_MAX_LENGTH, TABLE_REACTIONS } from '@pdh/protocol';
 import type {
   ClientMessage as SharedClientMessage,
   MutatingClientMessage as SharedMutatingClientMessage,
@@ -7,6 +6,8 @@ import type {
 } from '@pdh/protocol';
 
 export const PDH_PROTOCOL_VERSION = 1 as const;
+export const TABLE_REACTIONS = ['gg', 'wow', 'nice', 'oops', 'fire'] as const;
+export const TABLE_CHAT_MAX_LENGTH = 140 as const;
 
 export enum MatchOpCode {
   ClientMessage = 1,
