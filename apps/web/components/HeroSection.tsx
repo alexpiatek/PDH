@@ -1,15 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import { logClientEvent } from '../lib/clientTelemetry';
-import { useFeatureFlags } from '../lib/featureFlags';
-import {
-  ensureNakamaReady,
-  ensurePdhMatch,
-  formatNakamaError,
-  quickPlayLobby,
-} from '../lib/nakamaClient';
-import { buildQuickPlayRequest, recordQuickPlayResolved } from '../lib/quickPlayProfile';
-import { upsertRecentTable } from '../lib/recentTables';
 
 const MICRO_BULLETS = [
   'Classic No-Limit Hold’em betting',
@@ -52,67 +43,20 @@ const FAQ = [
 
 export default function HeroSection() {
   const router = useRouter();
-  const { uiQuickPlay } = useFeatureFlags();
   const [playNowLoading, setPlayNowLoading] = useState(false);
-  const [playNowError, setPlayNowError] = useState('');
 
   const handlePlayNow = async () => {
-    logClientEvent('landing_cta', {
-      cta: uiQuickPlay ? 'hero_primary_quick_play' : 'hero_primary_play_online',
-      destination: uiQuickPlay ? 'quick_play' : '/play',
-    });
-
-    if (!uiQuickPlay) {
-      await router.push('/play');
-      return;
-    }
-
     if (playNowLoading) {
       return;
     }
 
     setPlayNowLoading(true);
-    setPlayNowError('');
+    logClientEvent('landing_cta', {
+      cta: 'hero_primary_play_online',
+      destination: '/play',
+    });
     try {
-      await ensureNakamaReady();
-      const request = buildQuickPlayRequest(6);
-      const result = await quickPlayLobby(request);
-      recordQuickPlayResolved(result);
-      upsertRecentTable({
-        code: result.code,
-        matchId: result.matchId,
-        name: result.name,
-        maxPlayers: result.maxPlayers,
-        isPrivate: result.isPrivate,
-      });
-      logClientEvent('landing_quick_play_resolved', {
-        created: result.created,
-        code: result.code,
-        matchId: result.matchId,
-        targetBuyIn: request.targetBuyIn,
-        skillTier: request.skillTier,
-        resolvedBuyIn: result.quickPlayBuyIn,
-        resolvedSkillTier: result.quickPlaySkillTier,
-      });
-      await router.push(`/table/${encodeURIComponent(result.matchId)}`);
-    } catch (error) {
-      const message = formatNakamaError(error);
-      if (message.toLowerCase().includes('404')) {
-        try {
-          const fallback = await ensurePdhMatch({ tableId: 'main' });
-          logClientEvent('landing_quick_play_fallback', {
-            reason: 'rpc_404',
-            matchId: fallback.matchId,
-            tableId: fallback.tableId,
-          });
-          await router.push(`/table/${encodeURIComponent(fallback.matchId)}`);
-          return;
-        } catch (fallbackError) {
-          setPlayNowError(formatNakamaError(fallbackError));
-          return;
-        }
-      }
-      setPlayNowError(message);
+      await router.push('/play');
     } finally {
       setPlayNowLoading(false);
     }
@@ -153,7 +97,7 @@ export default function HeroSection() {
               disabled={playNowLoading}
               className="inline-flex items-center justify-center rounded-xl border border-amber-300/60 bg-amber-400/20 px-6 py-3 text-sm font-semibold text-amber-50 transition hover:bg-amber-400/30 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {playNowLoading ? 'Finding Seat...' : uiQuickPlay ? 'Play Now' : 'Play Online'}
+              {playNowLoading ? 'Opening...' : 'Play Now'}
             </button>
             <a
               href="#twist"
@@ -162,12 +106,6 @@ export default function HeroSection() {
               Learn the Twist in 30s
             </a>
           </div>
-          {playNowError ? (
-            <p className="mx-auto mt-3 max-w-2xl rounded-xl border border-rose-400/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100">
-              {playNowError}
-            </p>
-          ) : null}
-
           <ul className="mx-auto mt-8 max-w-3xl space-y-2 text-left text-sm text-zinc-200">
             {MICRO_BULLETS.map((item) => (
               <li key={item} className="rounded-xl border border-zinc-300/20 bg-zinc-900/70 px-4 py-2.5">

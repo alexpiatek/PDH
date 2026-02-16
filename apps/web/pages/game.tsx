@@ -34,7 +34,7 @@ const LegacyGameRoutePage: NextPage = () => {
         fontFamily: 'Inter, system-ui, sans-serif',
       }}
     >
-      Redirecting to lobby...
+      Redirecting to game entry...
     </main>
   );
 };

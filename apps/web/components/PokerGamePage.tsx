@@ -6,6 +6,7 @@ import { TABLE_CHAT_MAX_LENGTH, TABLE_REACTIONS } from '@pdh/protocol';
 import { ClientMessage, ServerMessage } from '../server-types';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { useFeatureFlags } from '../lib/featureFlags';
+import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000';
 const NETWORK_BACKEND = (
@@ -474,6 +475,15 @@ export const PokerGamePage = ({
   const resolvedForcedMatchId = forcedMatchId?.trim() || '';
   const hasLoggedTableJoinedRef = useRef(false);
   const hasLoggedFirstActionRef = useRef(false);
+  const autoJoinAttemptedRef = useRef(false);
+  const [hasReceivedState, setHasReceivedState] = useState(false);
+
+  useEffect(() => {
+    const storedName = readStoredPlayerName();
+    if (storedName) {
+      setName(storedName);
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -583,6 +593,7 @@ export const PokerGamePage = ({
       }
       if (msg.type === 'state') {
         clearJoinTimeout();
+        setHasReceivedState(true);
         const statePlayerId =
           msg.state &&
           typeof msg.state === 'object' &&
@@ -1184,11 +1195,13 @@ export const PokerGamePage = ({
   };
 
   const join = () => {
-    const trimmed = name.trim();
+    const trimmed = normalizePlayerName(name);
     if (!trimmed) {
       setNameError('Please enter a name.');
       return;
     }
+    setName(trimmed);
+    storePlayerName(trimmed);
     if (!connectionRef.current) {
       setStatus('Connecting to table...');
       return;
@@ -1199,7 +1212,7 @@ export const PokerGamePage = ({
       joinTimeoutRef.current = null;
     }
     joinTimeoutRef.current = window.setTimeout(() => {
-      setStatus('Join timed out. Return to lobby and try another table.');
+      setStatus('Join timed out. Please try again.');
       joinTimeoutRef.current = null;
     }, 7000);
     send({ type: 'join', name: trimmed, buyIn });
@@ -1207,6 +1220,38 @@ export const PokerGamePage = ({
       send({ type: 'requestState' });
     }, 160);
   };
+
+  useEffect(() => {
+    if (autoJoinAttemptedRef.current || !hasReceivedState || seated) {
+      return;
+    }
+    if (!status.startsWith('Connected') || !connectionRef.current) {
+      return;
+    }
+
+    const normalizedName = normalizePlayerName(name);
+    if (!normalizedName) {
+      return;
+    }
+
+    autoJoinAttemptedRef.current = true;
+    storePlayerName(normalizedName);
+    setName(normalizedName);
+    setNameError(null);
+    setStatus('Joining table...');
+    if (joinTimeoutRef.current !== null) {
+      window.clearTimeout(joinTimeoutRef.current);
+      joinTimeoutRef.current = null;
+    }
+    joinTimeoutRef.current = window.setTimeout(() => {
+      setStatus('Join timed out. Please try again.');
+      joinTimeoutRef.current = null;
+    }, 7000);
+    send({ type: 'join', name: normalizedName, buyIn });
+    window.setTimeout(() => {
+      send({ type: 'requestState' });
+    }, 160);
+  }, [buyIn, hasReceivedState, name, seated, status]);
 
   const act = (action: PlayerActionType, amount?: number) => {
     logFirstAction('action', {
@@ -1521,7 +1566,7 @@ export const PokerGamePage = ({
           <button
             type="button"
             onClick={handleExitTable}
-            aria-label="Exit table and return to lobby"
+            aria-label="Exit table and return to game entry"
             style={{
               borderRadius: 12,
               border: '1px solid rgba(251,191,36,0.6)',
