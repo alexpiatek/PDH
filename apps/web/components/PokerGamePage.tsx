@@ -1519,23 +1519,166 @@ export const PokerGamePage = ({
   const tableOuterWidth = `min(${BASE_TABLE_WIDTH}px, calc(100vw - ${isPhone ? 16 : 36}px))`;
   const tableOuterBorder = isPhone ? 6 : isMobile ? 8 : 10;
   const actionButtonBaseStyle: React.CSSProperties = {
-    padding: isPhone ? '12px 14px' : '10px 18px',
+    padding: isPhone ? '12px 14px' : '10px 16px',
     fontWeight: 700,
     minHeight: 44,
+    borderRadius: 12,
+    border: '1px solid rgba(71,85,105,0.9)',
+    background: 'rgba(15,23,42,0.82)',
+    color: '#e2e8f0',
+    fontFamily:
+      'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+    fontSize: isPhone ? 13 : 14,
+    letterSpacing: 0.2,
+    transition: 'all 140ms ease',
+    boxShadow: '0 8px 20px rgba(0,0,0,0.25)',
+    cursor: 'pointer',
   };
   const actionInputStyle: React.CSSProperties = {
     padding: isPhone ? 10 : 8,
-    width: isPhone ? 110 : 120,
+    width: isPhone ? 112 : 124,
     minHeight: 44,
+    borderRadius: 12,
+    border: '1px solid rgba(71,85,105,0.9)',
+    background: 'rgba(2,6,12,0.62)',
+    color: '#f8fafc',
+    fontSize: isPhone ? 13 : 14,
+    fontFamily:
+      'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+    outline: 'none',
   };
-  const showWaitingActionPanel = Boolean(
-    uiTableV2 && hand?.phase === 'betting' && !discardPending && !isMyTurn
+  const minRaiseTo = hand ? (hand.currentBet === 0 ? hand.minRaise : hand.currentBet + hand.minRaise) : null;
+  const maxRaiseTo = you ? you.stack + you.betThisStreet : null;
+  const normalizedBetAmount = Number.isFinite(betAmount) ? Math.max(0, Math.floor(betAmount)) : 0;
+  const canFold = Boolean(isMyTurn);
+  const canCheck = Boolean(isMyTurn && toCall === 0);
+  const canCall = Boolean(isMyTurn && toCall > 0);
+  const canRaise = Boolean(
+    isMyTurn &&
+      hand &&
+      !raiseCapReached &&
+      minRaiseTo !== null &&
+      maxRaiseTo !== null &&
+      normalizedBetAmount >= minRaiseTo &&
+      normalizedBetAmount <= maxRaiseTo &&
+      normalizedBetAmount > hand.currentBet
   );
+  const canAllIn = Boolean(isMyTurn && you && you.stack > 0 && !(raiseCapReached && allInWouldRaise));
+  const raiseActionLabel = hand && hand.currentBet === 0 ? 'Bet' : 'Raise';
+  const raiseDisabledHint = (() => {
+    if (!hand || hand.phase !== 'betting') return 'Betting controls unlock during betting rounds.';
+    if (!isMyTurn) return 'Wait for your turn.';
+    if (raiseCapReached) return 'Raise cap reached on this street.';
+    if (minRaiseTo === null || maxRaiseTo === null) return 'Raise amount unavailable.';
+    if (normalizedBetAmount < minRaiseTo) return `Enter at least ${minRaiseTo}.`;
+    if (normalizedBetAmount > maxRaiseTo) return `Max raise is ${maxRaiseTo} (all-in).`;
+    return 'Raise available.';
+  })();
+  const actionGuideTitle = (() => {
+    if (!hand || hand.phase !== 'betting') return 'Action guide';
+    if (!isMyTurn) return `${actionOnPlayer?.name ?? 'Player'} is acting`;
+    if (toCall === 0) return 'Your turn: no bet to call';
+    if (you && toCall >= you.stack) return 'Your turn: all-in pressure';
+    return 'Your turn: decision point';
+  })();
+  const actionGuideLine = (() => {
+    if (!hand || hand.phase !== 'betting') return 'Wait for betting to start.';
+    if (!isMyTurn) {
+      return toCall === 0
+        ? 'When action reaches you: check or bet.'
+        : `When action reaches you: fold, call ${toCall}, or raise.`;
+    }
+    if (toCall === 0) {
+      return raiseCapReached
+        ? 'Check is available. Raises are capped this street.'
+        : `Check for free, or ${raiseActionLabel.toLowerCase()} at least ${minRaiseTo ?? 0}.`;
+    }
+    return `Call ${toCall} to continue, or fold. ${
+      raiseCapReached ? 'Raises capped this street.' : `Raise to at least ${minRaiseTo ?? 0}.`
+    }`;
+  })();
+  const actionGuideTip = (() => {
+    if (!hand || hand.phase !== 'betting') return 'Tip: watch the timer and act early.';
+    if (!isMyTurn) return `Current bet ${hand.currentBet} · your call ${toCall}.`;
+    if (toCall === 0) return 'Tip: checking keeps the pot stable; betting applies pressure.';
+    if (you && toCall > Math.floor(you.stack * 0.45)) return 'Tip: large bets often justify tighter calls.';
+    return 'Tip: small calls keep your range wider.';
+  })();
+  const disabledActionStyle: React.CSSProperties = {
+    opacity: 0.48,
+    cursor: 'not-allowed',
+    transform: 'none',
+    boxShadow: 'none',
+  };
+  const actionKeycapStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 16,
+    padding: '1px 4px',
+    borderRadius: 5,
+    border: '1px solid rgba(148,163,184,0.7)',
+    background: 'rgba(2,6,12,0.52)',
+    color: '#cbd5e1',
+    fontSize: 10,
+    fontWeight: 800,
+    lineHeight: 1.1,
+  };
   const reactionOnCooldown = reactionCooldownUntil > Date.now();
   const timerTone =
     tableTimerSeconds !== null ? (tableTimerSeconds <= 5 ? '#fda4af' : '#d1fae5') : 'rgba(226,232,240,0.72)';
   const toCallValue = hand?.phase === 'betting' ? String(toCall) : '--';
   const currentBetValue = hand?.phase === 'betting' ? String(hand.currentBet) : '--';
+
+  useEffect(() => {
+    if (!seated || !hand || hand.phase !== 'betting') {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || event.altKey || event.metaKey || event.ctrlKey) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      if (target && (tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target.isContentEditable)) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === 'f' && canFold) {
+        event.preventDefault();
+        act('fold');
+        return;
+      }
+      if (key === 'c') {
+        if (canCheck) {
+          event.preventDefault();
+          act('check');
+          return;
+        }
+        if (canCall) {
+          event.preventDefault();
+          act('call');
+          return;
+        }
+      }
+      if (key === 'r' && canRaise) {
+        event.preventDefault();
+        act(hand.currentBet === 0 ? 'bet' : 'raise', normalizedBetAmount);
+        return;
+      }
+      if (key === 'a' && canAllIn) {
+        event.preventDefault();
+        act('allIn');
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [act, canAllIn, canCall, canCheck, canFold, canRaise, hand, normalizedBetAmount, seated]);
 
   return (
     <div
@@ -1582,6 +1725,32 @@ export const PokerGamePage = ({
           >
             Exit Table
           </button>
+        </div>
+      ) : null}
+      {seated && isMyTurn && hand?.phase === 'betting' ? (
+        <div
+          style={{
+            position: 'fixed',
+            top: isPhone ? 12 : 16,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 95,
+            borderRadius: 999,
+            border: '1px solid rgba(34,197,94,0.78)',
+            background: 'rgba(21,128,61,0.28)',
+            color: '#dcfce7',
+            padding: isPhone ? '6px 12px' : '7px 14px',
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: '0.16em',
+            textTransform: 'uppercase',
+            fontFamily:
+              'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+            boxShadow: '0 0 0 1px rgba(134,239,172,0.25), 0 10px 24px rgba(21,128,61,0.32)',
+            animation: 'turn-pulse 1.2s ease-in-out infinite',
+          }}
+        >
+          Your Turn
         </div>
       ) : null}
       {seated ? (
@@ -2220,8 +2389,16 @@ export const PokerGamePage = ({
                             padding: '6px 10px 6px 60px',
                             borderRadius: 10,
                             background: infoDimmed ? 'rgba(10, 16, 30, 0.6)' : 'rgba(10, 16, 30, 0.85)',
-                            border: winner ? '2px solid #22c55e' : '1px solid #2c3e66',
-                            boxShadow: winner ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
+                            border: isTurn
+                              ? '1px solid rgba(56,189,248,0.95)'
+                              : winner
+                                ? '2px solid #22c55e'
+                                : '1px solid #2c3e66',
+                            boxShadow: isTurn
+                              ? '0 0 0 2px rgba(56,189,248,0.32), 0 0 24px rgba(14,165,233,0.38)'
+                              : winner
+                                ? '0 0 0 2px rgba(34, 197, 94, 0.2)'
+                                : undefined,
                             opacity: infoDimmed ? 0.7 : 1,
                             textAlign: 'center',
                             display: 'flex',
@@ -2251,6 +2428,20 @@ export const PokerGamePage = ({
                               }}
                             >
                               {hasDiscardedThisStreet ? 'discarded ✓' : 'discarding...'}
+                            </div>
+                          ) : null}
+                          {isTurn ? (
+                            <div
+                              style={{
+                                marginTop: 4,
+                                fontSize: 10,
+                                letterSpacing: 0.3,
+                                color: '#bae6fd',
+                                textTransform: 'uppercase',
+                                animation: 'turn-pulse 1.2s ease-in-out infinite',
+                              }}
+                            >
+                              acting now
                             </div>
                           ) : null}
                         </div>
@@ -2350,8 +2541,16 @@ export const PokerGamePage = ({
                         padding: '6px 10px 6px 60px',
                         borderRadius: 10,
                         background: youInfoDimmed ? 'rgba(10, 16, 30, 0.6)' : 'rgba(10, 16, 30, 0.85)',
-                        border: winnersById.has(you.id) ? '2px solid #22c55e' : '1px solid #2c3e66',
-                        boxShadow: winnersById.has(you.id) ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined,
+                        border: isMyTurn
+                          ? '1px solid rgba(56,189,248,0.95)'
+                          : winnersById.has(you.id)
+                            ? '2px solid #22c55e'
+                            : '1px solid #2c3e66',
+                        boxShadow: isMyTurn
+                          ? '0 0 0 2px rgba(56,189,248,0.34), 0 0 26px rgba(14,165,233,0.38)'
+                          : winnersById.has(you.id)
+                            ? '0 0 0 2px rgba(34, 197, 94, 0.2)'
+                            : undefined,
                         textAlign: 'center',
                         opacity: youInfoDimmed ? 0.7 : 1,
                         position: 'relative',
@@ -2381,6 +2580,20 @@ export const PokerGamePage = ({
                           {you.stack}
                         </span>
                       </div>
+                      {isMyTurn ? (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontSize: 10,
+                            letterSpacing: 0.3,
+                            color: '#bae6fd',
+                            textTransform: 'uppercase',
+                            animation: 'turn-pulse 1.2s ease-in-out infinite',
+                          }}
+                        >
+                          act now
+                        </div>
+                      ) : null}
                     </div>
                     {renderReactionBadge(you.id)}
                     {renderActionBadge(actionByPlayerId.get(you.id))}
@@ -2661,55 +2874,212 @@ export const PokerGamePage = ({
               ) : null}
               {discardPending ? (
                 <div />
-              ) : showWaitingActionPanel ? (
+              ) : (
                 <div
                   style={{
                     width: '100%',
                     borderRadius: 12,
-                    border: '1px solid rgba(56,189,248,0.45)',
-                    background: 'rgba(8,15,24,0.72)',
+                    border: isMyTurn
+                      ? '1px solid rgba(56,189,248,0.76)'
+                      : '1px solid rgba(56,189,248,0.45)',
+                    background: isMyTurn ? 'rgba(8,15,24,0.84)' : 'rgba(8,15,24,0.72)',
                     padding: isPhone ? '10px 12px' : '12px 14px',
-                    fontSize: 13,
-                    color: 'rgba(226,232,240,0.95)',
-                    textAlign: isPhone ? 'center' : 'left',
-                    fontFamily:
-                      'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                    boxShadow: isMyTurn ? '0 0 0 1px rgba(56,189,248,0.18), 0 14px 28px rgba(2,132,199,0.16)' : undefined,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
                   }}
                 >
-                  {actionOnPlayer?.name ?? 'Player'} is acting · Current bet {currentBetValue} · Your call{' '}
-                  {toCallValue}
-                </div>
-              ) : (
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', justifyContent: isMobile ? 'center' : 'flex-start', width: '100%' }}>
-                  <button disabled={!isMyTurn} onClick={() => act('fold')} style={actionButtonBaseStyle}>
-                    Fold
-                  </button>
-                  <button disabled={!isMyTurn || toCall !== 0} onClick={() => act('check')} style={actionButtonBaseStyle}>
-                    Check
-                  </button>
-                  <button disabled={!isMyTurn || toCall === 0} onClick={() => act('call')} style={actionButtonBaseStyle}>
-                    Call {toCall}
-                  </button>
-                  <input
-                    type="number"
-                    value={betAmount}
-                    onChange={(e) => setBetAmount(Number(e.target.value))}
-                    style={actionInputStyle}
-                  />
-                  <button
-                    disabled={!isMyTurn || (hand && raiseCapReached)}
-                    onClick={() => act(hand && hand.currentBet === 0 ? 'bet' : 'raise', betAmount)}
-                    style={actionButtonBaseStyle}
+                  <div
+                    style={{
+                      borderRadius: 10,
+                      border: '1px solid rgba(71,85,105,0.7)',
+                      background: 'rgba(2,6,12,0.55)',
+                      padding: '8px 10px',
+                    }}
                   >
-                    {hand && hand.currentBet === 0 ? 'Bet' : 'Raise'} to {betAmount}
-                  </button>
-                  <button
-                    disabled={!isMyTurn || (raiseCapReached && allInWouldRaise)}
-                    onClick={() => act('allIn')}
-                    style={{ ...actionButtonBaseStyle, background: '#ef4444', color: 'white' }}
+                    <div
+                      style={{
+                        fontSize: 11,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.13em',
+                        color: isMyTurn ? '#7dd3fc' : 'rgba(148,163,184,0.92)',
+                        fontFamily:
+                          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                      }}
+                    >
+                      Action Guide
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 3,
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: '#f8fafc',
+                        fontFamily:
+                          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                      }}
+                    >
+                      {actionGuideTitle}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 2,
+                        fontSize: 12,
+                        color: 'rgba(226,232,240,0.92)',
+                        fontFamily:
+                          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                      }}
+                    >
+                      {actionGuideLine}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 3,
+                        fontSize: 11,
+                        color: 'rgba(186,230,253,0.9)',
+                        fontFamily:
+                          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                      }}
+                    >
+                      {actionGuideTip}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      justifyContent: isMobile ? 'center' : 'flex-start',
+                      width: '100%',
+                    }}
                   >
-                    All-in {you ? you.stack + you.betThisStreet : ''}
-                  </button>
+                    <button
+                      type="button"
+                      disabled={!canFold}
+                      onClick={() => act('fold')}
+                      style={{
+                        ...actionButtonBaseStyle,
+                        border: '1px solid rgba(248,113,113,0.7)',
+                        background: 'rgba(127,29,29,0.42)',
+                        color: '#fee2e2',
+                        ...(canFold ? null : disabledActionStyle),
+                      }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        Fold
+                        <span style={actionKeycapStyle}>F</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canCheck}
+                      onClick={() => act('check')}
+                      style={{
+                        ...actionButtonBaseStyle,
+                        border: '1px solid rgba(148,163,184,0.75)',
+                        background: 'rgba(30,41,59,0.7)',
+                        color: '#e2e8f0',
+                        ...(canCheck ? null : disabledActionStyle),
+                      }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        Check
+                        <span style={actionKeycapStyle}>C</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canCall}
+                      onClick={() => act('call')}
+                      style={{
+                        ...actionButtonBaseStyle,
+                        border: '1px solid rgba(163,230,53,0.78)',
+                        background: 'rgba(54,83,20,0.44)',
+                        color: '#ecfccb',
+                        ...(canCall ? null : disabledActionStyle),
+                      }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        Call {toCall}
+                        <span style={actionKeycapStyle}>C</span>
+                      </span>
+                    </button>
+                    <input
+                      type="number"
+                      value={betAmount}
+                      min={minRaiseTo ?? undefined}
+                      max={maxRaiseTo ?? undefined}
+                      step={1}
+                      disabled={!isMyTurn || raiseCapReached}
+                      onChange={(e) => {
+                        const next = Number.parseInt(e.target.value, 10);
+                        setBetAmount(Number.isFinite(next) ? next : 0);
+                      }}
+                      onBlur={() => {
+                        if (minRaiseTo === null || maxRaiseTo === null) {
+                          return;
+                        }
+                        setBetAmount((previous) => {
+                          const normalized = Number.isFinite(previous) ? Math.floor(previous) : minRaiseTo;
+                          return Math.min(maxRaiseTo, Math.max(minRaiseTo, normalized));
+                        });
+                      }}
+                      style={{
+                        ...actionInputStyle,
+                        ...(isMyTurn && !raiseCapReached ? null : disabledActionStyle),
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={!canRaise}
+                      onClick={() => act(hand && hand.currentBet === 0 ? 'bet' : 'raise', normalizedBetAmount)}
+                      style={{
+                        ...actionButtonBaseStyle,
+                        border: '1px solid rgba(56,189,248,0.8)',
+                        background: 'rgba(14,116,144,0.36)',
+                        color: '#e0f2fe',
+                        ...(canRaise ? null : disabledActionStyle),
+                      }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        {raiseActionLabel} to {normalizedBetAmount}
+                        <span style={actionKeycapStyle}>R</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canAllIn}
+                      onClick={() => act('allIn')}
+                      style={{
+                        ...actionButtonBaseStyle,
+                        border: '1px solid rgba(248,113,113,0.92)',
+                        background: 'rgba(185,28,28,0.68)',
+                        color: '#fff1f2',
+                        ...(canAllIn ? null : disabledActionStyle),
+                      }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        All-in {you ? you.stack + you.betThisStreet : ''}
+                        <span style={actionKeycapStyle}>A</span>
+                      </span>
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: 'rgba(203,213,225,0.9)',
+                      fontFamily:
+                        'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                    }}
+                  >
+                    {minRaiseTo !== null && maxRaiseTo !== null
+                      ? `Raise range ${minRaiseTo} - ${maxRaiseTo}. ${raiseDisabledHint}`
+                      : raiseDisabledHint}
+                  </div>
                 </div>
               )}
             </div>
@@ -2846,6 +3216,15 @@ export const PokerGamePage = ({
           }
           40% {
             opacity: 1;
+          }
+        }
+        @keyframes turn-pulse {
+          0%,
+          100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.7;
           }
         }
       `}</style>
@@ -3045,7 +3424,6 @@ const CardView = ({
               return;
             }
             if (typeof window !== 'undefined') {
-              // eslint-disable-next-line no-console
               if (!hasWarnedMissingCards) {
                 console.warn(`Card assets missing (falling back to text render): ${imageUrl}`);
                 hasWarnedMissingCards = true;
