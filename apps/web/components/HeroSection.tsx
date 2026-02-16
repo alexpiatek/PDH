@@ -109,7 +109,7 @@ export default function HeroSection() {
             </a>
           </div>
           <div className="mt-4 text-xs uppercase tracking-[0.18em] text-zinc-400">
-            Fast hands. Private pressure.
+            Fast hands. High stakes.
           </div>
         </div>
       </div>
