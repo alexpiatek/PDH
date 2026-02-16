@@ -103,7 +103,11 @@ main() {
   echo "Installing dependencies (including dev deps for Next.js typecheck)..."
   (
     cd "$ROOT_DIR"
-    ./scripts/run-pnpm.sh install --frozen-lockfile --prod=false
+    if git ls-files --error-unmatch pnpm-lock.yaml >/dev/null 2>&1; then
+      ./scripts/run-pnpm.sh install --frozen-lockfile --prod=false
+    else
+      ./scripts/run-pnpm.sh install --no-frozen-lockfile --prod=false
+    fi
   )
 
   echo "Preflight passed. Building apps/web..."
