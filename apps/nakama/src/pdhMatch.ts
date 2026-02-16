@@ -15,6 +15,7 @@ export const DEFAULT_TABLE_ID = 'main';
 export const DEFAULT_MATCH_MODULE = 'pdh';
 export const PDH_RPC_ENSURE_MATCH = 'pdh_ensure_match';
 export const PDH_RPC_GET_REPLAY = 'pdh_debug_get_replay';
+export const PDH_RPC_TERMINATE_MATCH = 'pdh_admin_terminate_match';
 const REPLAY_MAX_EVENTS = 500;
 const REPLAY_DEFAULT_LIMIT = 50;
 const REPLAY_MAX_LIMIT = 500;
@@ -57,6 +58,8 @@ interface MatchState {
   lastSeqByPlayer: Record<string, number>;
   replay: ReplayState;
   lastAutoDiscardMs: number;
+  terminateRequested: boolean;
+  terminateReason: string | null;
 }
 
 interface EnsurePdhMatchInput {
@@ -76,6 +79,15 @@ interface GetReplayInput {
   tableId?: string;
   limit?: number;
 }
+
+interface TerminateMatchInput {
+  matchId: string;
+  reason?: string;
+}
+
+type NakamaWithMatchSignal = nkruntime.Nakama & {
+  matchSignal?: (matchId: string, data: string) => string | void;
+};
 
 function readMatchId(ctx: unknown): string | null {
   const c = (ctx ?? {}) as { matchId?: unknown; match_id?: unknown };
@@ -415,6 +427,55 @@ export function rpcGetPdhReplay(
   });
 }
 
+export function rpcTerminatePdhMatch(
+  ctx: unknown,
+  logger: nkruntime.Logger,
+  nk: nkruntime.Nakama,
+  payload: string | undefined
+) {
+  if (!payload || !payload.trim()) {
+    throw new Error('matchId is required');
+  }
+
+  let input: TerminateMatchInput;
+  try {
+    const parsed = JSON.parse(payload) as TerminateMatchInput | string;
+    input = typeof parsed === 'string' ? (JSON.parse(parsed) as TerminateMatchInput) : parsed;
+  } catch (err: any) {
+    throw new Error(`invalid payload JSON: ${err?.message ?? 'parse failure'}`);
+  }
+
+  const matchId = (input?.matchId ?? '').trim();
+  if (!matchId) {
+    throw new Error('matchId is required');
+  }
+  const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+
+  const runtimeNakama = nk as NakamaWithMatchSignal;
+  if (typeof runtimeNakama.matchSignal !== 'function') {
+    throw new Error('matchSignal API is unavailable in this runtime.');
+  }
+
+  const response = runtimeNakama.matchSignal(
+    matchId,
+    JSON.stringify({
+      type: 'admin:terminate',
+      reason: reason || 'admin rpc',
+    })
+  );
+
+  logStructured(logger, 'warn', 'rpc.admin.terminate_match', {
+    matchId,
+    reason: reason || 'admin rpc',
+  });
+
+  return JSON.stringify({
+    matchId,
+    signalled: true,
+    response: typeof response === 'string' ? response : null,
+  });
+}
+
 function matchInit(ctx, logger, nk, params) {
   const tableId = (params?.tableId as string | undefined) ?? DEFAULT_TABLE_ID;
   const matchId = readMatchId(ctx) ?? `pdh:${tableId}`;
@@ -426,6 +487,8 @@ function matchInit(ctx, logger, nk, params) {
     lastSeqByPlayer: {},
     replay: { maxEvents: REPLAY_MAX_EVENTS, events: [] },
     lastAutoDiscardMs: 0,
+    terminateRequested: false,
+    terminateReason: null,
   };
   replayByMatch.set(matchId, state.replay.events);
   logStructured(logger, 'info', 'match.init', {
@@ -492,6 +555,16 @@ function matchLeave(ctx, logger, nk, dispatcher, tick, state, presences) {
 }
 
 function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
+  if (state.terminateRequested) {
+    logStructured(logger, 'warn', 'match.terminate_requested', {
+      matchId: state.matchId,
+      tableId: state.table.id,
+      tick,
+      reason: state.terminateReason ?? 'unspecified',
+    });
+    return null;
+  }
+
   const table = hydrateTable(state.table);
   let shouldBroadcast = false;
 
@@ -726,6 +799,20 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
     shouldBroadcast = true;
   }
 
+  const autoAction = table.autoAction(now);
+  if (autoAction) {
+    const hand = table.state.hand;
+    logStructured(logger, 'info', 'match.auto_action', {
+      matchId: state.matchId,
+      tableId: table.state.id,
+      tick,
+      handId: hand?.handId ?? null,
+      action: autoAction.action,
+      userId: autoAction.playerId,
+    });
+    shouldBroadcast = true;
+  }
+
   if (!state.lastAutoDiscardMs) state.lastAutoDiscardMs = now;
   if (now - state.lastAutoDiscardMs >= AUTO_DISCARD_INTERVAL_MS) {
     const before = JSON.stringify(table.state.hand?.discardPending ?? []);
@@ -772,6 +859,22 @@ function matchTerminate(ctx, logger, nk, dispatcher, tick, state, graceSeconds) 
 function matchSignal(ctx, logger, nk, dispatcher, tick, state, data) {
   try {
     const parsed = JSON.parse(data ?? '{}') as { type?: string; limit?: number };
+    if (parsed.type === 'admin:terminate') {
+      const reason =
+        parsed && typeof (parsed as { reason?: unknown }).reason === 'string'
+          ? String((parsed as { reason?: string }).reason)
+          : 'admin signal';
+      state.terminateRequested = true;
+      state.terminateReason = reason;
+      logStructured(logger, 'warn', 'match.signal.terminate', {
+        matchId: state.matchId,
+        tableId: state.table.id,
+        tick,
+        reason,
+      });
+      return { state, data: JSON.stringify({ type: 'ok', terminateRequested: true }) };
+    }
+
     if (parsed.type === 'replay:get') {
       const limit = replayLimit(parsed.limit);
       const events = state.replay.events.slice(-limit);
@@ -825,3 +928,4 @@ export const pdhMatchHandler = {
 (globalThis as any).ensureDefaultMatchAfterAuthenticate = ensureDefaultMatchAfterAuthenticate;
 (globalThis as any).rpcEnsurePdhMatch = rpcEnsurePdhMatch;
 (globalThis as any).rpcGetPdhReplay = rpcGetPdhReplay;
+(globalThis as any).rpcTerminatePdhMatch = rpcTerminatePdhMatch;

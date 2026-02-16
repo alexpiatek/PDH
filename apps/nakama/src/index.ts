@@ -3,10 +3,12 @@ import {
   DEFAULT_MATCH_MODULE,
   PDH_RPC_GET_REPLAY,
   PDH_RPC_ENSURE_MATCH,
+  PDH_RPC_TERMINATE_MATCH,
   ensureDefaultMatchAfterAuthenticate,
   pdhMatchHandler,
   rpcGetPdhReplay,
   rpcEnsurePdhMatch,
+  rpcTerminatePdhMatch,
 } from './pdhMatch';
 import {
   SMOKE_MATCH_MODULE,
@@ -37,6 +39,7 @@ const InitModule: nkruntime.InitModule = (ctx, logger, nk, initializer) => {
   initializer.registerMatch(DEFAULT_MATCH_MODULE, pdhMatchHandler);
   initializer.registerRpc(PDH_RPC_ENSURE_MATCH, rpcEnsurePdhMatch);
   initializer.registerRpc(PDH_RPC_GET_REPLAY, rpcGetPdhReplay);
+  initializer.registerRpc(PDH_RPC_TERMINATE_MATCH, rpcTerminatePdhMatch);
   initializer.registerMatch(SMOKE_MATCH_MODULE, smokeMatchHandler);
   initializer.registerRpc(SMOKE_RPC_ENSURE_MATCH, rpcEnsureSmokeMatch);
   initializer.registerMatch(POKER_TABLE_MATCH_MODULE, pokerTableMatchHandler);

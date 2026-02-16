@@ -54,6 +54,7 @@ export interface HandState {
   minRaise: number;
   raisesThisStreet: number;
   actionOnSeat: number;
+  actionDeadline?: number | null;
   lastAggressorSeat: number | null;
   pendingNextPhaseAt?: number | null;
   discardPending: string[];
@@ -72,6 +73,7 @@ export interface AuditHandLog {
 export interface TableConfig {
   smallBlind: number;
   bigBlind: number;
+  actionTimeoutMs: number | null;
   discardTimeoutMs: number | null;
 }
 

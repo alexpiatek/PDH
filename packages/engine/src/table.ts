@@ -20,6 +20,7 @@ import {
 const DEFAULT_CONFIG: TableConfig = {
   smallBlind: 400,
   bigBlind: 800,
+  actionTimeoutMs: 30_000,
   discardTimeoutMs: null,
 };
 
@@ -87,6 +88,8 @@ function resetStreetState(hand: HandState, nextStreet: Street, table: TableState
   hand.raisesThisStreet = 0;
   hand.lastAggressorSeat = null;
   hand.pendingNextPhaseAt = null;
+  hand.actionDeadline =
+    table.config.actionTimeoutMs === null ? null : nowTs() + table.config.actionTimeoutMs;
   for (const p of hand.players) {
     p.betThisStreet = 0;
     p.hasActed = p.status !== 'active' ? true : false;
@@ -188,6 +191,7 @@ export class PokerTable {
       minRaise: this.state.config.bigBlind,
       raisesThisStreet: 0,
       actionOnSeat: 0,
+      actionDeadline: null,
       lastAggressorSeat: null,
       pendingNextPhaseAt: null,
       discardPending: [],
@@ -199,6 +203,8 @@ export class PokerTable {
     // Post blinds and set action order
     this.postBlinds(hand);
     hand.actionOnSeat = this.firstToActPreflop(hand);
+    hand.actionDeadline =
+      this.state.config.actionTimeoutMs === null ? null : nowTs() + this.state.config.actionTimeoutMs;
     this.state.hand = hand;
     this.state.buttonSeat = button;
     logPush(hand.log, 'Hand started');
@@ -242,6 +248,10 @@ export class PokerTable {
         this.queueBettingRoundAdvance(hand);
       } else if (hand.actionOnSeat === player.seat) {
         hand.actionOnSeat = this.nextToAct(hand);
+        hand.actionDeadline =
+          this.state.config.actionTimeoutMs === null
+            ? null
+            : nowTs() + this.state.config.actionTimeoutMs;
       }
     }
   }
@@ -387,6 +397,10 @@ export class PokerTable {
       this.queueBettingRoundAdvance(hand);
     } else {
       hand.actionOnSeat = this.nextToAct(hand);
+      hand.actionDeadline =
+        this.state.config.actionTimeoutMs === null
+          ? null
+          : nowTs() + this.state.config.actionTimeoutMs;
     }
   }
 
@@ -394,6 +408,7 @@ export class PokerTable {
     if (hand.pendingNextPhaseAt) return;
     hand.pendingNextPhaseAt = nowTs() + delayMs;
     hand.actionOnSeat = -1;
+    hand.actionDeadline = null;
   }
 
   advancePendingPhase(now: number = nowTs()) {
@@ -483,6 +498,7 @@ export class PokerTable {
     const hand = this.state.hand;
     if (!hand) return;
     hand.pendingNextPhaseAt = null;
+    hand.actionDeadline = null;
     // Move to discard or next street/showdown
     if (hand.street === 'preflop') {
       this.revealFlop(hand);
@@ -521,6 +537,7 @@ export class PokerTable {
     const hand = this.state.hand;
     if (!hand) return;
     hand.phase = 'discard';
+    hand.actionDeadline = null;
     hand.discardPending = activePlayers(hand)
       .filter((p) => p.holeCards.length > 2)
       .map((p) => p.id);
@@ -578,6 +595,33 @@ export class PokerTable {
     this.completeDiscardPhase();
   }
 
+  autoAction(now: number = nowTs()) {
+    const hand = this.state.hand;
+    if (!hand) return null;
+    if (hand.phase !== 'betting') return null;
+    if (hand.pendingNextPhaseAt) return null;
+    if (hand.actionDeadline === null || hand.actionDeadline === undefined) return null;
+    if (now < hand.actionDeadline) return null;
+
+    const actor = hand.players.find((p) => p.seat === hand.actionOnSeat && p.status === 'active');
+    if (!actor) {
+      hand.actionDeadline =
+        this.state.config.actionTimeoutMs === null ? null : now + this.state.config.actionTimeoutMs;
+      return null;
+    }
+
+    const toCall = hand.currentBet - actor.betThisStreet;
+    if (toCall > 0) {
+      this.applyAction(actor.id, { type: 'fold' });
+      logPush(hand.log, `${actor.name} auto-folded (timeout)`);
+      return { playerId: actor.id, action: 'fold' as const };
+    }
+
+    this.applyAction(actor.id, { type: 'check' });
+    logPush(hand.log, `${actor.name} auto-checked (timeout)`);
+    return { playerId: actor.id, action: 'check' as const };
+  }
+
   private completeDiscardPhase() {
     const hand = this.state.hand;
     if (!hand) return;
@@ -609,6 +653,7 @@ export class PokerTable {
     const hand = this.state.hand;
     if (!hand) return;
     hand.phase = 'showdown';
+    hand.actionDeadline = null;
     hand.showdownWinners = [];
     const totalPot = hand.players.reduce((sum, p) => sum + p.totalCommitted, 0);
     const cardLabel = (card: Card) => `${card.rank}${card.suit}`;

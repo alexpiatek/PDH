@@ -133,4 +133,23 @@ describe('betting rules', () => {
     expect(byPlayer.get('p1')).toBe(4000);
     expect(byPlayer.get('p2')).toBe(2000);
   });
+
+  it('auto-folds a timed-out actor during betting', () => {
+    const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800, actionTimeoutMs: 10_000 });
+    table.seatPlayer(0, { id: 'p0', name: 'UTG', stack: 5000 });
+    table.seatPlayer(1, { id: 'p1', name: 'SB', stack: 5000 });
+    table.seatPlayer(2, { id: 'p2', name: 'BB', stack: 5000 });
+    table.startHand(rng);
+
+    const hand = table.state.hand!;
+    const actor = hand.players.find((p) => p.seat === hand.actionOnSeat)!;
+    const now = Date.now();
+    hand.actionDeadline = now - 1;
+
+    const result = table.autoAction(now);
+
+    expect(result).toEqual({ playerId: actor.id, action: 'fold' });
+    expect(actor.status).toBe('folded');
+    expect(hand.log.some((entry) => entry.message.includes('auto-folded (timeout)'))).toBe(true);
+  });
 });

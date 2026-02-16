@@ -4,6 +4,7 @@ import {
   pdhMatchHandler,
   rpcEnsurePdhMatch,
   rpcGetPdhReplay,
+  rpcTerminatePdhMatch,
 } from '../src/pdhMatch';
 
 const logger = {
@@ -17,6 +18,7 @@ function makeNakamaMock() {
     binaryToString: (data: Uint8Array) => new TextDecoder().decode(data),
     matchCreate: vi.fn(() => 'created-match-id'),
     matchList: vi.fn(() => []),
+    matchSignal: vi.fn(() => JSON.stringify({ ok: true })),
   };
 }
 
@@ -305,5 +307,53 @@ describe('pdhMatchHandler', () => {
     expect(replay.matchId).toBe(state.matchId);
     expect(replay.count).toBe(1);
     expect(replay.events[0].outcome).toBe('rejected');
+  });
+
+  it('auto-acts timed-out betting turns in match loop', () => {
+    const { nk, dispatcher, state } = setupThreePlayerMatch();
+    const hand = state.table.hand;
+    const actorId = hand.players.find((p: any) => p.seat === hand.actionOnSeat)?.id;
+    expect(actorId).toBeTruthy();
+    hand.actionDeadline = Date.now() - 1;
+
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, []);
+
+    const actor = state.table.hand.players.find((p: any) => p.id === actorId);
+    expect(actor.status).toBe('folded');
+    expect(state.table.hand.log.some((entry: any) => entry.message.includes('auto-folded (timeout)'))).toBe(
+      true
+    );
+  });
+
+  it('signals and terminates a match via admin RPC/signal path', () => {
+    const nk = makeNakamaMock();
+    const rpcPayload = rpcTerminatePdhMatch(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ matchId: 'match-123', reason: 'stuck table' })
+    );
+    const parsed = JSON.parse(rpcPayload);
+    expect(parsed.matchId).toBe('match-123');
+    expect(parsed.signalled).toBe(true);
+    expect(nk.matchSignal).toHaveBeenCalledWith(
+      'match-123',
+      expect.stringContaining('"type":"admin:terminate"')
+    );
+
+    const { dispatcher, state } = setupThreePlayerMatch();
+    pdhMatchHandler.matchSignal(
+      {},
+      logger,
+      nk as any,
+      dispatcher as any,
+      10,
+      state,
+      JSON.stringify({ type: 'admin:terminate', reason: 'test' })
+    );
+
+    expect(state.terminateRequested).toBe(true);
+    const loopResult = pdhMatchHandler.matchLoop({}, logger, nk as any, dispatcher as any, 11, state, []);
+    expect(loopResult).toBeNull();
   });
 });

@@ -68,6 +68,7 @@ declare module '@heroiclabs/nakama-runtime' {
       query?: string
     ): MatchListEntry[];
     matchGet?(matchId: string): MatchListEntry | null;
+    matchSignal?(matchId: string, data: string): string | void;
     storageRead?(objects: StorageReadRequest[]): StorageObject[];
     storageWrite?(objects: StorageWriteRequest[]): StorageObject[];
   }
