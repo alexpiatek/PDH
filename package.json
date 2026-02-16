@@ -23,6 +23,7 @@
     "changelog:release": "./scripts/changelog-release.sh",
     "db:migrate": "./scripts/db-migrate.sh",
     "db:seed": "./scripts/db-seed.sh",
+    "db:flag": "./scripts/feature-flag.sh",
     "test": "./scripts/test.sh",
     "test:integration": "./scripts/integration-test.sh",
     "test:e2e": "./scripts/e2e-test.sh"

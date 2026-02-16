@@ -1,5 +1,6 @@
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
 import { PokerTable, type TableState } from '@pdh/engine';
+import { TABLE_CHAT_MAX_LENGTH } from '@pdh/protocol';
 import {
   MatchOpCode,
   isMutatingClientMessage,
@@ -11,6 +12,8 @@ import {
 } from './protocol';
 
 const AUTO_DISCARD_INTERVAL_MS = 500;
+const REACTION_COOLDOWN_MS = 2500;
+const CHAT_COOLDOWN_MS = 800;
 export const DEFAULT_TABLE_ID = 'main';
 export const DEFAULT_MATCH_MODULE = 'pdh';
 export const PDH_RPC_ENSURE_MATCH = 'pdh_ensure_match';
@@ -56,6 +59,8 @@ interface MatchState {
   table: TableState;
   presences: Record<string, nkruntime.Presence>;
   lastSeqByPlayer: Record<string, number>;
+  lastReactionAtByPlayer: Record<string, number>;
+  lastChatAtByPlayer: Record<string, number>;
   replay: ReplayState;
   lastAutoDiscardMs: number;
   terminateRequested: boolean;
@@ -175,6 +180,24 @@ function sendToPresence(
   );
 }
 
+function broadcastServerMessage(
+  dispatcher: nkruntime.MatchDispatcher,
+  state: MatchState,
+  message: ServerMessage
+) {
+  const presences = Object.values(state.presences);
+  if (!presences.length) {
+    return;
+  }
+  dispatcher.broadcastMessage(
+    MatchOpCode.ServerMessage,
+    JSON.stringify(withProtocolVersion(message)),
+    presences,
+    null,
+    true
+  );
+}
+
 function broadcastState(dispatcher: nkruntime.MatchDispatcher, state: MatchState) {
   const table = hydrateTable(state.table);
   const presences = Object.values(state.presences);
@@ -261,6 +284,22 @@ function ensureCanAdvanceHand(table: PokerTable, playerId: string) {
   if (hand && hand.phase !== 'showdown') {
     throw new Error('Hand not complete');
   }
+}
+
+function reserveReactionWindow(state: MatchState, playerId: string, nowMs: number) {
+  const last = state.lastReactionAtByPlayer[playerId] ?? 0;
+  if (nowMs - last < REACTION_COOLDOWN_MS) {
+    throw new Error('Reaction cooldown active');
+  }
+  state.lastReactionAtByPlayer[playerId] = nowMs;
+}
+
+function reserveChatWindow(state: MatchState, playerId: string, nowMs: number) {
+  const last = state.lastChatAtByPlayer[playerId] ?? 0;
+  if (nowMs - last < CHAT_COOLDOWN_MS) {
+    throw new Error('Chat cooldown active');
+  }
+  state.lastChatAtByPlayer[playerId] = nowMs;
 }
 
 function reserveSequence(state: MatchState, playerId: string, message: MutatingClientMessage) {
@@ -485,6 +524,8 @@ function matchInit(ctx, logger, nk, params) {
     table: table.state,
     presences: {},
     lastSeqByPlayer: {},
+    lastReactionAtByPlayer: {},
+    lastChatAtByPlayer: {},
     replay: { maxEvents: REPLAY_MAX_EVENTS, events: [] },
     lastAutoDiscardMs: 0,
     terminateRequested: false,
@@ -540,6 +581,8 @@ function matchLeave(ctx, logger, nk, dispatcher, tick, state, presences) {
   const table = hydrateTable(state.table);
   for (const presence of presences) {
     delete state.presences[presence.userId];
+    delete state.lastReactionAtByPlayer[presence.userId];
+    delete state.lastChatAtByPlayer[presence.userId];
     table.handleDisconnect(presence.userId);
     logStructured(logger, 'info', 'match.leave', {
       matchId: state.matchId,
@@ -681,6 +724,48 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
           ensureCanAdvanceHand(table, presence.userId);
           table.advanceToNextHand();
           shouldBroadcast = true;
+          break;
+        }
+        case 'reaction': {
+          ensurePlayerSeated(table, presence.userId);
+          const reactionTs = Date.now();
+          reserveReactionWindow(state, presence.userId, reactionTs);
+          broadcastServerMessage(dispatcher, state, {
+            type: 'reaction',
+            playerId: presence.userId,
+            emoji: data.emoji,
+            ts: reactionTs,
+          });
+          logStructured(logger, 'info', 'match.reaction', {
+            matchId: state.matchId,
+            tableId: table.state.id,
+            tick,
+            userId: presence.userId,
+            emoji: data.emoji,
+          });
+          break;
+        }
+        case 'chat': {
+          ensurePlayerSeated(table, presence.userId);
+          const text = data.message.trim().replace(/\s+/g, ' ').slice(0, TABLE_CHAT_MAX_LENGTH);
+          if (!text) {
+            throw new Error('Chat message cannot be empty');
+          }
+          const chatTs = Date.now();
+          reserveChatWindow(state, presence.userId, chatTs);
+          broadcastServerMessage(dispatcher, state, {
+            type: 'chat',
+            playerId: presence.userId,
+            message: text,
+            ts: chatTs,
+          });
+          logStructured(logger, 'info', 'match.chat', {
+            matchId: state.matchId,
+            tableId: table.state.id,
+            tick,
+            userId: presence.userId,
+            messageLength: text.length,
+          });
           break;
         }
         case 'requestState': {

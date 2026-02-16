@@ -9,11 +9,20 @@ import {
   createLobbyTable,
   ensureNakamaReady,
   formatNakamaError,
+  listLobbyTables,
+  type ListTablesRpcTable,
   quickPlayLobby,
   resolveLobbyCode,
 } from '../lib/nakamaClient';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { useFeatureFlags } from '../lib/featureFlags';
+import { buildQuickPlayRequest, recordQuickPlayResolved, recordTableJoin } from '../lib/quickPlayProfile';
+import {
+  getTrackedFriends,
+  removeTrackedFriend,
+  type TrackedLobbyFriend,
+  upsertTrackedFriend,
+} from '../lib/friendsLobby';
 import { getRecentTables, type RecentLobbyTable, upsertRecentTable } from '../lib/recentTables';
 
 type BootStatus = 'connecting' | 'ready' | 'error';
@@ -23,11 +32,31 @@ interface CreateResult {
   matchId: string;
 }
 
+interface FriendLobbyPresence {
+  friend: TrackedLobbyFriend;
+  table: ListTablesRpcTable | null;
+}
+
 const MAX_PLAYERS_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9];
+const BUY_IN_FORMATTER = new Intl.NumberFormat('en-US');
+
+function formatSkillTierLabel(skillTier: string | undefined): string {
+  if (skillTier === 'newcomer') {
+    return 'Newcomer';
+  }
+  if (skillTier === 'regular') {
+    return 'Regular';
+  }
+  if (skillTier === 'pro') {
+    return 'Pro';
+  }
+  return 'Casual';
+}
+
 const PlayLobbyPage: NextPage = () => {
   const router = useRouter();
   const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { uiQuickPlay } = useFeatureFlags();
+  const { uiQuickPlay, socialFriendsLobby } = useFeatureFlags();
 
   const [bootStatus, setBootStatus] = useState<BootStatus>('connecting');
   const [bootError, setBootError] = useState('');
@@ -49,9 +78,17 @@ const PlayLobbyPage: NextPage = () => {
   const [copyToast, setCopyToast] = useState('');
 
   const [recentTables, setRecentTables] = useState<RecentLobbyTable[]>([]);
+  const [activeTables, setActiveTables] = useState<ListTablesRpcTable[]>([]);
+  const [activeTablesLoading, setActiveTablesLoading] = useState(false);
+  const [activeTablesError, setActiveTablesError] = useState('');
+  const [trackedFriends, setTrackedFriends] = useState<TrackedLobbyFriend[]>([]);
+  const [friendAliasInput, setFriendAliasInput] = useState('');
+  const [friendCodeInput, setFriendCodeInput] = useState('');
+  const [friendFormError, setFriendFormError] = useState('');
 
   useEffect(() => {
     setRecentTables(getRecentTables());
+    setTrackedFriends(getTrackedFriends());
 
     let isCancelled = false;
     setBootStatus('connecting');
@@ -102,10 +139,55 @@ const PlayLobbyPage: NextPage = () => {
   const canQuickPlay = useMemo(() => {
     return bootStatus === 'ready' && !quickPlayLoading && !createLoading && !joinLoading;
   }, [bootStatus, quickPlayLoading, createLoading, joinLoading]);
+  const activeTablesByCode = useMemo(() => {
+    const map = new Map<string, ListTablesRpcTable>();
+    for (const table of activeTables) {
+      map.set(table.code, table);
+    }
+    return map;
+  }, [activeTables]);
+  const friendPresence = useMemo<FriendLobbyPresence[]>(() => {
+    return trackedFriends.map((friend) => {
+      return {
+        friend,
+        table: activeTablesByCode.get(friend.tableCode) ?? null,
+      };
+    });
+  }, [trackedFriends, activeTablesByCode]);
+  const onlineFriendsCount = useMemo(() => {
+    return friendPresence.filter((entry) => entry.table !== null).length;
+  }, [friendPresence]);
 
   const saveRecentEntry = (entry: Omit<RecentLobbyTable, 'updatedAt'>) => {
     const next = upsertRecentTable(entry);
     setRecentTables(next);
+  };
+  const handleTrackFriendSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const normalizedAlias = friendAliasInput.trim();
+    const normalizedCode = normalizeTableCode(friendCodeInput);
+    if (!normalizedAlias) {
+      setFriendFormError('Friend alias is required.');
+      return;
+    }
+    if (!isValidTableCodeFormat(normalizedCode)) {
+      setFriendFormError(`Enter a valid ${TABLE_CODE_LENGTH}-character table code.`);
+      return;
+    }
+
+    const next = upsertTrackedFriend({
+      alias: normalizedAlias,
+      tableCode: normalizedCode,
+    });
+    setTrackedFriends(next);
+    setFriendAliasInput('');
+    setFriendCodeInput('');
+    setFriendFormError('');
+  };
+  const handleRemoveTrackedFriend = (alias: string) => {
+    const next = removeTrackedFriend(alias);
+    setTrackedFriends(next);
   };
 
   const handleCreateTable = async (event: FormEvent<HTMLFormElement>) => {
@@ -157,13 +239,17 @@ const PlayLobbyPage: NextPage = () => {
 
     try {
       const maxPlayersForQuickPlay = 6;
-      const result = await quickPlayLobby({
-        maxPlayers: maxPlayersForQuickPlay,
-      });
+      const request = buildQuickPlayRequest(maxPlayersForQuickPlay);
+      const result = await quickPlayLobby(request);
+      recordQuickPlayResolved(result);
       logClientEvent('quick_play_resolved', {
         created: result.created,
         code: result.code,
         matchId: result.matchId,
+        targetBuyIn: request.targetBuyIn,
+        skillTier: request.skillTier,
+        resolvedBuyIn: result.quickPlayBuyIn,
+        resolvedSkillTier: result.quickPlaySkillTier,
       });
 
       saveRecentEntry({
@@ -180,6 +266,110 @@ const PlayLobbyPage: NextPage = () => {
     } finally {
       setQuickPlayLoading(false);
     }
+  };
+
+  const refreshActiveTables = async (silent = false) => {
+    if (bootStatus !== 'ready') {
+      return;
+    }
+
+    if (!silent) {
+      setActiveTablesLoading(true);
+    }
+
+    try {
+      const result = await listLobbyTables({
+        includePrivate: false,
+        limit: 20,
+      });
+      setActiveTables(result.tables);
+      if (!silent) {
+        setActiveTablesError('');
+      }
+    } catch (error) {
+      if (!silent || activeTables.length === 0) {
+        setActiveTablesError(formatNakamaError(error));
+      }
+    } finally {
+      if (!silent) {
+        setActiveTablesLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (bootStatus !== 'ready') {
+      setActiveTables([]);
+      setActiveTablesLoading(false);
+      setActiveTablesError('');
+      return;
+    }
+
+    let active = true;
+
+    const runInitialLoad = async () => {
+      if (!active) return;
+      await refreshActiveTables(false);
+    };
+    void runInitialLoad();
+
+    const intervalId = window.setInterval(() => {
+      if (!active) {
+        return;
+      }
+      void refreshActiveTables(true);
+    }, 8000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [bootStatus]);
+
+  const joinActiveTable = async (table: ListTablesRpcTable) => {
+    if (joinLoading || createLoading || quickPlayLoading) {
+      return;
+    }
+    if (table.seatsOpen <= 0) {
+      return;
+    }
+
+    logClientEvent('active_table_join_click', {
+      code: table.code,
+      matchId: table.matchId,
+      seatsOpen: table.seatsOpen,
+      presenceCount: table.presenceCount,
+      maxPlayers: table.maxPlayers,
+    });
+
+    setJoinLoading(true);
+    setJoinError('');
+    try {
+      saveRecentEntry({
+        code: table.code,
+        matchId: table.matchId,
+        name: table.name,
+        maxPlayers: table.maxPlayers,
+        isPrivate: table.isPrivate,
+      });
+      recordTableJoin(table.quickPlayBuyIn);
+      await router.push(`/table/${encodeURIComponent(table.matchId)}`);
+    } catch (error) {
+      setJoinError(formatNakamaError(error));
+    } finally {
+      setJoinLoading(false);
+    }
+  };
+  const joinFriendTable = async (entry: FriendLobbyPresence) => {
+    if (!entry.table) {
+      return;
+    }
+    logClientEvent('friend_join_click', {
+      alias: entry.friend.alias,
+      code: entry.friend.tableCode,
+      matchId: entry.table.matchId,
+    });
+    await joinActiveTable(entry.table);
   };
 
   const resolveAndJoinTable = async (rawCode: string) => {
@@ -204,6 +394,8 @@ const PlayLobbyPage: NextPage = () => {
         maxPlayers: existing?.maxPlayers,
         isPrivate: existing?.isPrivate,
       });
+      const activeTable = activeTablesByCode.get(normalizedCode);
+      recordTableJoin(activeTable?.quickPlayBuyIn);
 
       await router.push(`/table/${encodeURIComponent(result.matchId)}`);
     } catch (error) {
@@ -304,7 +496,7 @@ const PlayLobbyPage: NextPage = () => {
                     Play Now
                   </h2>
                   <p className="mt-2 max-w-2xl text-sm text-zinc-300/85">
-                    Quick seat into a fresh public table with one tap.
+                    Auto-seat into the best public table for your stack and skill profile.
                   </p>
                 </div>
                 <button
@@ -449,7 +641,7 @@ const PlayLobbyPage: NextPage = () => {
               ) : null}
             </article>
 
-            <article className="rounded-3xl border border-teal-200/20 bg-zinc-950/65 p-6 backdrop-blur-xl sm:p-7">
+	            <article className="rounded-3xl border border-teal-200/20 bg-zinc-950/65 p-6 backdrop-blur-xl sm:p-7">
               <div className="mb-6">
                 <p className="text-xs uppercase tracking-[0.2em] text-zinc-300/70">Action B</p>
                 <h2 className="mt-2 font-[var(--font-display)] text-2xl font-semibold text-white">
@@ -460,7 +652,7 @@ const PlayLobbyPage: NextPage = () => {
                 </p>
               </div>
 
-              <form className="space-y-4" onSubmit={handleJoinSubmit}>
+	              <form className="space-y-4" onSubmit={handleJoinSubmit}>
                 <div className="space-y-2">
                   <label htmlFor="join-code" className="text-sm font-medium text-zinc-100">
                     Table Code
@@ -493,10 +685,172 @@ const PlayLobbyPage: NextPage = () => {
                     {joinError}
                   </p>
                 ) : null}
-              </form>
+	              </form>
 
-              {recentTables.length > 0 ? (
-                <div className="mt-7">
+	              {socialFriendsLobby ? (
+	                <div className="mt-7 rounded-2xl border border-teal-300/25 bg-teal-500/5 p-4">
+	                  <div className="flex items-center justify-between gap-3">
+	                    <h3 className="font-[var(--font-display)] text-lg text-white">Friends Online</h3>
+	                    <span className="rounded-full border border-teal-300/35 bg-teal-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-teal-100">
+	                      {onlineFriendsCount} online
+	                    </span>
+	                  </div>
+
+	                  <form className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto]" onSubmit={handleTrackFriendSubmit}>
+	                    <input
+	                      aria-label="Friend alias"
+	                      value={friendAliasInput}
+	                      onChange={(event) => {
+	                        setFriendAliasInput(event.target.value);
+	                        if (friendFormError) {
+	                          setFriendFormError('');
+	                        }
+	                      }}
+	                      className="rounded-lg border border-zinc-500/40 bg-zinc-900/70 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-400/80 focus-visible:border-teal-300/70"
+	                      placeholder="Friend alias"
+	                      maxLength={28}
+	                    />
+	                    <input
+	                      aria-label="Friend table code"
+	                      value={friendCodeInput}
+	                      onChange={(event) => {
+	                        setFriendCodeInput(normalizeTableCode(event.target.value));
+	                        if (friendFormError) {
+	                          setFriendFormError('');
+	                        }
+	                      }}
+	                      className="rounded-lg border border-zinc-500/40 bg-zinc-900/70 px-3 py-2 font-mono text-sm uppercase tracking-[0.16em] text-zinc-100 outline-none transition placeholder:text-zinc-400/80 focus-visible:border-teal-300/70"
+	                      placeholder="ABC234"
+	                      maxLength={TABLE_CODE_LENGTH}
+	                    />
+	                    <button
+	                      type="submit"
+	                      className="rounded-lg border border-teal-300/45 bg-teal-500/15 px-3 py-2 text-xs font-semibold text-teal-100 transition hover:bg-teal-500/25"
+	                    >
+	                      Track
+	                    </button>
+	                  </form>
+
+	                  {friendFormError ? (
+	                    <p className="mt-2 text-xs text-rose-300">{friendFormError}</p>
+	                  ) : null}
+
+	                  {friendPresence.length === 0 ? (
+	                    <p className="mt-3 rounded-lg border border-zinc-500/30 bg-zinc-900/60 px-3 py-2 text-xs text-zinc-300/85">
+	                      Add a friend alias + table code to unlock one-tap friend joining.
+	                    </p>
+	                  ) : (
+	                    <ul className="mt-3 space-y-2.5">
+	                      {friendPresence.map((entry) => (
+	                        <li
+	                          key={`${entry.friend.alias}-${entry.friend.tableCode}`}
+	                          className="flex items-center justify-between gap-3 rounded-xl border border-zinc-500/30 bg-zinc-900/60 px-3.5 py-2.5"
+	                        >
+	                          <div>
+	                            <p className="text-sm font-medium text-zinc-100">{entry.friend.alias}</p>
+	                            <p className="text-xs text-zinc-300/80">
+	                              <span className="font-mono tracking-[0.15em]">{entry.friend.tableCode}</span>
+	                              {entry.table
+	                                ? ` · ${entry.table.name} · ${entry.table.presenceCount}/${entry.table.maxPlayers} seated`
+	                                : ' · Offline'}
+	                            </p>
+	                          </div>
+
+	                          <div className="flex items-center gap-2">
+	                            <button
+	                              type="button"
+	                              onClick={() => {
+	                                void joinFriendTable(entry);
+	                              }}
+	                              disabled={!entry.table || entry.table.seatsOpen <= 0 || joinLoading || bootStatus !== 'ready'}
+	                              className="rounded-lg border border-teal-300/45 bg-teal-500/15 px-3 py-1.5 text-xs font-semibold text-teal-100 transition hover:bg-teal-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+	                            >
+	                              {entry.table
+	                                ? entry.table.seatsOpen > 0
+	                                  ? 'Join Friend'
+	                                  : 'Full'
+	                                : 'Offline'}
+	                            </button>
+	                            <button
+	                              type="button"
+	                              onClick={() => {
+	                                handleRemoveTrackedFriend(entry.friend.alias);
+	                              }}
+	                              className="rounded-lg border border-zinc-400/40 bg-zinc-800/60 px-2.5 py-1.5 text-xs font-semibold text-zinc-200 transition hover:border-zinc-200/50 hover:bg-zinc-700/60"
+	                            >
+	                              Remove
+	                            </button>
+	                          </div>
+	                        </li>
+	                      ))}
+	                    </ul>
+	                  )}
+	                </div>
+	              ) : null}
+
+	              <div className="mt-7">
+	                <div className="flex items-center justify-between gap-3">
+	                  <h3 className="font-[var(--font-display)] text-lg text-white">Active Public Tables</h3>
+	                  <button
+	                    type="button"
+	                    onClick={() => {
+	                      void refreshActiveTables(false);
+	                    }}
+	                    disabled={activeTablesLoading || bootStatus !== 'ready'}
+	                    className="rounded-lg border border-teal-300/45 bg-teal-500/10 px-3 py-1.5 text-xs font-semibold text-teal-100 transition hover:bg-teal-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+	                  >
+	                    {activeTablesLoading ? 'Refreshing...' : 'Refresh'}
+	                  </button>
+	                </div>
+
+	                {activeTablesError ? (
+	                  <p className="mt-3 text-sm text-rose-300">{activeTablesError}</p>
+	                ) : null}
+
+	                {!activeTablesError && activeTables.length === 0 ? (
+	                  <p className="mt-3 rounded-xl border border-zinc-500/30 bg-zinc-900/60 px-3.5 py-2.5 text-xs text-zinc-300/85">
+	                    No public tables live right now. Try Quick Play to start one.
+	                  </p>
+	                ) : null}
+
+	                {activeTables.length > 0 ? (
+	                  <ul className="mt-3 space-y-2.5">
+	                    {activeTables.slice(0, 8).map((table) => (
+	                      <li
+	                        key={`${table.matchId}-${table.code}`}
+	                        className="flex items-center justify-between gap-3 rounded-xl border border-zinc-500/30 bg-zinc-900/60 px-3.5 py-2.5"
+	                      >
+	                        <div>
+	                          <p className="text-sm font-medium text-zinc-100">{table.name}</p>
+                          <p className="text-xs text-zinc-300/80">
+                            <span className="font-mono tracking-[0.15em]">{table.code}</span>
+                            {` · ${table.presenceCount}/${table.maxPlayers} seated`}
+                            {table.seatsOpen > 0 ? ` · ${table.seatsOpen} open` : ' · Full'}
+                            {typeof table.quickPlayBuyIn === 'number'
+                              ? ` · Buy-in ${BUY_IN_FORMATTER.format(table.quickPlayBuyIn)}`
+                              : ''}
+                            {table.quickPlaySkillTier ? ` · ${formatSkillTierLabel(table.quickPlaySkillTier)}` : ''}
+                          </p>
+                        </div>
+
+	                        <button
+	                          type="button"
+	                          onClick={() => {
+	                            void joinActiveTable(table);
+	                          }}
+	                          disabled={joinLoading || table.seatsOpen <= 0 || bootStatus !== 'ready'}
+	                          className="rounded-lg border border-teal-300/45 bg-teal-500/15 px-3 py-1.5 text-xs font-semibold text-teal-100 transition hover:bg-teal-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+	                        >
+	                          {table.seatsOpen > 0 ? 'Join' : 'Full'}
+	                        </button>
+	                      </li>
+	                    ))}
+	                  </ul>
+	                ) : null}
+	              </div>
+
+	              {recentTables.length > 0 ? (
+	                <div className="mt-7">
                   <h3 className="font-[var(--font-display)] text-lg text-white">Recent Tables</h3>
                   <ul className="mt-3 space-y-2.5">
                     {recentTables.slice(0, 10).map((table) => (

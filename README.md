@@ -120,6 +120,8 @@ pnpm run test:e2e
 pnpm run changelog:check
 pnpm run db:migrate
 pnpm run db:seed
+pnpm run db:flag -- list
+pnpm run db:flag -- set ui.table_v2 true
 ```
 
 Remote smoke test:

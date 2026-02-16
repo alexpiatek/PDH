@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PokerTable } from '@pdh/engine';
+import { TABLE_CHAT_MAX_LENGTH } from '@pdh/protocol';
 import {
   parseClientMessagePayload,
   withProtocolVersion,
@@ -13,7 +14,11 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 const AUDIT_LOG_TOKEN = process.env.AUDIT_LOG_TOKEN || '';
 const table = new PokerTable('main');
 const clients = new Map<WebSocket, { playerId: string }>();
+const lastReactionAtByPlayer = new Map<string, number>();
+const lastChatAtByPlayer = new Map<string, number>();
 const START_COUNTDOWN_MS = 8000;
+const REACTION_COOLDOWN_MS = 2500;
+const CHAT_COOLDOWN_MS = 800;
 let startCountdownTimer: NodeJS.Timeout | null = null;
 let startCountdownUntil: number | null = null;
 
@@ -78,6 +83,12 @@ server.listen(PORT, () => {
 
 function send(ws: WebSocket, msg: ServerMessage) {
   ws.send(JSON.stringify(withProtocolVersion(msg)));
+}
+
+function broadcastServerMessage(msg: ServerMessage) {
+  for (const [ws] of clients.entries()) {
+    send(ws, msg);
+  }
 }
 
 function broadcast() {
@@ -184,6 +195,42 @@ function handleMessage(ws: WebSocket, raw: ClientMessage) {
         broadcast();
         break;
       }
+      case 'reaction': {
+        if (!ctx) throw new Error('Join first');
+        const now = Date.now();
+        const last = lastReactionAtByPlayer.get(ctx.playerId) ?? 0;
+        if (now - last < REACTION_COOLDOWN_MS) {
+          throw new Error('Reaction cooldown active');
+        }
+        lastReactionAtByPlayer.set(ctx.playerId, now);
+        broadcastServerMessage({
+          type: 'reaction',
+          playerId: ctx.playerId,
+          emoji: raw.emoji,
+          ts: now,
+        });
+        break;
+      }
+      case 'chat': {
+        if (!ctx) throw new Error('Join first');
+        const text = raw.message.trim().replace(/\s+/g, ' ').slice(0, TABLE_CHAT_MAX_LENGTH);
+        if (!text) {
+          throw new Error('Chat message cannot be empty');
+        }
+        const now = Date.now();
+        const last = lastChatAtByPlayer.get(ctx.playerId) ?? 0;
+        if (now - last < CHAT_COOLDOWN_MS) {
+          throw new Error('Chat cooldown active');
+        }
+        lastChatAtByPlayer.set(ctx.playerId, now);
+        broadcastServerMessage({
+          type: 'chat',
+          playerId: ctx.playerId,
+          message: text,
+          ts: now,
+        });
+        break;
+      }
       case 'requestState': {
         if (!ctx) throw new Error('Join first');
         const state = table.getPublicState(ctx.playerId);
@@ -212,6 +259,8 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     const ctx = clients.get(ws);
     if (ctx) {
+      lastReactionAtByPlayer.delete(ctx.playerId);
+      lastChatAtByPlayer.delete(ctx.playerId);
       table.handleDisconnect(ctx.playerId);
       broadcast();
     }

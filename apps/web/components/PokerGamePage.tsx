@@ -2,8 +2,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Client as NakamaClient } from '@heroiclabs/nakama-js';
 import type { Match, Session, Socket as NakamaSocket } from '@heroiclabs/nakama-js';
 import { Card, HandState, PlayerInHand } from '@pdh/engine';
+import { TABLE_CHAT_MAX_LENGTH, TABLE_REACTIONS } from '@pdh/protocol';
 import { ClientMessage, ServerMessage } from '../server-types';
 import { logClientEvent } from '../lib/clientTelemetry';
+import { useFeatureFlags } from '../lib/featureFlags';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000';
 const NETWORK_BACKEND = (
@@ -26,6 +28,17 @@ const STORAGE_KEYS = {
   deviceId: 'nakamaDeviceId',
   nextMutatingSeq: 'nakamaNextMutatingSeq',
 } as const;
+
+const UI_STORAGE_KEYS = {
+  soundEnabled: 'pdh.table.sound_enabled',
+  showActivityFeed: 'pdh.table.show_activity_feed',
+  showTableChat: 'pdh.table.show_chat',
+  mutedChatPlayerIds: 'pdh.table.muted_chat_player_ids',
+} as const;
+
+const REACTION_COOLDOWN_MS = 2500;
+const REACTION_VISIBLE_MS = 2200;
+const CHAT_HISTORY_LIMIT = 50;
 
 const textDecoder = new TextDecoder();
 
@@ -177,6 +190,23 @@ const formatHandLabel = (label: string) => {
   return lower;
 };
 
+const formatStreetLabel = (street: HandState['street']) => {
+  switch (street) {
+    case 'preflop':
+      return 'Preflop';
+    case 'flop':
+      return 'Flop';
+    case 'turn':
+      return 'Turn';
+    case 'river':
+      return 'River';
+    case 'showdown':
+      return 'Showdown';
+    default:
+      return street;
+  }
+};
+
 const MINIMAL_DECK_PALETTE = {
   face: '#f6f7f2',
   border: '#e2e8f0',
@@ -305,6 +335,27 @@ const SuitPip = ({ suit, x, y, size, color }: { suit: Card['suit']; x: number; y
 
 type ActionTone = 'raise' | 'call' | 'allin' | 'fold' | 'check' | 'bet';
 type ActionBadge = { name: string; label: string; tone: ActionTone; amount?: number };
+type TableReaction = (typeof TABLE_REACTIONS)[number];
+type LiveTableReaction = {
+  id: string;
+  playerId: string;
+  emoji: TableReaction;
+  ts: number;
+};
+type TableChatMessage = {
+  id: string;
+  playerId: string;
+  message: string;
+  ts: number;
+};
+
+const TABLE_REACTION_LABELS: Record<TableReaction, string> = {
+  gg: 'GG',
+  wow: 'WOW',
+  nice: 'NICE',
+  oops: 'OOPS',
+  fire: 'FIRE',
+};
 
 const ACTION_TONE_STYLES: Record<ActionTone, { background: string; border: string; color: string }> = {
   raise: { background: 'rgba(30, 41, 59, 0.9)', border: '#38bdf8', color: '#e0f2fe' },
@@ -390,6 +441,7 @@ export const PokerGamePage = ({
   onExitLobby,
   showExitButton = true,
 }: PokerGamePageProps) => {
+  const { uiTableV2, uiDiscardOverlayV2 } = useFeatureFlags();
   const connectionRef = useRef<{ send: (msg: ClientMessage) => void; close: () => void } | null>(null);
   const legacySocketRef = useRef<WebSocket | null>(null);
   const pendingMessagesRef = useRef<ClientMessage[]>([]);
@@ -408,9 +460,79 @@ export const PokerGamePage = ({
   const [betAmount, setBetAmount] = useState<number>(200);
   const [discardFlashIndex, setDiscardFlashIndex] = useState<number | null>(null);
   const [discardSubmitted, setDiscardSubmitted] = useState(false);
+  const [selectedDiscardIndex, setSelectedDiscardIndex] = useState<number | null>(null);
+  const [liveReactions, setLiveReactions] = useState<LiveTableReaction[]>([]);
+  const [reactionCooldownUntil, setReactionCooldownUntil] = useState<number>(0);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [showActivityFeed, setShowActivityFeed] = useState(true);
+  const [showTableChat, setShowTableChat] = useState(true);
+  const [chatInput, setChatInput] = useState('');
+  const [chatMessages, setChatMessages] = useState<TableChatMessage[]>([]);
+  const [mutedChatPlayerIds, setMutedChatPlayerIds] = useState<string[]>([]);
+  const [clockNowMs, setClockNowMs] = useState(() => Date.now());
   const resolvedForcedMatchId = forcedMatchId?.trim() || '';
   const hasLoggedTableJoinedRef = useRef(false);
   const hasLoggedFirstActionRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const storedSound = window.localStorage.getItem(UI_STORAGE_KEYS.soundEnabled);
+    const storedFeed = window.localStorage.getItem(UI_STORAGE_KEYS.showActivityFeed);
+    const storedChat = window.localStorage.getItem(UI_STORAGE_KEYS.showTableChat);
+    const storedMuted = window.localStorage.getItem(UI_STORAGE_KEYS.mutedChatPlayerIds);
+    if (storedSound !== null) {
+      setSoundEnabled(storedSound !== '0');
+    }
+    if (storedFeed !== null) {
+      setShowActivityFeed(storedFeed !== '0');
+    }
+    if (storedChat !== null) {
+      setShowTableChat(storedChat !== '0');
+    }
+    if (storedMuted) {
+      try {
+        const parsed = JSON.parse(storedMuted) as unknown;
+        if (Array.isArray(parsed)) {
+          setMutedChatPlayerIds(
+            parsed.filter((value): value is string => typeof value === 'string' && value.length > 0)
+          );
+        }
+      } catch {
+        // Ignore malformed data and keep defaults.
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(UI_STORAGE_KEYS.soundEnabled, soundEnabled ? '1' : '0');
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(UI_STORAGE_KEYS.showActivityFeed, showActivityFeed ? '1' : '0');
+  }, [showActivityFeed]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(UI_STORAGE_KEYS.showTableChat, showTableChat ? '1' : '0');
+  }, [showTableChat]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(UI_STORAGE_KEYS.mutedChatPlayerIds, JSON.stringify(mutedChatPlayerIds));
+  }, [mutedChatPlayerIds]);
+
   const reserveMutatingSeq = () => {
     const seq = nextMutatingSeqRef.current;
     const nextSeq = seq + 1;
@@ -472,6 +594,36 @@ export const PokerGamePage = ({
       }
       if (msg.type === 'error') {
         setStatus(msg.message);
+      }
+      if (msg.type === 'reaction') {
+        const reactionId = `${msg.playerId}-${msg.ts}-${Math.floor(Math.random() * 1_000_000)}`;
+        setLiveReactions((previous) => {
+          const next = [
+            ...previous,
+            {
+              id: reactionId,
+              playerId: msg.playerId,
+              emoji: msg.emoji,
+              ts: msg.ts,
+            },
+          ];
+          return next.slice(-24);
+        });
+      }
+      if (msg.type === 'chat') {
+        const chatId = `${msg.playerId}-${msg.ts}-${Math.floor(Math.random() * 1_000_000)}`;
+        setChatMessages((previous) => {
+          const next = [
+            ...previous,
+            {
+              id: chatId,
+              playerId: msg.playerId,
+              message: msg.message,
+              ts: msg.ts,
+            },
+          ];
+          return next.slice(-CHAT_HISTORY_LIMIT);
+        });
       }
     };
 
@@ -743,6 +895,28 @@ export const PokerGamePage = ({
   const discardPending = hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id);
   const toCall = hand && you ? Math.max(0, hand.currentBet - you.betThisStreet) : 0;
   const isShowdown = hand?.phase === 'showdown';
+  const currentStreetLabel = hand ? formatStreetLabel(hand.street) : '';
+  const actionOnPlayer = useMemo(() => {
+    if (!hand || hand.phase !== 'betting') {
+      return null;
+    }
+    return hand.players.find((player) => player.seat === hand.actionOnSeat) ?? null;
+  }, [hand]);
+  const discardConfirmedPlayers = useMemo(() => {
+    if (!hand || hand.phase !== 'discard') {
+      return new Set<string>();
+    }
+    const confirmed = new Set<string>();
+    for (const player of hand.players) {
+      if (player.status === 'folded' || player.status === 'out') {
+        continue;
+      }
+      if (!hand.discardPending.includes(player.id)) {
+        confirmed.add(player.id);
+      }
+    }
+    return confirmed;
+  }, [hand]);
   const hasContestedShowdown = Boolean(
     hand &&
       hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out').length > 1,
@@ -750,6 +924,55 @@ export const PokerGamePage = ({
   const raiseCapReached = Boolean(hand && hand.raisesThisStreet >= 2);
   const allInTotal = you ? you.stack + you.betThisStreet : 0;
   const allInWouldRaise = Boolean(hand && hand.currentBet > 0 && allInTotal > hand.currentBet);
+  const cardsRemaining = you?.holeCards.length ?? 0;
+  const discardMilestones = [5, 4, 3, 2] as const;
+  const actionSecondsLeft = useMemo(() => {
+    if (!hand || hand.phase !== 'betting' || !hand.actionDeadline) {
+      return null;
+    }
+    return Math.max(0, Math.ceil((hand.actionDeadline - clockNowMs) / 1000));
+  }, [hand?.phase, hand?.actionDeadline, clockNowMs]);
+  const discardSecondsLeft = useMemo(() => {
+    if (!hand || hand.phase !== 'discard' || !hand.discardDeadline) {
+      return null;
+    }
+    return Math.max(0, Math.ceil((hand.discardDeadline - clockNowMs) / 1000));
+  }, [hand?.phase, hand?.discardDeadline, clockNowMs]);
+  const tableTimerSeconds =
+    hand?.phase === 'betting' ? actionSecondsLeft : hand?.phase === 'discard' ? discardSecondsLeft : null;
+  const tableStateTitle = useMemo(() => {
+    if (!hand) return '';
+    if (hand.phase === 'betting') {
+      if (isMyTurn) {
+        return `Your turn · ${currentStreetLabel}`;
+      }
+      return `${actionOnPlayer?.name ?? 'Player'} to act · ${currentStreetLabel}`;
+    }
+    if (hand.phase === 'discard') {
+      if (discardPending && !discardSubmitted) {
+        return `Discard 1 · ${currentStreetLabel}`;
+      }
+      return `Waiting for discards · ${currentStreetLabel}`;
+    }
+    if (hand.phase === 'showdown') {
+      return 'Showdown';
+    }
+    return currentStreetLabel;
+  }, [hand, isMyTurn, currentStreetLabel, actionOnPlayer, discardPending, discardSubmitted]);
+  const tableStateSubtitle = useMemo(() => {
+    if (!hand) return '';
+    if (hand.phase === 'betting') {
+      const livePot = hand.players.reduce((sum, player) => sum + player.totalCommitted, 0);
+      return `Pot ${livePot} · To call ${toCall} · Current bet ${hand.currentBet}`;
+    }
+    if (hand.phase === 'discard') {
+      return `${hand.discardPending.length} pending discard${hand.discardPending.length === 1 ? '' : 's'}`;
+    }
+    if (hand.phase === 'showdown') {
+      return hand.showdownWinners.length > 0 ? 'Hand complete' : 'Determining winners...';
+    }
+    return '';
+  }, [hand, toCall]);
   const dealAnimationKey = hand?.handId ?? 'no-hand';
   const [animateHoleDeal, setAnimateHoleDeal] = useState(false);
   const suggestedRaiseTo = useMemo(() => {
@@ -788,6 +1011,33 @@ export const PokerGamePage = ({
     }
     return map;
   }, [hand?.log, hand?.phase, hand?.street, hand?.players]);
+  const latestReactionByPlayerId = useMemo(() => {
+    const map = new Map<string, LiveTableReaction>();
+    for (const reaction of liveReactions) {
+      const existing = map.get(reaction.playerId);
+      if (!existing || existing.ts < reaction.ts) {
+        map.set(reaction.playerId, reaction);
+      }
+    }
+    return map;
+  }, [liveReactions]);
+  const playerNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const seat of state?.seats ?? []) {
+      if (seat?.id && seat?.name) {
+        map.set(seat.id, seat.name);
+      }
+    }
+    for (const player of hand?.players ?? []) {
+      map.set(player.id, player.name);
+    }
+    return map;
+  }, [state?.seats, hand?.players]);
+  const mutedChatPlayerSet = useMemo(() => new Set(mutedChatPlayerIds), [mutedChatPlayerIds]);
+  const visibleChatMessages = useMemo(() => {
+    return chatMessages.filter((message) => !mutedChatPlayerSet.has(message.playerId));
+  }, [chatMessages, mutedChatPlayerSet]);
+  const hiddenChatCount = chatMessages.length - visibleChatMessages.length;
 
   useEffect(() => {
     if (!hand) {
@@ -804,6 +1054,7 @@ export const PokerGamePage = ({
     if (!discardPending) {
       setDiscardFlashIndex(null);
       setDiscardSubmitted(false);
+      setSelectedDiscardIndex(null);
       if (discardTimerRef.current) {
         window.clearTimeout(discardTimerRef.current);
         discardTimerRef.current = null;
@@ -815,6 +1066,7 @@ export const PokerGamePage = ({
     if (!hand?.handId) return;
     setDiscardFlashIndex(null);
     setDiscardSubmitted(false);
+    setSelectedDiscardIndex(null);
     setAnimateHoleDeal(true);
     if (holeDealTimerRef.current) {
       window.clearTimeout(holeDealTimerRef.current);
@@ -830,6 +1082,38 @@ export const PokerGamePage = ({
       }
     };
   }, [hand?.handId]);
+
+  useEffect(() => {
+    if (!hand || (hand.phase !== 'betting' && hand.phase !== 'discard')) {
+      return;
+    }
+    setClockNowMs(Date.now());
+    const intervalId = window.setInterval(() => {
+      setClockNowMs(Date.now());
+    }, 250);
+    return () => window.clearInterval(intervalId);
+  }, [hand?.handId, hand?.phase, hand?.actionDeadline, hand?.discardDeadline]);
+
+  useEffect(() => {
+    if (!liveReactions.length) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      const cutoff = Date.now() - REACTION_VISIBLE_MS;
+      setLiveReactions((previous) => previous.filter((reaction) => reaction.ts >= cutoff));
+    }, 250);
+    return () => window.clearInterval(intervalId);
+  }, [liveReactions.length]);
+
+  useEffect(() => {
+    if (reactionCooldownUntil <= Date.now()) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setReactionCooldownUntil(0);
+    }, Math.max(0, reactionCooldownUntil - Date.now()));
+    return () => window.clearTimeout(timeoutId);
+  }, [reactionCooldownUntil]);
 
   useEffect(() => {
     const el = tableRef.current;
@@ -914,11 +1198,12 @@ export const PokerGamePage = ({
     send({ type: 'discard', index: idx });
   };
 
-  const handleDiscardClick = (idx: number) => {
+  const submitDiscard = (idx: number) => {
     if (!discardPending || discardSubmitted) return;
     logFirstAction('discard', { discardIndex: idx });
     setDiscardSubmitted(true);
     setDiscardFlashIndex(idx);
+    setSelectedDiscardIndex(null);
     if (discardTimerRef.current) {
       window.clearTimeout(discardTimerRef.current);
     }
@@ -927,6 +1212,69 @@ export const PokerGamePage = ({
       discardTimerRef.current = null;
       discard(idx);
     }, 500);
+  };
+
+  const handleDiscardClick = (idx: number) => {
+    if (!discardPending || discardSubmitted) return;
+    if (uiDiscardOverlayV2) {
+      setSelectedDiscardIndex(idx);
+      return;
+    }
+    submitDiscard(idx);
+  };
+
+  const confirmDiscardSelection = () => {
+    if (selectedDiscardIndex === null) {
+      return;
+    }
+    submitDiscard(selectedDiscardIndex);
+  };
+
+  const sendReaction = (emoji: TableReaction) => {
+    if (!you || !seated) {
+      return;
+    }
+    if (Date.now() < reactionCooldownUntil) {
+      return;
+    }
+    setReactionCooldownUntil(Date.now() + REACTION_COOLDOWN_MS);
+    logClientEvent('table_reaction_send', {
+      emoji,
+      handId: hand?.handId ?? null,
+      street: hand?.street ?? null,
+      phase: hand?.phase ?? null,
+    });
+    send({ type: 'reaction', emoji });
+  };
+
+  const sendChatMessage = () => {
+    if (!you || !seated) {
+      return;
+    }
+    const normalized = chatInput.trim().replace(/\s+/g, ' ').slice(0, TABLE_CHAT_MAX_LENGTH);
+    if (!normalized) {
+      return;
+    }
+    logClientEvent('table_chat_send', {
+      length: normalized.length,
+      handId: hand?.handId ?? null,
+      street: hand?.street ?? null,
+      phase: hand?.phase ?? null,
+    });
+    send({ type: 'chat', message: normalized });
+    setChatInput('');
+  };
+
+  const toggleMuteChatPlayer = (targetPlayerId: string) => {
+    if (!targetPlayerId || targetPlayerId === playerId) {
+      return;
+    }
+    setMutedChatPlayerIds((previous) => {
+      if (previous.includes(targetPlayerId)) {
+        return previous.filter((id) => id !== targetPlayerId);
+      }
+      return [...previous, targetPlayerId];
+    });
   };
 
   const renderActionBadge = (action?: ActionBadge) => {
@@ -952,6 +1300,38 @@ export const PokerGamePage = ({
       >
         {action.label}
         {action.amount !== undefined ? ` ${action.amount}` : ''}
+      </div>
+    );
+  };
+
+  const renderReactionBadge = (playerId: string) => {
+    const reaction = latestReactionByPlayerId.get(playerId);
+    if (!reaction) {
+      return null;
+    }
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: '50%',
+          transform: 'translate(-50%, -118%)',
+          padding: '5px 8px',
+          borderRadius: 999,
+          border: '1px solid rgba(20,184,166,0.65)',
+          background: 'rgba(2, 18, 26, 0.92)',
+          color: '#ccfbf1',
+          fontSize: 10,
+          fontWeight: 800,
+          letterSpacing: 0.5,
+          fontFamily: '"Inter", sans-serif',
+          boxShadow: '0 10px 20px rgba(0,0,0,0.38)',
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+          textTransform: 'uppercase',
+        }}
+      >
+        {TABLE_REACTION_LABELS[reaction.emoji]}
       </div>
     );
   };
@@ -1081,6 +1461,14 @@ export const PokerGamePage = ({
     width: isPhone ? 110 : 120,
     minHeight: 44,
   };
+  const showWaitingActionPanel = Boolean(
+    uiTableV2 && hand?.phase === 'betting' && !discardPending && !isMyTurn
+  );
+  const reactionOnCooldown = reactionCooldownUntil > Date.now();
+  const timerTone =
+    tableTimerSeconds !== null ? (tableTimerSeconds <= 5 ? '#fda4af' : '#d1fae5') : 'rgba(226,232,240,0.72)';
+  const toCallValue = hand?.phase === 'betting' ? String(toCall) : '--';
+  const currentBetValue = hand?.phase === 'betting' ? String(hand.currentBet) : '--';
 
   return (
     <div
@@ -1126,6 +1514,81 @@ export const PokerGamePage = ({
             }}
           >
             Exit Table
+          </button>
+        </div>
+      ) : null}
+      {seated ? (
+        <div
+          style={{
+            position: 'fixed',
+            top: isPhone ? 10 : 14,
+            left: isPhone ? 10 : 14,
+            zIndex: 90,
+            display: 'inline-flex',
+            gap: 6,
+            flexWrap: 'wrap',
+            maxWidth: 'min(86vw, 300px)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setSoundEnabled((previous) => !previous);
+            }}
+            style={{
+              borderRadius: 10,
+              border: '1px solid rgba(148,163,184,0.55)',
+              background: soundEnabled ? 'rgba(15,118,110,0.34)' : 'rgba(30,41,59,0.62)',
+              color: '#e2e8f0',
+              padding: '7px 10px',
+              fontFamily: '"Inter", sans-serif',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: 0.25,
+              cursor: 'pointer',
+            }}
+          >
+            Sound {soundEnabled ? 'On' : 'Off'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowActivityFeed((previous) => !previous);
+            }}
+            style={{
+              borderRadius: 10,
+              border: '1px solid rgba(148,163,184,0.55)',
+              background: showActivityFeed ? 'rgba(56,189,248,0.26)' : 'rgba(30,41,59,0.62)',
+              color: '#e2e8f0',
+              padding: '7px 10px',
+              fontFamily: '"Inter", sans-serif',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: 0.25,
+              cursor: 'pointer',
+            }}
+          >
+            Feed {showActivityFeed ? 'On' : 'Off'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowTableChat((previous) => !previous);
+            }}
+            style={{
+              borderRadius: 10,
+              border: '1px solid rgba(148,163,184,0.55)',
+              background: showTableChat ? 'rgba(20,184,166,0.26)' : 'rgba(30,41,59,0.62)',
+              color: '#e2e8f0',
+              padding: '7px 10px',
+              fontFamily: '"Inter", sans-serif',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: 0.25,
+              cursor: 'pointer',
+            }}
+          >
+            Chat {showTableChat ? 'On' : 'Off'}
           </button>
         </div>
       ) : null}
@@ -1192,6 +1655,173 @@ export const PokerGamePage = ({
           </div>
         </div>
       </div>
+      {uiTableV2 && hand && seated ? (
+        <div
+          style={{
+            width: 'min(100%, 860px)',
+            margin: '0 auto',
+            marginBottom: 14,
+            padding: isPhone ? '10px 10px' : '12px 14px',
+            borderRadius: 16,
+            border: '1px solid rgba(20,184,166,0.35)',
+            background: 'rgba(8,17,28,0.75)',
+            boxShadow: '0 14px 34px rgba(0,0,0,0.28)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: isPhone ? 'column' : 'row',
+              justifyContent: 'space-between',
+              alignItems: isPhone ? 'flex-start' : 'center',
+              gap: isPhone ? 8 : 10,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: isPhone ? 14 : 15,
+                  fontWeight: 700,
+                  color: '#f8fafc',
+                  fontFamily:
+                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                }}
+              >
+                {tableStateTitle}
+              </div>
+              <div
+                style={{
+                  marginTop: 2,
+                  fontSize: 12,
+                  color: 'rgba(226,232,240,0.82)',
+                  fontFamily:
+                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                }}
+              >
+                {tableStateSubtitle}
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, minmax(64px, auto))',
+                gap: 8,
+                width: isPhone ? '100%' : 'auto',
+              }}
+            >
+              <div
+                style={{
+                  borderRadius: 10,
+                  border: '1px solid rgba(148,163,184,0.35)',
+                  background: 'rgba(2,6,12,0.35)',
+                  padding: '6px 8px',
+                }}
+              >
+                <div style={{ fontSize: 10, color: 'rgba(203,213,225,0.82)', textTransform: 'uppercase' }}>Street</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{currentStreetLabel}</div>
+              </div>
+              <div
+                style={{
+                  borderRadius: 10,
+                  border: '1px solid rgba(148,163,184,0.35)',
+                  background: 'rgba(2,6,12,0.35)',
+                  padding: '6px 8px',
+                }}
+              >
+                <div style={{ fontSize: 10, color: 'rgba(203,213,225,0.82)', textTransform: 'uppercase' }}>Pot</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{potAmount}</div>
+              </div>
+              <div
+                style={{
+                  borderRadius: 10,
+                  border: '1px solid rgba(148,163,184,0.35)',
+                  background: 'rgba(2,6,12,0.35)',
+                  padding: '6px 8px',
+                }}
+              >
+                <div style={{ fontSize: 10, color: 'rgba(203,213,225,0.82)', textTransform: 'uppercase' }}>To Call</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{toCallValue}</div>
+              </div>
+              <div
+                style={{
+                  borderRadius: 10,
+                  border: '1px solid rgba(148,163,184,0.35)',
+                  background: 'rgba(2,6,12,0.35)',
+                  padding: '6px 8px',
+                }}
+              >
+                <div style={{ fontSize: 10, color: 'rgba(203,213,225,0.82)', textTransform: 'uppercase' }}>Timer</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: timerTone }}>
+                  {tableTimerSeconds !== null ? `${tableTimerSeconds}s` : '--'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {you ? (
+            <div
+              style={{
+                marginTop: 10,
+                paddingTop: 10,
+                borderTop: '1px solid rgba(71,85,105,0.45)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 11,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color: 'rgba(186,230,253,0.85)',
+                }}
+              >
+                Discard Track
+              </span>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                {discardMilestones.map((milestone, index) => {
+                  const isCurrent = cardsRemaining === milestone;
+                  const isComplete = cardsRemaining < milestone;
+                  return (
+                    <div key={milestone} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <span
+                        style={{
+                          minWidth: 26,
+                          textAlign: 'center',
+                          borderRadius: 999,
+                          border: isCurrent
+                            ? '1px solid rgba(20,184,166,0.9)'
+                            : '1px solid rgba(148,163,184,0.5)',
+                          background: isCurrent
+                            ? 'rgba(20,184,166,0.2)'
+                            : isComplete
+                              ? 'rgba(34,197,94,0.16)'
+                              : 'rgba(15,23,42,0.65)',
+                          color: isCurrent ? '#ccfbf1' : isComplete ? '#bbf7d0' : '#cbd5e1',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: '3px 6px',
+                        }}
+                      >
+                        {milestone}
+                      </span>
+                      {index < discardMilestones.length - 1 ? (
+                        <span style={{ fontSize: 11, color: 'rgba(148,163,184,0.8)' }}>→</span>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+              <span style={{ fontSize: 11, color: 'rgba(226,232,240,0.78)' }}>
+                Live cards: {cardsRemaining}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {!seated && (
         <div
           style={{
@@ -1459,7 +2089,6 @@ export const PokerGamePage = ({
             )}
             {tablePlayers.map((p, idx) => {
               const pos = seatingPositions[idx];
-              const bestFive = winnersById.get(p.id)?.bestFive ?? [];
               const winner = winnersById.has(p.id);
               const isYou = p.id === playerId;
               const roleChips = roleChipsBySeat.get(p.seat) ?? [];
@@ -1469,6 +2098,9 @@ export const PokerGamePage = ({
               const avatarColor = avatarSuitColor(avatarSuit);
               const isTurn = Boolean(hand && hand.phase === 'betting' && hand.actionOnSeat === p.seat);
               const infoDimmed = Boolean(hand && hand.phase === 'betting' && !isTurn);
+              const showDiscardState =
+                hand?.phase === 'discard' && p.status !== 'folded' && p.status !== 'out';
+              const hasDiscardedThisStreet = showDiscardState && discardConfirmedPlayers.has(p.id);
               const avatarStyle = {
                 width: avatarSize,
                 height: avatarSize,
@@ -1542,7 +2174,20 @@ export const PokerGamePage = ({
                               </span>
                             </div>
                           )}
+                          {showDiscardState ? (
+                            <div
+                              style={{
+                                marginTop: 4,
+                                fontSize: 10,
+                                letterSpacing: 0.2,
+                                color: hasDiscardedThisStreet ? '#86efac' : '#cbd5e1',
+                              }}
+                            >
+                              {hasDiscardedThisStreet ? 'discarded ✓' : 'discarding...'}
+                            </div>
+                          ) : null}
                         </div>
+                        {renderReactionBadge(p.id)}
                         {renderActionBadge(actionByPlayerId.get(p.id))}
                       </div>
                       <div style={{ marginTop: 4, display: 'flex', justifyContent: 'center', marginLeft: '1cm' }}>
@@ -1670,6 +2315,7 @@ export const PokerGamePage = ({
                         </span>
                       </div>
                     </div>
+                    {renderReactionBadge(you.id)}
                     {renderActionBadge(actionByPlayerId.get(you.id))}
                   </div>
                 </div>
@@ -1687,7 +2333,7 @@ export const PokerGamePage = ({
                 >
                   {discardPending && !discardSubmitted && (
                     <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif', opacity: 0.85 }}>
-                      Click a card to discard
+                      {uiDiscardOverlayV2 ? 'Select one card, then confirm discard' : 'Click a card to discard'}
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 10 }}>
@@ -1718,7 +2364,11 @@ export const PokerGamePage = ({
                               discardFlashIndex === idx
                                 ? 'red'
                                 : discardPending && !discardSubmitted && !animateHoleDeal
-                                  ? 'green'
+                                  ? uiDiscardOverlayV2
+                                    ? selectedDiscardIndex === idx
+                                      ? 'green'
+                                      : undefined
+                                    : 'green'
                                   : undefined
                             }
                             fade={discardFlashIndex === idx}
@@ -1730,15 +2380,17 @@ export const PokerGamePage = ({
                 </div>
               </>
             )}
-            <div style={{ position: 'absolute', bottom: isMobile ? -162 : 'calc(-218px + 1.2cm)', left: isMobile ? '50%' : 'calc(-9.4px + 0.2cm)', transform: isMobile ? 'translateX(-50%)' : undefined, width: isMobile ? 'min(92vw, 340px)' : 300, background: 'rgba(9, 12, 20, 0.8)', border: '1px solid #27324e', borderRadius: 10, padding: 8 }}>
-              <div style={{ maxHeight: isMobile ? 72 : 80, overflowY: 'auto' }}>
-                {(state?.log ?? []).slice(-5).map((l: any, idx: number) => (
-                  <div key={idx} style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, fontFamily: '"Inter", sans-serif' }}>
-                    {l.message}
-                  </div>
-                ))}
+            {showActivityFeed ? (
+              <div style={{ position: 'absolute', bottom: isMobile ? -162 : 'calc(-218px + 1.2cm)', left: isMobile ? '50%' : 'calc(-9.4px + 0.2cm)', transform: isMobile ? 'translateX(-50%)' : undefined, width: isMobile ? 'min(92vw, 340px)' : 300, background: 'rgba(9, 12, 20, 0.8)', border: '1px solid #27324e', borderRadius: 10, padding: 8 }}>
+                <div style={{ maxHeight: isMobile ? 72 : 80, overflowY: 'auto' }}>
+                  {(state?.log ?? []).slice(-5).map((l: any, idx: number) => (
+                    <div key={idx} style={{ fontSize: 12, opacity: 0.85, marginBottom: 4, fontFamily: '"Inter", sans-serif' }}>
+                      {l.message}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : null}
             </div>
           </div>
           {you && (
@@ -1751,13 +2403,215 @@ export const PokerGamePage = ({
                 borderRadius: 0,
                 padding: 0,
                 display: 'flex',
-                gap: isMobile ? 8 : 12,
-                alignItems: isMobile ? 'stretch' : 'center',
-                justifyContent: isMobile ? 'center' : 'space-between',
+                flexDirection: 'column',
+                gap: isMobile ? 8 : 10,
+                alignItems: 'stretch',
               }}
             >
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: isMobile ? 'center' : 'flex-start',
+                  gap: 8,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.14em',
+                    color: 'rgba(186,230,253,0.82)',
+                    fontFamily:
+                      'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                  }}
+                >
+                  Reactions
+                </span>
+                {TABLE_REACTIONS.map((reaction) => (
+                  <button
+                    key={reaction}
+                    type="button"
+                    onClick={() => sendReaction(reaction)}
+                    disabled={reactionOnCooldown || !seated}
+                    style={{
+                      borderRadius: 999,
+                      border: '1px solid rgba(20,184,166,0.55)',
+                      background: 'rgba(15,23,42,0.75)',
+                      color: '#ccfbf1',
+                      padding: isPhone ? '6px 10px' : '6px 12px',
+                      fontSize: 10,
+                      fontWeight: 800,
+                      letterSpacing: 0.4,
+                      fontFamily: '"Inter", sans-serif',
+                      cursor: reactionOnCooldown || !seated ? 'not-allowed' : 'pointer',
+                      opacity: reactionOnCooldown || !seated ? 0.5 : 1,
+                    }}
+                  >
+                    {TABLE_REACTION_LABELS[reaction]}
+                  </button>
+                ))}
+                {reactionOnCooldown ? (
+                  <span style={{ fontSize: 11, color: 'rgba(226,232,240,0.68)' }}>Cooling down...</span>
+                ) : null}
+              </div>
+              {showTableChat ? (
+                <div
+                  style={{
+                    borderRadius: 12,
+                    border: '1px solid rgba(56,189,248,0.4)',
+                    background: 'rgba(8,15,24,0.74)',
+                    padding: isPhone ? '10px 10px' : '11px 12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.14em',
+                        color: 'rgba(186,230,253,0.82)',
+                        fontFamily:
+                          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                      }}
+                    >
+                      Table Chat
+                    </span>
+                    {hiddenChatCount > 0 ? (
+                      <span style={{ fontSize: 11, color: 'rgba(148,163,184,0.86)' }}>
+                        {hiddenChatCount} muted
+                      </span>
+                    ) : null}
+                  </div>
+                  <div
+                    style={{
+                      maxHeight: isPhone ? 110 : 132,
+                      overflowY: 'auto',
+                      paddingRight: 2,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                    }}
+                  >
+                    {visibleChatMessages.length === 0 ? (
+                      <div style={{ fontSize: 12, color: 'rgba(203,213,225,0.74)' }}>
+                        No chat yet. Say hi.
+                      </div>
+                    ) : (
+                      visibleChatMessages.slice(-18).map((entry) => {
+                        const senderName =
+                          playerNameById.get(entry.playerId) ?? (entry.playerId === playerId ? 'You' : 'Player');
+                        const isSelf = entry.playerId === playerId;
+                        const senderMuted = mutedChatPlayerSet.has(entry.playerId);
+                        return (
+                          <div
+                            key={entry.id}
+                            style={{
+                              borderRadius: 8,
+                              border: '1px solid rgba(51,65,85,0.8)',
+                              background: 'rgba(2,6,12,0.5)',
+                              padding: '6px 8px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: '#bfdbfe' }}>{senderName}</span>
+                              {!isSelf ? (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleMuteChatPlayer(entry.playerId)}
+                                  style={{
+                                    borderRadius: 999,
+                                    border: '1px solid rgba(148,163,184,0.5)',
+                                    background: 'rgba(30,41,59,0.58)',
+                                    color: '#e2e8f0',
+                                    padding: '2px 7px',
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  {senderMuted ? 'Unmute' : 'Mute'}
+                                </button>
+                              ) : null}
+                            </div>
+                            <div style={{ marginTop: 3, fontSize: 12, color: 'rgba(226,232,240,0.9)' }}>
+                              {entry.message}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      sendChatMessage();
+                    }}
+                    style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}
+                  >
+                    <input
+                      value={chatInput}
+                      onChange={(event) => setChatInput(event.target.value)}
+                      maxLength={TABLE_CHAT_MAX_LENGTH}
+                      placeholder="Type message..."
+                      style={{
+                        minHeight: 40,
+                        borderRadius: 10,
+                        border: '1px solid rgba(71,85,105,0.85)',
+                        background: 'rgba(2,6,12,0.62)',
+                        color: '#f8fafc',
+                        padding: '8px 10px',
+                        fontSize: 13,
+                        outline: 'none',
+                        fontFamily:
+                          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={!chatInput.trim() || !seated}
+                      style={{
+                        minHeight: 40,
+                        borderRadius: 10,
+                        border: '1px solid rgba(56,189,248,0.75)',
+                        background: 'rgba(14,116,144,0.3)',
+                        color: '#e0f2fe',
+                        padding: '8px 12px',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: !chatInput.trim() || !seated ? 'not-allowed' : 'pointer',
+                        opacity: !chatInput.trim() || !seated ? 0.55 : 1,
+                      }}
+                    >
+                      Send
+                    </button>
+                  </form>
+                </div>
+              ) : null}
               {discardPending ? (
                 <div />
+              ) : showWaitingActionPanel ? (
+                <div
+                  style={{
+                    width: '100%',
+                    borderRadius: 12,
+                    border: '1px solid rgba(56,189,248,0.45)',
+                    background: 'rgba(8,15,24,0.72)',
+                    padding: isPhone ? '10px 12px' : '12px 14px',
+                    fontSize: 13,
+                    color: 'rgba(226,232,240,0.95)',
+                    textAlign: isPhone ? 'center' : 'left',
+                    fontFamily:
+                      'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                  }}
+                >
+                  {actionOnPlayer?.name ?? 'Player'} is acting · Current bet {currentBetValue} · Your call{' '}
+                  {toCallValue}
+                </div>
               ) : (
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', justifyContent: isMobile ? 'center' : 'flex-start', width: '100%' }}>
                   <button disabled={!isMyTurn} onClick={() => act('fold')} style={actionButtonBaseStyle}>
@@ -1813,6 +2667,83 @@ export const PokerGamePage = ({
                 <span style={ellipsisDotStyle(200)}>.</span>
                 <span style={ellipsisDotStyle(400)}>.</span>
               </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {uiDiscardOverlayV2 && discardPending && you ? (
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: isPhone ? 'calc(10px + env(safe-area-inset-bottom))' : 'calc(14px + env(safe-area-inset-bottom))',
+            transform: 'translateX(-50%)',
+            zIndex: 95,
+            width: isPhone ? 'calc(100vw - 20px)' : 'min(560px, calc(100vw - 30px))',
+            borderRadius: 14,
+            border: '1px solid rgba(20,184,166,0.55)',
+            background: 'rgba(2,6,14,0.92)',
+            boxShadow: '0 16px 40px rgba(0,0,0,0.45)',
+            padding: isPhone ? '10px 12px' : '12px 14px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <div>
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 700,
+                  color: '#ccfbf1',
+                  fontFamily:
+                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                }}
+              >
+                Discard 1 Card
+              </div>
+              <div style={{ marginTop: 2, fontSize: 12, color: 'rgba(226,232,240,0.82)' }}>
+                {selectedDiscardIndex === null
+                  ? 'Tap a card to select it.'
+                  : `Card ${selectedDiscardIndex + 1} selected.`}
+              </div>
+            </div>
+
+            <div style={{ display: 'inline-flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setSelectedDiscardIndex(null)}
+                disabled={selectedDiscardIndex === null || discardSubmitted}
+                style={{
+                  borderRadius: 10,
+                  border: '1px solid rgba(148,163,184,0.55)',
+                  background: 'rgba(30,41,59,0.55)',
+                  color: '#e2e8f0',
+                  padding: '8px 12px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: selectedDiscardIndex === null || discardSubmitted ? 'not-allowed' : 'pointer',
+                  opacity: selectedDiscardIndex === null || discardSubmitted ? 0.55 : 1,
+                }}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={confirmDiscardSelection}
+                disabled={selectedDiscardIndex === null || discardSubmitted}
+                style={{
+                  borderRadius: 10,
+                  border: '1px solid rgba(20,184,166,0.75)',
+                  background: 'rgba(20,184,166,0.2)',
+                  color: '#ccfbf1',
+                  padding: '8px 12px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: selectedDiscardIndex === null || discardSubmitted ? 'not-allowed' : 'pointer',
+                  opacity: selectedDiscardIndex === null || discardSubmitted ? 0.55 : 1,
+                }}
+              >
+                Confirm Discard
+              </button>
             </div>
           </div>
         </div>

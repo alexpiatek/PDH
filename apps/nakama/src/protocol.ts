@@ -1,3 +1,4 @@
+import { TABLE_CHAT_MAX_LENGTH, TABLE_REACTIONS } from '@pdh/protocol';
 import type {
   ClientMessage as SharedClientMessage,
   MutatingClientMessage as SharedMutatingClientMessage,
@@ -70,9 +71,24 @@ export function isClientMessage(value: unknown): value is ClientMessage {
         hasValidOptionalSequence(value)
       );
     case 'discard':
-      return Number.isInteger(value.index) && value.index >= 0 && hasValidOptionalSequence(value);
+      return (
+        Number.isInteger(value.index) &&
+        Number(value.index) >= 0 &&
+        hasValidOptionalSequence(value)
+      );
     case 'nextHand':
       return hasValidOptionalSequence(value);
+    case 'reaction':
+      return (
+        typeof value.emoji === 'string' &&
+        TABLE_REACTIONS.includes(value.emoji as (typeof TABLE_REACTIONS)[number])
+      );
+    case 'chat':
+      return (
+        typeof value.message === 'string' &&
+        value.message.trim().length > 0 &&
+        value.message.trim().length <= TABLE_CHAT_MAX_LENGTH
+      );
     case 'requestState':
       return true;
     default:
@@ -96,6 +112,25 @@ export function isServerMessage(value: unknown): value is ServerMessage {
       return isObject(value.state);
     case 'error':
       return typeof value.message === 'string' && value.message.length > 0;
+    case 'reaction':
+      return (
+        typeof value.playerId === 'string' &&
+        value.playerId.length > 0 &&
+        typeof value.emoji === 'string' &&
+        TABLE_REACTIONS.includes(value.emoji as (typeof TABLE_REACTIONS)[number]) &&
+        Number.isInteger(value.ts) &&
+        Number(value.ts) >= 0
+      );
+    case 'chat':
+      return (
+        typeof value.playerId === 'string' &&
+        value.playerId.length > 0 &&
+        typeof value.message === 'string' &&
+        value.message.trim().length > 0 &&
+        value.message.trim().length <= TABLE_CHAT_MAX_LENGTH &&
+        Number.isInteger(value.ts) &&
+        Number(value.ts) >= 0
+      );
     default:
       return false;
   }

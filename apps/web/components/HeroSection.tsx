@@ -1,4 +1,10 @@
+import { useState } from 'react';
+import { useRouter } from 'next/router';
 import { logClientEvent } from '../lib/clientTelemetry';
+import { useFeatureFlags } from '../lib/featureFlags';
+import { ensureNakamaReady, formatNakamaError, quickPlayLobby } from '../lib/nakamaClient';
+import { buildQuickPlayRequest, recordQuickPlayResolved } from '../lib/quickPlayProfile';
+import { upsertRecentTable } from '../lib/recentTables';
 
 const MICRO_BULLETS = [
   'Classic No-Limit Hold’em betting',
@@ -40,6 +46,57 @@ const FAQ = [
 ] as const;
 
 export default function HeroSection() {
+  const router = useRouter();
+  const { uiQuickPlay } = useFeatureFlags();
+  const [playNowLoading, setPlayNowLoading] = useState(false);
+  const [playNowError, setPlayNowError] = useState('');
+
+  const handlePlayNow = async () => {
+    logClientEvent('landing_cta', {
+      cta: uiQuickPlay ? 'hero_primary_quick_play' : 'hero_primary_play_online',
+      destination: uiQuickPlay ? 'quick_play' : '/play',
+    });
+
+    if (!uiQuickPlay) {
+      await router.push('/play');
+      return;
+    }
+
+    if (playNowLoading) {
+      return;
+    }
+
+    setPlayNowLoading(true);
+    setPlayNowError('');
+    try {
+      await ensureNakamaReady();
+      const request = buildQuickPlayRequest(6);
+      const result = await quickPlayLobby(request);
+      recordQuickPlayResolved(result);
+      upsertRecentTable({
+        code: result.code,
+        matchId: result.matchId,
+        name: result.name,
+        maxPlayers: result.maxPlayers,
+        isPrivate: result.isPrivate,
+      });
+      logClientEvent('landing_quick_play_resolved', {
+        created: result.created,
+        code: result.code,
+        matchId: result.matchId,
+        targetBuyIn: request.targetBuyIn,
+        skillTier: request.skillTier,
+        resolvedBuyIn: result.quickPlayBuyIn,
+        resolvedSkillTier: result.quickPlaySkillTier,
+      });
+      await router.push(`/table/${encodeURIComponent(result.matchId)}`);
+    } catch (error) {
+      setPlayNowError(formatNakamaError(error));
+    } finally {
+      setPlayNowLoading(false);
+    }
+  };
+
   return (
     <section className="relative isolate overflow-hidden text-zinc-100">
       <div className="pointer-events-none absolute inset-0">
@@ -67,18 +124,16 @@ export default function HeroSection() {
           </p>
 
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <a
-              href="/play"
-              onClick={() =>
-                logClientEvent('landing_cta', {
-                  cta: 'hero_primary_play_online',
-                  destination: '/play',
-                })
-              }
-              className="inline-flex items-center justify-center rounded-xl border border-amber-300/60 bg-amber-400/20 px-6 py-3 text-sm font-semibold text-amber-50 transition hover:bg-amber-400/30"
+            <button
+              type="button"
+              onClick={() => {
+                void handlePlayNow();
+              }}
+              disabled={playNowLoading}
+              className="inline-flex items-center justify-center rounded-xl border border-amber-300/60 bg-amber-400/20 px-6 py-3 text-sm font-semibold text-amber-50 transition hover:bg-amber-400/30 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Play Online
-            </a>
+              {playNowLoading ? 'Finding Seat...' : uiQuickPlay ? 'Play Now' : 'Play Online'}
+            </button>
             <a
               href="#twist"
               className="inline-flex items-center justify-center rounded-xl border border-teal-300/45 bg-teal-500/15 px-6 py-3 text-sm font-semibold text-teal-50 transition hover:bg-teal-500/25"
@@ -86,6 +141,11 @@ export default function HeroSection() {
               Learn the Twist in 30s
             </a>
           </div>
+          {playNowError ? (
+            <p className="mx-auto mt-3 max-w-2xl rounded-xl border border-rose-400/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100">
+              {playNowError}
+            </p>
+          ) : null}
 
           <ul className="mx-auto mt-8 max-w-3xl space-y-2 text-left text-sm text-zinc-200">
             {MICRO_BULLETS.map((item) => (

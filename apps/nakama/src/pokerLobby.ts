@@ -17,6 +17,19 @@ const MIN_MAX_PLAYERS = 2;
 const MAX_MAX_PLAYERS = 9;
 const DEFAULT_IS_PRIVATE = true;
 const MAX_TABLE_NAME_LENGTH = 48;
+const DEFAULT_QUICK_PLAY_BUY_IN = 10000;
+const MIN_QUICK_PLAY_BUY_IN = 500;
+const MAX_QUICK_PLAY_BUY_IN = 1_000_000;
+
+const QUICK_PLAY_SKILL_TIERS = ['newcomer', 'casual', 'regular', 'pro'] as const;
+type QuickPlaySkillTier = (typeof QUICK_PLAY_SKILL_TIERS)[number];
+const DEFAULT_QUICK_PLAY_SKILL_TIER: QuickPlaySkillTier = 'casual';
+const QUICK_PLAY_SKILL_RANK: Record<QuickPlaySkillTier, number> = {
+  newcomer: 0,
+  casual: 1,
+  regular: 2,
+  pro: 3,
+};
 
 interface CreateTableInput {
   name: string;
@@ -30,6 +43,13 @@ interface JoinByCodeInput {
 
 interface QuickPlayInput {
   maxPlayers: number;
+  targetBuyIn: number;
+  skillTier: QuickPlaySkillTier;
+}
+
+interface QuickPlayMeta {
+  buyIn: number;
+  skillTier: QuickPlaySkillTier;
 }
 
 interface ListTablesInput {
@@ -55,6 +75,8 @@ interface LobbyTableSummary {
   createdAt: string;
   presenceCount: number;
   seatsOpen: number;
+  quickPlayBuyIn: number;
+  quickPlaySkillTier: QuickPlaySkillTier;
 }
 
 interface QuickPlayResult {
@@ -64,6 +86,8 @@ interface QuickPlayResult {
   maxPlayers: number;
   isPrivate: boolean;
   created: boolean;
+  quickPlayBuyIn: number;
+  quickPlaySkillTier: QuickPlaySkillTier;
 }
 
 interface ListTablesResult {
@@ -76,6 +100,7 @@ interface TableStorageValue {
   maxPlayers: number;
   isPrivate: boolean;
   createdAt: string;
+  quickPlay: QuickPlayMeta | null;
 }
 
 interface PokerTableState {
@@ -227,14 +252,80 @@ function parseJoinByCodeInput(payload: string | undefined): JoinByCodeInput {
 function parseQuickPlayInput(payload: string | undefined): QuickPlayInput {
   const parsed = parseRpcPayload(payload);
   if (parsed === undefined) {
-    return { maxPlayers: DEFAULT_MAX_PLAYERS };
+    return {
+      maxPlayers: DEFAULT_MAX_PLAYERS,
+      targetBuyIn: DEFAULT_QUICK_PLAY_BUY_IN,
+      skillTier: DEFAULT_QUICK_PLAY_SKILL_TIER,
+    };
   }
   if (!isRecord(parsed)) {
     throw new Error('Invalid quick-play payload.');
   }
   return {
     maxPlayers: parseMaxPlayers(parsed.maxPlayers),
+    targetBuyIn: parseQuickPlayBuyIn(parsed.targetBuyIn),
+    skillTier: parseQuickPlaySkillTier(parsed.skillTier),
   };
+}
+
+function parseQuickPlayBuyIn(value: unknown): number {
+  if (value === undefined || value === null || value === '') {
+    return DEFAULT_QUICK_PLAY_BUY_IN;
+  }
+  if (!Number.isInteger(value)) {
+    throw new Error(
+      `Quick-play buy-in must be an integer between ${MIN_QUICK_PLAY_BUY_IN} and ${MAX_QUICK_PLAY_BUY_IN}.`
+    );
+  }
+  const buyIn = Number(value);
+  if (buyIn < MIN_QUICK_PLAY_BUY_IN || buyIn > MAX_QUICK_PLAY_BUY_IN) {
+    throw new Error(
+      `Quick-play buy-in must be between ${MIN_QUICK_PLAY_BUY_IN} and ${MAX_QUICK_PLAY_BUY_IN}.`
+    );
+  }
+  return buyIn;
+}
+
+function parseQuickPlaySkillTier(value: unknown): QuickPlaySkillTier {
+  if (value === undefined || value === null) {
+    return DEFAULT_QUICK_PLAY_SKILL_TIER;
+  }
+  if (typeof value !== 'string') {
+    throw new Error('Quick-play skill tier must be a string.');
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return DEFAULT_QUICK_PLAY_SKILL_TIER;
+  }
+
+  if (normalized === 'new' || normalized === 'beginner') {
+    return 'newcomer';
+  }
+
+  if (normalized === 'intermediate') {
+    return 'regular';
+  }
+
+  if ((QUICK_PLAY_SKILL_TIERS as readonly string[]).includes(normalized)) {
+    return normalized as QuickPlaySkillTier;
+  }
+
+  throw new Error('Quick-play skill tier must be one of newcomer, casual, regular, or pro.');
+}
+
+function normalizeQuickPlayMeta(value: unknown): QuickPlayMeta | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  try {
+    return {
+      buyIn: parseQuickPlayBuyIn(value.buyIn),
+      skillTier: parseQuickPlaySkillTier(value.skillTier),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function parseListTablesInput(payload: string | undefined): ListTablesInput {
@@ -304,6 +395,7 @@ function normalizeStoredTableValue(value: unknown): TableStorageValue | null {
 
   const maxPlayers = parseMaxPlayers(value.maxPlayers);
   const isPrivate = parseIsPrivate(value.isPrivate);
+  const quickPlay = normalizeQuickPlayMeta(value.quickPlay);
 
   return {
     matchId,
@@ -311,6 +403,7 @@ function normalizeStoredTableValue(value: unknown): TableStorageValue | null {
     maxPlayers,
     isPrivate,
     createdAt,
+    quickPlay,
   };
 }
 
@@ -459,6 +552,8 @@ function listActiveLobbyTables(nk: NakamaWithStorage): LobbyTableSummary[] {
       createdAt: stored.createdAt,
       presenceCount,
       seatsOpen,
+      quickPlayBuyIn: stored.quickPlay?.buyIn ?? DEFAULT_QUICK_PLAY_BUY_IN,
+      quickPlaySkillTier: stored.quickPlay?.skillTier ?? DEFAULT_QUICK_PLAY_SKILL_TIER,
     });
   }
 
@@ -477,7 +572,8 @@ function listActiveLobbyTables(nk: NakamaWithStorage): LobbyTableSummary[] {
 
 function createQuickPlayTable(
   nk: NakamaWithStorage,
-  maxPlayers: number
+  maxPlayers: number,
+  quickPlay: QuickPlayMeta
 ): QuickPlayResult {
   const code = createUniqueTableCode(nk);
   const createdAt = new Date().toISOString();
@@ -490,6 +586,7 @@ function createQuickPlayTable(
     maxPlayers,
     isPrivate: false,
     createdAt,
+    quickPlay,
   });
 
   return {
@@ -499,7 +596,77 @@ function createQuickPlayTable(
     maxPlayers,
     isPrivate: false,
     created: true,
+    quickPlayBuyIn: quickPlay.buyIn,
+    quickPlaySkillTier: quickPlay.skillTier,
   };
+}
+
+function preferredOccupancyForSkill(skillTier: QuickPlaySkillTier): number {
+  if (skillTier === 'newcomer') {
+    return 0.45;
+  }
+  if (skillTier === 'casual') {
+    return 0.62;
+  }
+  if (skillTier === 'regular') {
+    return 0.78;
+  }
+  return 0.9;
+}
+
+function scoreQuickPlayCandidate(table: LobbyTableSummary, input: QuickPlayInput): number {
+  const buyInDelta = Math.abs(table.quickPlayBuyIn - input.targetBuyIn) / Math.max(1, input.targetBuyIn);
+  const skillDelta = Math.abs(
+    QUICK_PLAY_SKILL_RANK[table.quickPlaySkillTier] - QUICK_PLAY_SKILL_RANK[input.skillTier]
+  );
+  const fillRatio = table.maxPlayers > 0 ? table.presenceCount / table.maxPlayers : 0;
+  const occupancyDelta = Math.abs(fillRatio - preferredOccupancyForSkill(input.skillTier));
+
+  let score = buyInDelta * 2.2 + skillDelta * 0.9 + occupancyDelta * 1.1;
+  if (table.seatsOpen === 1) {
+    score += 0.12;
+  }
+  if (table.presenceCount === 0) {
+    score += 0.08;
+  }
+
+  return score;
+}
+
+function chooseBestQuickPlayCandidate(
+  candidates: LobbyTableSummary[],
+  input: QuickPlayInput
+): LobbyTableSummary | null {
+  if (!candidates.length) {
+    return null;
+  }
+
+  let best = candidates[0];
+  let bestScore = scoreQuickPlayCandidate(best, input);
+
+  for (let i = 1; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    const candidateScore = scoreQuickPlayCandidate(candidate, input);
+    if (candidateScore + 0.0001 < bestScore) {
+      best = candidate;
+      bestScore = candidateScore;
+      continue;
+    }
+
+    if (Math.abs(candidateScore - bestScore) <= 0.0001) {
+      if (candidate.presenceCount > best.presenceCount) {
+        best = candidate;
+        bestScore = candidateScore;
+        continue;
+      }
+      if (candidate.presenceCount === best.presenceCount && candidate.createdAt < best.createdAt) {
+        best = candidate;
+        bestScore = candidateScore;
+      }
+    }
+  }
+
+  return best;
 }
 
 export function rpcCreateTable(
@@ -523,6 +690,12 @@ export function rpcCreateTable(
     maxPlayers: input.maxPlayers,
     isPrivate: input.isPrivate,
     createdAt,
+    quickPlay: input.isPrivate
+      ? null
+      : {
+          buyIn: DEFAULT_QUICK_PLAY_BUY_IN,
+          skillTier: DEFAULT_QUICK_PLAY_SKILL_TIER,
+        },
   });
 
   logger.info(
@@ -582,14 +755,18 @@ export function rpcQuickPlay(
       table.maxPlayers === input.maxPlayers
   );
 
-  if (candidates.length > 0) {
-    const chosen = candidates[0];
+  const chosen = chooseBestQuickPlayCandidate(candidates, input);
+  if (chosen) {
     logger.info(
-      'Quick play resolved existing table code=%v matchId=%v presence=%v/%v',
+      'Quick play resolved existing table code=%v matchId=%v presence=%v/%v buyIn=%v skill=%v targetBuyIn=%v targetSkill=%v',
       chosen.code,
       chosen.matchId,
       chosen.presenceCount,
-      chosen.maxPlayers
+      chosen.maxPlayers,
+      chosen.quickPlayBuyIn,
+      chosen.quickPlaySkillTier,
+      input.targetBuyIn,
+      input.skillTier
     );
     const result: QuickPlayResult = {
       code: chosen.code,
@@ -598,16 +775,23 @@ export function rpcQuickPlay(
       maxPlayers: chosen.maxPlayers,
       isPrivate: chosen.isPrivate,
       created: false,
+      quickPlayBuyIn: chosen.quickPlayBuyIn,
+      quickPlaySkillTier: chosen.quickPlaySkillTier,
     };
     return JSON.stringify(result);
   }
 
-  const created = createQuickPlayTable(runtimeNakama, input.maxPlayers);
+  const created = createQuickPlayTable(runtimeNakama, input.maxPlayers, {
+    buyIn: input.targetBuyIn,
+    skillTier: input.skillTier,
+  });
   logger.info(
-    'Quick play created new table code=%v matchId=%v maxPlayers=%v',
+    'Quick play created new table code=%v matchId=%v maxPlayers=%v buyIn=%v skill=%v',
     created.code,
     created.matchId,
-    created.maxPlayers
+    created.maxPlayers,
+    created.quickPlayBuyIn,
+    created.quickPlaySkillTier
   );
   return JSON.stringify(created);
 }

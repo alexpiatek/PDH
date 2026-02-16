@@ -29,7 +29,11 @@ export enum MatchOpCode {
   ServerMessage = 2,
 }
 
+export const TABLE_REACTIONS = ['gg', 'wow', 'nice', 'oops', 'fire'] as const;
+export const TABLE_CHAT_MAX_LENGTH = 140 as const;
+
 const clientActionSchema = z.enum(['fold', 'check', 'call', 'bet', 'raise', 'allIn']);
+const tableReactionSchema = z.enum(TABLE_REACTIONS);
 const seqSchema = z.number().int().positive();
 
 const versionedMessage = <T extends z.ZodRawShape>(shape: T) =>
@@ -70,6 +74,16 @@ const nextHandClientMessageSchema = versionedMessage({
   seq: seqSchema.optional(),
 });
 
+const reactionClientMessageSchema = versionedMessage({
+  type: z.literal('reaction'),
+  emoji: tableReactionSchema,
+});
+
+const chatClientMessageSchema = versionedMessage({
+  type: z.literal('chat'),
+  message: z.string().trim().min(1).max(TABLE_CHAT_MAX_LENGTH),
+});
+
 const requestStateClientMessageSchema = versionedMessage({
   type: z.literal('requestState'),
 });
@@ -80,6 +94,8 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   actionClientMessageSchema,
   discardClientMessageSchema,
   nextHandClientMessageSchema,
+  reactionClientMessageSchema,
+  chatClientMessageSchema,
   requestStateClientMessageSchema,
 ]);
 
@@ -121,10 +137,26 @@ const errorServerMessageSchema = versionedMessage({
   message: z.string().min(1),
 });
 
+const reactionServerMessageSchema = versionedMessage({
+  type: z.literal('reaction'),
+  playerId: z.string().min(1),
+  emoji: tableReactionSchema,
+  ts: z.number().int().nonnegative(),
+});
+
+const chatServerMessageSchema = versionedMessage({
+  type: z.literal('chat'),
+  playerId: z.string().min(1),
+  message: z.string().trim().min(1).max(TABLE_CHAT_MAX_LENGTH),
+  ts: z.number().int().nonnegative(),
+});
+
 export const serverMessageSchema = z.discriminatedUnion('type', [
   welcomeServerMessageSchema,
   stateServerMessageSchema,
   errorServerMessageSchema,
+  reactionServerMessageSchema,
+  chatServerMessageSchema,
 ]);
 
 export type ServerMessage = z.infer<typeof serverMessageSchema>;

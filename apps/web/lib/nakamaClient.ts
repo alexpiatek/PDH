@@ -6,6 +6,8 @@ export const LOBBY_RPC_JOIN_BY_CODE = 'rpc_join_by_code';
 export const LOBBY_RPC_QUICK_PLAY = 'rpc_quick_play';
 export const LOBBY_RPC_LIST_TABLES = 'rpc_list_tables';
 
+export type QuickPlaySkillTier = 'newcomer' | 'casual' | 'regular' | 'pro';
+
 const STORAGE_KEYS = {
   deviceId: 'pdh.nakama.device_id',
   sessionToken: 'pdh.nakama.session_token',
@@ -42,6 +44,8 @@ export interface JoinByCodeRpcResponse {
 
 export interface QuickPlayRpcRequest {
   maxPlayers?: number;
+  targetBuyIn?: number;
+  skillTier?: QuickPlaySkillTier;
 }
 
 export interface QuickPlayRpcResponse {
@@ -51,6 +55,8 @@ export interface QuickPlayRpcResponse {
   maxPlayers: number;
   isPrivate: boolean;
   created: boolean;
+  quickPlayBuyIn: number;
+  quickPlaySkillTier: QuickPlaySkillTier;
 }
 
 export interface ListTablesRpcRequest {
@@ -67,6 +73,8 @@ export interface ListTablesRpcTable {
   createdAt: string;
   presenceCount: number;
   seatsOpen: number;
+  quickPlayBuyIn?: number;
+  quickPlaySkillTier?: QuickPlaySkillTier;
 }
 
 export interface ListTablesRpcResponse {

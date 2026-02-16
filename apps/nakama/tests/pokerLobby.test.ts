@@ -212,29 +212,33 @@ describe('poker lobby RPCs', () => {
       {},
       logger as any,
       nk as any,
-      JSON.stringify({ maxPlayers: 6 })
+      JSON.stringify({ maxPlayers: 6, targetBuyIn: 10000, skillTier: 'casual' })
     );
     const parsed = JSON.parse(quick) as {
       code: string;
       matchId: string;
       isPrivate: boolean;
       created: boolean;
+      quickPlayBuyIn: number;
+      quickPlaySkillTier: string;
     };
 
     expect(parsed.matchId).toBe(publicTable.matchId);
     expect(parsed.code).toBe(publicTable.code);
     expect(parsed.isPrivate).toBe(false);
     expect(parsed.created).toBe(false);
+    expect(parsed.quickPlayBuyIn).toBe(10000);
+    expect(parsed.quickPlaySkillTier).toBe('casual');
   });
 
   it('quick play creates a new table when none are available', () => {
-    const { nk } = makeNakamaMock();
+    const { nk, storage } = makeNakamaMock();
 
     const quick = rpcQuickPlay(
       {},
       logger as any,
       nk as any,
-      JSON.stringify({ maxPlayers: 5 })
+      JSON.stringify({ maxPlayers: 5, targetBuyIn: 25000, skillTier: 'regular' })
     );
     const parsed = JSON.parse(quick) as {
       code: string;
@@ -242,6 +246,8 @@ describe('poker lobby RPCs', () => {
       maxPlayers: number;
       isPrivate: boolean;
       created: boolean;
+      quickPlayBuyIn: number;
+      quickPlaySkillTier: string;
     };
 
     expect(parsed.created).toBe(true);
@@ -249,6 +255,106 @@ describe('poker lobby RPCs', () => {
     expect(parsed.isPrivate).toBe(false);
     expect(isValidTableCodeFormat(parsed.code)).toBe(true);
     expect(parsed.matchId).toBe('match-1');
+    expect(parsed.quickPlayBuyIn).toBe(25000);
+    expect(parsed.quickPlaySkillTier).toBe('regular');
+
+    const stored = storage.get(parsed.code) as any;
+    expect(stored.quickPlay.buyIn).toBe(25000);
+    expect(stored.quickPlay.skillTier).toBe('regular');
+  });
+
+  it('quick play prefers tables with closer buy-in metadata', () => {
+    const { nk, setMatchSize, storage } = makeNakamaMock();
+
+    const low = JSON.parse(
+      rpcCreateTable(
+        {},
+        logger as any,
+        nk as any,
+        JSON.stringify({ name: 'Low Stakes', maxPlayers: 6, isPrivate: false })
+      )
+    ) as { code: string; matchId: string };
+    const high = JSON.parse(
+      rpcCreateTable(
+        {},
+        logger as any,
+        nk as any,
+        JSON.stringify({ name: 'High Stakes', maxPlayers: 6, isPrivate: false })
+      )
+    ) as { code: string; matchId: string };
+
+    setMatchSize(low.matchId, 3);
+    setMatchSize(high.matchId, 3);
+
+    const lowStored = storage.get(low.code) as any;
+    storage.set(low.code, {
+      ...lowStored,
+      quickPlay: { buyIn: 2000, skillTier: 'newcomer' },
+    });
+    const highStored = storage.get(high.code) as any;
+    storage.set(high.code, {
+      ...highStored,
+      quickPlay: { buyIn: 50000, skillTier: 'regular' },
+    });
+
+    const quick = rpcQuickPlay(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ maxPlayers: 6, targetBuyIn: 2500, skillTier: 'newcomer' })
+    );
+    const parsed = JSON.parse(quick) as { code: string; matchId: string; created: boolean };
+
+    expect(parsed.created).toBe(false);
+    expect(parsed.code).toBe(low.code);
+    expect(parsed.matchId).toBe(low.matchId);
+  });
+
+  it('quick play prefers tables with closer skill tier when buy-ins are similar', () => {
+    const { nk, setMatchSize, storage } = makeNakamaMock();
+
+    const newcomer = JSON.parse(
+      rpcCreateTable(
+        {},
+        logger as any,
+        nk as any,
+        JSON.stringify({ name: 'Newcomers', maxPlayers: 6, isPrivate: false })
+      )
+    ) as { code: string; matchId: string };
+    const pro = JSON.parse(
+      rpcCreateTable(
+        {},
+        logger as any,
+        nk as any,
+        JSON.stringify({ name: 'Pros', maxPlayers: 6, isPrivate: false })
+      )
+    ) as { code: string; matchId: string };
+
+    setMatchSize(newcomer.matchId, 4);
+    setMatchSize(pro.matchId, 4);
+
+    const newcomerStored = storage.get(newcomer.code) as any;
+    storage.set(newcomer.code, {
+      ...newcomerStored,
+      quickPlay: { buyIn: 10000, skillTier: 'newcomer' },
+    });
+    const proStored = storage.get(pro.code) as any;
+    storage.set(pro.code, {
+      ...proStored,
+      quickPlay: { buyIn: 10000, skillTier: 'pro' },
+    });
+
+    const quick = rpcQuickPlay(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ maxPlayers: 6, targetBuyIn: 10000, skillTier: 'pro' })
+    );
+    const parsed = JSON.parse(quick) as { code: string; matchId: string; created: boolean };
+
+    expect(parsed.created).toBe(false);
+    expect(parsed.code).toBe(pro.code);
+    expect(parsed.matchId).toBe(pro.matchId);
   });
 
   it('lists active tables and omits private tables by default', () => {

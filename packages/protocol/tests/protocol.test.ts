@@ -38,6 +38,56 @@ describe('protocol schemas', () => {
 
     expect(parsed.v).toBe(PDH_PROTOCOL_VERSION);
   });
+
+  it('accepts reaction client/server payloads', () => {
+    const client = parseClientMessagePayload({
+      type: 'reaction',
+      emoji: 'gg',
+    });
+    expect(client.v).toBe(PDH_PROTOCOL_VERSION);
+
+    const server = parseServerMessagePayload({
+      type: 'reaction',
+      playerId: 'player-1',
+      emoji: 'gg',
+      ts: Date.now(),
+    });
+    expect(server.v).toBe(PDH_PROTOCOL_VERSION);
+  });
+
+  it('rejects unsupported reaction token', () => {
+    expect(() =>
+      parseClientMessagePayload({
+        type: 'reaction',
+        emoji: 'party',
+      })
+    ).toThrow(/Invalid client message/i);
+  });
+
+  it('accepts chat client/server payloads', () => {
+    const client = parseClientMessagePayload({
+      type: 'chat',
+      message: 'good luck all',
+    });
+    expect(client.v).toBe(PDH_PROTOCOL_VERSION);
+
+    const server = parseServerMessagePayload({
+      type: 'chat',
+      playerId: 'player-1',
+      message: 'good luck all',
+      ts: Date.now(),
+    });
+    expect(server.v).toBe(PDH_PROTOCOL_VERSION);
+  });
+
+  it('rejects empty chat messages', () => {
+    expect(() =>
+      parseClientMessagePayload({
+        type: 'chat',
+        message: '   ',
+      })
+    ).toThrow(/Invalid client message/i);
+  });
 });
 
 describe('lobby table code helpers', () => {
