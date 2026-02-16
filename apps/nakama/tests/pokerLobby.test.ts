@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { isValidTableCodeFormat } from '@pdh/protocol';
 import {
-  POKER_TABLE_MATCH_MODULE,
+  LOBBY_GAMEPLAY_MATCH_MODULE,
   pokerTableMatchHandler,
   rpcCreateTable,
   rpcJoinByCode,
@@ -27,15 +27,13 @@ function makeNakamaMock() {
   const nk = {
     binaryToString: (data: Uint8Array) => new TextDecoder().decode(data),
     matchCreate: vi.fn((module: string, params: Record<string, unknown>) => {
-      if (module !== POKER_TABLE_MATCH_MODULE) {
+      if (module !== LOBBY_GAMEPLAY_MATCH_MODULE) {
         throw new Error(`Unexpected module: ${module}`);
       }
       const matchId = `match-${nextMatchId}`;
       nextMatchId += 1;
-
-      const init = pokerTableMatchHandler.matchInit({}, logger as any, nk as any, params) as {
-        label: string;
-      };
+      const tableId = typeof params.tableId === 'string' ? params.tableId : 'main';
+      const init = { label: JSON.stringify({ tableId }) };
       matches.set(matchId, {
         matchId,
         label: init.label,

@@ -1,6 +1,7 @@
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
 
 export const POKER_TABLE_MATCH_MODULE = 'poker_table';
+export const LOBBY_GAMEPLAY_MATCH_MODULE = 'pdh';
 export const RPC_CREATE_TABLE = 'rpc_create_table';
 export const RPC_JOIN_BY_CODE = 'rpc_join_by_code';
 
@@ -14,7 +15,6 @@ const MIN_MAX_PLAYERS = 2;
 const MAX_MAX_PLAYERS = 9;
 const DEFAULT_IS_PRIVATE = true;
 const MAX_TABLE_NAME_LENGTH = 48;
-const TABLE_LABEL_MODE = 'lobby_table';
 
 interface CreateTableInput {
   name: string;
@@ -208,10 +208,6 @@ function extractMatchSize(match: nkruntime.MatchListEntry | null | undefined): n
   return Math.max(0, Math.floor(size));
 }
 
-function tableLabel(code: string) {
-  return JSON.stringify({ mode: TABLE_LABEL_MODE, code });
-}
-
 function normalizeStoredTableValue(value: unknown): TableStorageValue | null {
   if (!isRecord(value)) {
     return null;
@@ -278,7 +274,7 @@ function writeTableByCode(nk: NakamaWithStorage, code: string, value: TableStora
   ]);
 }
 
-function resolveMatchSnapshot(nk: NakamaWithStorage, tableCode: string, matchId: string): MatchSnapshot {
+function resolveMatchSnapshot(nk: NakamaWithStorage, matchId: string): MatchSnapshot {
   if (typeof nk.matchGet === 'function') {
     const match = nk.matchGet(matchId);
     if (!match) {
@@ -297,7 +293,7 @@ function resolveMatchSnapshot(nk: NakamaWithStorage, tableCode: string, matchId:
   }
 
   try {
-    const matches = nk.matchList(100, true, tableLabel(tableCode), 0, MAX_MAX_PLAYERS, '') ?? [];
+    const matches = nk.matchList(100, true, '', 0, MAX_MAX_PLAYERS, '') ?? [];
     if (!matches.length) {
       return { found: false, size: null };
     }
@@ -338,12 +334,8 @@ export function rpcCreateTable(
 
   const code = createUniqueTableCode(runtimeNakama);
   const createdAt = new Date().toISOString();
-  const matchId = nk.matchCreate(POKER_TABLE_MATCH_MODULE, {
-    code,
-    name: input.name,
-    maxPlayers: input.maxPlayers,
-    isPrivate: input.isPrivate,
-    createdAt,
+  const matchId = nk.matchCreate(LOBBY_GAMEPLAY_MATCH_MODULE, {
+    tableId: code,
   });
 
   writeTableByCode(runtimeNakama, code, {
@@ -380,7 +372,7 @@ export function rpcJoinByCode(
     throw new Error('We could not find a table with that code.');
   }
 
-  const snapshot = resolveMatchSnapshot(runtimeNakama, input.code, stored.matchId);
+  const snapshot = resolveMatchSnapshot(runtimeNakama, stored.matchId);
   if (snapshot.found === false) {
     throw new Error('This table is no longer active.');
   }
@@ -442,7 +434,7 @@ function pokerTableMatchInit(ctx, logger, nk, params) {
   return {
     state,
     tickRate: 1,
-    label: tableLabel(code),
+    label: JSON.stringify({ mode: 'lobby_table', code }),
   };
 }
 
