@@ -1311,7 +1311,7 @@ export const PokerGamePage = ({
 
   const handleDiscardClick = (idx: number) => {
     if (!discardPending || discardSubmitted) return;
-    setSelectedDiscardIndex(idx);
+    setSelectedDiscardIndex((previous) => (previous === idx ? null : idx));
   };
 
   const confirmDiscardSelection = () => {
@@ -1540,13 +1540,21 @@ export const PokerGamePage = ({
   const isMobile = viewportWidth <= 900;
   const isPhone = viewportWidth <= 640;
   const centeredSectionMinHeight = isMobile ? 'calc(100vh - 220px)' : 'calc(100vh - 260px)';
-  const actionBarReserve = you && isBettingPhase ? (isPhone ? 146 : 124) : 0;
+  const actionBarReserve = you && isBettingPhase
+    ? showRaiseDrawer
+      ? isPhone
+        ? 280
+        : 220
+      : isPhone
+        ? 210
+        : 150
+    : 0;
   const tableOuterWidth = `min(${BASE_TABLE_WIDTH}px, calc(100vw - ${isPhone ? 16 : 36}px))`;
   const tableOuterBorder = isPhone ? 6 : isMobile ? 8 : 10;
   const actionButtonBaseStyle: React.CSSProperties = {
-    padding: isPhone ? '12px 14px' : '10px 16px',
+    padding: isPhone ? '10px 12px' : '10px 16px',
     fontWeight: 700,
-    minHeight: 44,
+    minHeight: isPhone ? 42 : 44,
     borderRadius: 12,
     border: '1px solid rgba(71,85,105,0.9)',
     background: 'rgba(15,23,42,0.82)',
@@ -1585,7 +1593,9 @@ export const PokerGamePage = ({
   const checkOrCallLabel = toCall === 0 ? 'Check' : `Call ${toCall}`;
   const bettingHintLine =
     hand && hand.phase === 'betting'
-      ? `To call: ${toCall} • Min raise: ${minRaiseTo ?? '--'} • Pot: ${potAmount}`
+      ? isPhone
+        ? `Call ${toCall} • Min ${minRaiseTo ?? '--'} • Pot ${potAmount}`
+        : `To call: ${toCall} • Min raise: ${minRaiseTo ?? '--'} • Pot: ${potAmount}`
       : '';
   const raiseDisabledHint = (() => {
     if (!hand || hand.phase !== 'betting') return 'Betting controls unlock during betting rounds.';
@@ -2406,7 +2416,12 @@ export const PokerGamePage = ({
                     } as React.CSSProperties
                   }
                 >
-                  <CardView key={idx} card={c} size="xlarge" highlight={isShowdown && winningCards.has(cardKey(c))} />
+                  <CardView
+                    key={idx}
+                    card={c}
+                    size={isPhone ? 'large' : 'xlarge'}
+                    highlight={isShowdown && winningCards.has(cardKey(c))}
+                  />
                 </div>
               ))}
             </div>
@@ -2733,47 +2748,57 @@ export const PokerGamePage = ({
                 >
                   {discardPending && !discardSubmitted && (
                     <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif', opacity: 0.85 }}>
-                      Select up to {discardLimit} to discard ({selectedDiscardCount}/{discardLimit})
+                      Select {discardLimit} card to discard ({selectedDiscardCount}/{discardLimit})
                     </div>
                   )}
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    {you.holeCards.map((c, idx) => (
-                      <div
-                        key={`${dealAnimationKey}-hole-${idx}`}
-                        style={
-                          (animateHoleDeal
-                            ? {
-                                animation: `deal-card 700ms ease-out ${idx * 120}ms both`,
-                                '--deal-x': '0px',
-                                '--deal-y': '-10.5cm',
-                              }
-                            : {}) as React.CSSProperties
-                        }
-                      >
+                  <div style={{ display: 'flex', gap: isPhone ? 8 : 10 }}>
+                    {you.holeCards.map((c, idx) => {
+                      const discardSelectable = discardPending && !discardSubmitted && !animateHoleDeal;
+                      const discardSelected = discardSelectable && selectedDiscardIndex === idx;
+                      return (
                         <div
-                          style={{
-                            transform: `rotate(${idx === 0 ? -6 : 6}deg)`,
-                            cursor: discardPending && !discardSubmitted ? 'pointer' : 'default',
-                          }}
-                          onClick={() => handleDiscardClick(idx)}
+                          key={`${dealAnimationKey}-hole-${idx}`}
+                          style={
+                            (animateHoleDeal
+                              ? {
+                                  animation: `deal-card 700ms ease-out ${idx * 120}ms both`,
+                                  '--deal-x': '0px',
+                                  '--deal-y': '-10.5cm',
+                                }
+                              : {}) as React.CSSProperties
+                          }
                         >
-                          <CardView
-                            card={c}
-                            size="large"
-                            outline={
-                              discardFlashIndex === idx
-                                ? 'red'
-                                : discardPending && !discardSubmitted && !animateHoleDeal
-                                  ? selectedDiscardIndex === idx
-                                    ? 'green'
+                          <div
+                            style={{
+                              transform: `rotate(${idx === 0 ? -6 : 6}deg) translateY(${discardSelected ? '-8px' : '0px'})`,
+                              cursor: discardPending && !discardSubmitted ? 'pointer' : 'default',
+                              transition: 'transform 140ms ease, filter 140ms ease',
+                              filter: discardSelectable
+                                ? discardSelected
+                                  ? 'drop-shadow(0 0 10px rgba(248,113,113,0.5))'
+                                  : 'drop-shadow(0 0 8px rgba(34,197,94,0.35))'
+                                : undefined,
+                            }}
+                            onClick={() => handleDiscardClick(idx)}
+                          >
+                            <CardView
+                              card={c}
+                              size={isPhone ? 'medium' : 'large'}
+                              outline={
+                                discardFlashIndex === idx
+                                  ? 'red'
+                                  : discardSelectable
+                                    ? discardSelected
+                                      ? 'red'
+                                      : 'green'
                                     : undefined
-                                  : undefined
-                            }
-                            fade={discardFlashIndex === idx}
-                          />
+                              }
+                              fade={discardFlashIndex === idx}
+                            />
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </>
@@ -2829,22 +2854,9 @@ export const PokerGamePage = ({
                     </span>
                   </div>
                   <div style={{ fontSize: 13, color: '#e2e8f0' }}>
-                    Select up to {discardLimit} to discard ({selectedDiscardCount}/{discardLimit})
+                    Select {discardLimit} card to discard ({selectedDiscardCount}/{discardLimit})
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDiscardIndex(null)}
-                      disabled={discardSubmitted}
-                      style={turnActionStyle(!discardSubmitted, {
-                        border: 'rgba(148,163,184,0.82)',
-                        background: 'rgba(30,41,59,0.78)',
-                        color: '#e2e8f0',
-                        glow: 'rgba(148,163,184,0.26)',
-                      })}
-                    >
-                      Keep All
-                    </button>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
                     <button
                       type="button"
                       onClick={confirmDiscardSelection}
@@ -2858,9 +2870,6 @@ export const PokerGamePage = ({
                     >
                       Confirm Discards
                     </button>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'rgba(186,230,253,0.88)' }}>
-                    Keep All defers to timer auto-discard in this ruleset.
                   </div>
                 </div>
               ) : null}
@@ -2887,7 +2896,7 @@ export const PokerGamePage = ({
                     gap: 8,
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: 8 }}>
                     <span
                       style={{
                         borderRadius: 999,
@@ -2904,12 +2913,9 @@ export const PokerGamePage = ({
                     >
                       {turnStatusLabel}
                     </span>
-                    <span style={{ fontSize: 11, color: timerTone }}>
-                      {tableTimerSeconds !== null ? `${tableTimerSeconds}s` : '--'}
-                    </span>
                   </div>
                   <div style={{ fontSize: 12, color: 'rgba(226,232,240,0.9)' }}>{bettingHintLine}</div>
-                  {latestActionLine ? (
+                  {latestActionLine && !isPhone ? (
                     <div style={{ fontSize: 11, color: 'rgba(148,163,184,0.9)' }}>
                       Last action: {latestActionLine}
                     </div>
