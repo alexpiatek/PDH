@@ -1540,6 +1540,24 @@ export const PokerGamePage = ({
   const isMobile = viewportWidth <= 900;
   const isPhone = viewportWidth <= 640;
   const centeredSectionMinHeight = isMobile ? 'calc(100vh - 220px)' : 'calc(100vh - 260px)';
+  const heroInfoBottomOffset = isPhone
+    ? isBettingPhase
+      ? 214
+      : 150
+    : isMobile
+      ? isBettingPhase
+        ? 178
+        : 148
+      : 142;
+  const heroCardsBottomOffset = isPhone
+    ? isBettingPhase
+      ? 96
+      : 36
+    : isMobile
+      ? isBettingPhase
+        ? 64
+        : 28
+      : 21;
   const actionBarReserve = you && isBettingPhase
     ? showRaiseDrawer
       ? isPhone
@@ -2350,7 +2368,7 @@ export const PokerGamePage = ({
               maxWidth: BASE_TABLE_WIDTH,
               aspectRatio: `${BASE_TABLE_WIDTH} / ${BASE_TABLE_HEIGHT}`,
               height: 'auto',
-              minHeight: isPhone ? 250 : 300,
+              minHeight: isPhone ? (isBettingPhase ? 305 : 270) : 300,
               margin: '0 auto',
               marginTop: isMobile ? 8 : '1cm',
               borderRadius: isPhone ? 120 : 999,
@@ -2645,7 +2663,7 @@ export const PokerGamePage = ({
                 <div
                   style={{
                     position: 'absolute',
-                    bottom: 142 - heroAreaOffsetPx,
+                    bottom: heroInfoBottomOffset - heroAreaOffsetPx,
                     left: '50%',
                     transform: 'translateX(-50%)',
                     display: 'flex',
@@ -2737,7 +2755,7 @@ export const PokerGamePage = ({
                 <div
                   style={{
                     position: 'absolute',
-                    bottom: 21 - heroAreaOffsetPx,
+                    bottom: heroCardsBottomOffset - heroAreaOffsetPx,
                     left: '50%',
                     transform: 'translateX(-50%)',
                     display: 'flex',
