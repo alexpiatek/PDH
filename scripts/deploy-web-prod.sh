@@ -100,6 +100,12 @@ main() {
   [[ "$frontend_port" == "$EXPECTED_NAKAMA_PORT" ]] || die "Bad NEXT_PUBLIC_NAKAMA_PORT=$frontend_port (expected $EXPECTED_NAKAMA_PORT)."
   [[ "$frontend_ssl" == "$EXPECTED_NAKAMA_USE_SSL" ]] || die "Bad NEXT_PUBLIC_NAKAMA_USE_SSL=$frontend_ssl (expected $EXPECTED_NAKAMA_USE_SSL)."
 
+  echo "Installing dependencies (including dev deps for Next.js typecheck)..."
+  (
+    cd "$ROOT_DIR"
+    ./scripts/run-pnpm.sh install --frozen-lockfile --prod=false
+  )
+
   echo "Preflight passed. Building apps/web..."
   rm -rf "$ROOT_DIR/apps/web/.next"
   (
