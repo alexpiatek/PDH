@@ -423,6 +423,22 @@ export const PokerGamePage = ({
         }
       }
       if (msg.type === 'state') {
+        const statePlayerId =
+          msg.state &&
+          typeof msg.state === 'object' &&
+          'you' in msg.state &&
+          msg.state.you &&
+          typeof msg.state.you === 'object' &&
+          'playerId' in msg.state.you &&
+          typeof msg.state.you.playerId === 'string'
+            ? msg.state.you.playerId
+            : null;
+        if (statePlayerId) {
+          setPlayerId(statePlayerId);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(STORAGE_KEYS.playerId, statePlayerId);
+          }
+        }
         setState(msg.state);
       }
       if (msg.type === 'error') {
@@ -534,6 +550,16 @@ export const PokerGamePage = ({
       const client = new NakamaClient(NAKAMA_CLIENT_KEY, NAKAMA_HOST, NAKAMA_PORT, NAKAMA_USE_SSL);
       const session = await client.authenticateDevice(getOrCreateDeviceId(), true);
       if (disposed) return;
+      const sessionUserId =
+        session && typeof (session as Session & { user_id?: unknown }).user_id === 'string'
+          ? ((session as Session & { user_id?: string }).user_id ?? null)
+          : null;
+      if (sessionUserId) {
+        setPlayerId(sessionUserId);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(STORAGE_KEYS.playerId, sessionUserId);
+        }
+      }
 
       const socket = client.createSocket(NAKAMA_USE_SSL, false);
       socket.onmatchdata = (matchData) => {
@@ -799,8 +825,19 @@ export const PokerGamePage = ({
 
   const join = () => {
     const trimmed = name.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      setNameError('Please enter a name.');
+      return;
+    }
+    if (!connectionRef.current) {
+      setStatus('Connecting to table...');
+      return;
+    }
+    setStatus('Joining table...');
     send({ type: 'join', name: trimmed, buyIn });
+    window.setTimeout(() => {
+      send({ type: 'requestState' });
+    }, 160);
   };
 
   const act = (action: PlayerActionType, amount?: number) => {
@@ -1150,6 +1187,7 @@ export const PokerGamePage = ({
                 }}
               />
               <button
+                type="button"
                 onClick={() => {
                   setNameError(null);
                   join();
