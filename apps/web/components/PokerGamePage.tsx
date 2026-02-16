@@ -5,7 +5,6 @@ import { Card, HandState, PlayerInHand } from '@pdh/engine';
 import { TABLE_CHAT_MAX_LENGTH, TABLE_REACTIONS } from '@pdh/protocol';
 import { ClientMessage, ServerMessage } from '../server-types';
 import { logClientEvent } from '../lib/clientTelemetry';
-import { useFeatureFlags } from '../lib/featureFlags';
 import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000';
@@ -442,7 +441,6 @@ export const PokerGamePage = ({
   onExitLobby,
   showExitButton = true,
 }: PokerGamePageProps) => {
-  const { uiTableV2, uiDiscardOverlayV2 } = useFeatureFlags();
   const connectionRef = useRef<{ send: (msg: ClientMessage) => void; close: () => void } | null>(null);
   const legacySocketRef = useRef<WebSocket | null>(null);
   const pendingMessagesRef = useRef<ClientMessage[]>([]);
@@ -469,6 +467,9 @@ export const PokerGamePage = ({
   const [showActivityFeed, setShowActivityFeed] = useState(true);
   const [showTableChat, setShowTableChat] = useState(true);
   const [showUtilitiesPanel, setShowUtilitiesPanel] = useState(false);
+  const [showTopMenu, setShowTopMenu] = useState(false);
+  const [showRaiseDrawer, setShowRaiseDrawer] = useState(false);
+  const [confirmAllIn, setConfirmAllIn] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<TableChatMessage[]>([]);
   const [mutedChatPlayerIds, setMutedChatPlayerIds] = useState<string[]>([]);
@@ -886,6 +887,9 @@ export const PokerGamePage = ({
   useEffect(() => {
     if (!seated) {
       setShowUtilitiesPanel(false);
+      setShowTopMenu(false);
+      setShowRaiseDrawer(false);
+      setConfirmAllIn(false);
     }
   }, [seated]);
   useEffect(() => {
@@ -923,7 +927,7 @@ export const PokerGamePage = ({
 
   const isMyTurn = Boolean(hand && you && hand.phase === 'betting' && hand.actionOnSeat === you.seat);
   const youInfoDimmed = Boolean(hand && hand.phase === 'betting' && !isMyTurn);
-  const discardPending = hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id);
+  const discardPending = Boolean(hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id));
   const toCall = hand && you ? Math.max(0, hand.currentBet - you.betThisStreet) : 0;
   const isShowdown = hand?.phase === 'showdown';
   const currentStreetLabel = hand ? formatStreetLabel(hand.street) : '';
@@ -953,10 +957,6 @@ export const PokerGamePage = ({
       hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out').length > 1,
   );
   const raiseCapReached = Boolean(hand && hand.raisesThisStreet >= 2);
-  const allInTotal = you ? you.stack + you.betThisStreet : 0;
-  const allInWouldRaise = Boolean(hand && hand.currentBet > 0 && allInTotal > hand.currentBet);
-  const cardsRemaining = you?.holeCards.length ?? 0;
-  const discardMilestones = [5, 4, 3, 2] as const;
   const actionSecondsLeft = useMemo(() => {
     if (!hand || hand.phase !== 'betting' || !hand.actionDeadline) {
       return null;
@@ -971,39 +971,54 @@ export const PokerGamePage = ({
   }, [hand?.phase, hand?.discardDeadline, clockNowMs]);
   const tableTimerSeconds =
     hand?.phase === 'betting' ? actionSecondsLeft : hand?.phase === 'discard' ? discardSecondsLeft : null;
-  const tableStateTitle = useMemo(() => {
-    if (!hand) return '';
-    if (hand.phase === 'betting') {
+  const isBettingPhase = hand?.phase === 'betting';
+  const isDiscardPhase = hand?.phase === 'discard';
+  const isRevealPhase = hand?.phase === 'showdown';
+  const tablePhaseLabel = useMemo(() => {
+    if (!hand) return 'Waiting';
+    if (isBettingPhase) return `Betting · ${currentStreetLabel}`;
+    if (isDiscardPhase) return `Discard · ${currentStreetLabel}`;
+    if (isRevealPhase) return 'Reveal';
+    return currentStreetLabel;
+  }, [hand, isBettingPhase, isDiscardPhase, isRevealPhase, currentStreetLabel]);
+  const topBarStatus = useMemo(() => {
+    if (!hand) return status;
+    if (isBettingPhase) {
       if (isMyTurn) {
-        return `Your turn · ${currentStreetLabel}`;
+        return `Your turn${tableTimerSeconds !== null ? ` • ${tableTimerSeconds}s` : ''}`;
       }
-      return `${actionOnPlayer?.name ?? 'Player'} to act · ${currentStreetLabel}`;
+      return `${actionOnPlayer?.name ?? 'Player'} to act${tableTimerSeconds !== null ? ` • ${tableTimerSeconds}s` : ''}`;
     }
-    if (hand.phase === 'discard') {
+    if (isDiscardPhase) {
       if (discardPending && !discardSubmitted) {
-        return `Discard 1 · ${currentStreetLabel}`;
+        return `Select discard${tableTimerSeconds !== null ? ` • ${tableTimerSeconds}s` : ''}`;
       }
-      return `Waiting for discards · ${currentStreetLabel}`;
+      return `Waiting on discards${tableTimerSeconds !== null ? ` • ${tableTimerSeconds}s` : ''}`;
     }
-    if (hand.phase === 'showdown') {
+    if (isRevealPhase) {
       return 'Showdown';
     }
-    return currentStreetLabel;
-  }, [hand, isMyTurn, currentStreetLabel, actionOnPlayer, discardPending, discardSubmitted]);
-  const tableStateSubtitle = useMemo(() => {
-    if (!hand) return '';
-    if (hand.phase === 'betting') {
-      const livePot = hand.players.reduce((sum, player) => sum + player.totalCommitted, 0);
-      return `Pot ${livePot} · To call ${toCall} · Current bet ${hand.currentBet}`;
+    return status;
+  }, [hand, status, isBettingPhase, isDiscardPhase, isRevealPhase, isMyTurn, tableTimerSeconds, actionOnPlayer, discardPending, discardSubmitted]);
+  const tableLabel = useMemo(() => {
+    const fallback = 'Bondi Poker';
+    const sourceId =
+      (resolvedForcedMatchId && resolvedForcedMatchId.trim()) ||
+      (typeof state?.matchId === 'string' ? state.matchId : '');
+    if (!sourceId) return fallback;
+    return `Bondi ${sourceId.slice(0, 6)}`;
+  }, [resolvedForcedMatchId, state?.matchId]);
+  const latestActionLine = useMemo(() => {
+    const lines: Array<{ message?: string }> = state?.log ?? [];
+    for (let idx = lines.length - 1; idx >= 0; idx -= 1) {
+      const message = lines[idx]?.message;
+      if (!message) continue;
+      if (/(folded|checked|called|raised|bet|all-in|discarded|won)/i.test(message)) {
+        return message;
+      }
     }
-    if (hand.phase === 'discard') {
-      return `${hand.discardPending.length} pending discard${hand.discardPending.length === 1 ? '' : 's'}`;
-    }
-    if (hand.phase === 'showdown') {
-      return hand.showdownWinners.length > 0 ? 'Hand complete' : 'Determining winners...';
-    }
-    return '';
-  }, [hand, toCall]);
+    return null;
+  }, [state?.log]);
   const dealAnimationKey = hand?.handId ?? 'no-hand';
   const [animateHoleDeal, setAnimateHoleDeal] = useState(false);
   const suggestedRaiseTo = useMemo(() => {
@@ -1187,6 +1202,13 @@ export const PokerGamePage = ({
     setBetAmount(suggestedRaiseTo);
   }, [isMyTurn, hand?.handId, hand?.currentBet, hand?.minRaise, suggestedRaiseTo]);
 
+  useEffect(() => {
+    if (!hand || hand.phase !== 'betting' || !isMyTurn) {
+      setShowRaiseDrawer(false);
+      setConfirmAllIn(false);
+    }
+  }, [hand?.handId, hand?.phase, isMyTurn]);
+
   const send = (msg: ClientMessage) => {
     const outgoing = withMutatingSeq(msg);
     if (!connectionRef.current) {
@@ -1289,11 +1311,7 @@ export const PokerGamePage = ({
 
   const handleDiscardClick = (idx: number) => {
     if (!discardPending || discardSubmitted) return;
-    if (uiDiscardOverlayV2) {
-      setSelectedDiscardIndex(idx);
-      return;
-    }
-    submitDiscard(idx);
+    setSelectedDiscardIndex(idx);
   };
 
   const confirmDiscardSelection = () => {
@@ -1522,6 +1540,7 @@ export const PokerGamePage = ({
   const isMobile = viewportWidth <= 900;
   const isPhone = viewportWidth <= 640;
   const centeredSectionMinHeight = isMobile ? 'calc(100vh - 220px)' : 'calc(100vh - 260px)';
+  const actionBarReserve = you && isBettingPhase ? (isPhone ? 146 : 124) : 0;
   const tableOuterWidth = `min(${BASE_TABLE_WIDTH}px, calc(100vw - ${isPhone ? 16 : 36}px))`;
   const tableOuterBorder = isPhone ? 6 : isMobile ? 8 : 10;
   const actionButtonBaseStyle: React.CSSProperties = {
@@ -1540,22 +1559,13 @@ export const PokerGamePage = ({
     boxShadow: '0 8px 20px rgba(0,0,0,0.25)',
     cursor: 'pointer',
   };
-  const actionInputStyle: React.CSSProperties = {
-    padding: isPhone ? 10 : 8,
-    width: isPhone ? 112 : 124,
-    minHeight: 44,
-    borderRadius: 12,
-    border: '1px solid rgba(71,85,105,0.9)',
-    background: 'rgba(2,6,12,0.62)',
-    color: '#f8fafc',
-    fontSize: isPhone ? 13 : 14,
-    fontFamily:
-      'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-    outline: 'none',
-  };
   const minRaiseTo = hand ? (hand.currentBet === 0 ? hand.minRaise : hand.currentBet + hand.minRaise) : null;
   const maxRaiseTo = you ? you.stack + you.betThisStreet : null;
   const normalizedBetAmount = Number.isFinite(betAmount) ? Math.max(0, Math.floor(betAmount)) : 0;
+  const clampedRaiseTo =
+    minRaiseTo !== null && maxRaiseTo !== null
+      ? Math.min(maxRaiseTo, Math.max(minRaiseTo, normalizedBetAmount))
+      : normalizedBetAmount;
   const canFold = Boolean(isMyTurn);
   const canCheck = Boolean(isMyTurn && toCall === 0);
   const canCall = Boolean(isMyTurn && toCall > 0);
@@ -1565,70 +1575,58 @@ export const PokerGamePage = ({
       !raiseCapReached &&
       minRaiseTo !== null &&
       maxRaiseTo !== null &&
-      normalizedBetAmount >= minRaiseTo &&
-      normalizedBetAmount <= maxRaiseTo &&
-      normalizedBetAmount > hand.currentBet
+      clampedRaiseTo >= minRaiseTo &&
+      clampedRaiseTo <= maxRaiseTo &&
+      clampedRaiseTo > hand.currentBet
   );
-  const canAllIn = Boolean(isMyTurn && you && you.stack > 0 && !(raiseCapReached && allInWouldRaise));
+  const canCheckOrCall = Boolean(isMyTurn);
+  const canOpenRaiseDrawer = Boolean(isMyTurn && minRaiseTo !== null && maxRaiseTo !== null && !raiseCapReached);
   const raiseActionLabel = hand && hand.currentBet === 0 ? 'Bet' : 'Raise';
+  const checkOrCallLabel = toCall === 0 ? 'Check' : `Call ${toCall}`;
+  const bettingHintLine =
+    hand && hand.phase === 'betting'
+      ? `To call: ${toCall} • Min raise: ${minRaiseTo ?? '--'} • Pot: ${potAmount}`
+      : '';
   const raiseDisabledHint = (() => {
     if (!hand || hand.phase !== 'betting') return 'Betting controls unlock during betting rounds.';
     if (!isMyTurn) return 'Wait for your turn.';
     if (raiseCapReached) return 'Raise cap reached on this street.';
     if (minRaiseTo === null || maxRaiseTo === null) return 'Raise amount unavailable.';
-    if (normalizedBetAmount < minRaiseTo) return `Enter at least ${minRaiseTo}.`;
-    if (normalizedBetAmount > maxRaiseTo) return `Max raise is ${maxRaiseTo} (all-in).`;
+    if (clampedRaiseTo < minRaiseTo) return `Enter at least ${minRaiseTo}.`;
+    if (clampedRaiseTo > maxRaiseTo) return `Max raise is ${maxRaiseTo} (all-in).`;
     return 'Raise available.';
   })();
-  const actionGuideTitle = (() => {
-    if (!hand || hand.phase !== 'betting') return 'Action guide';
-    if (!isMyTurn) return `${actionOnPlayer?.name ?? 'Player'} is acting`;
-    if (toCall === 0) return 'Your turn: no bet to call';
-    if (you && toCall >= you.stack) return 'Your turn: all-in pressure';
-    return 'Your turn: decision point';
-  })();
-  const actionGuideLine = (() => {
-    if (!hand || hand.phase !== 'betting') return 'Wait for betting to start.';
-    if (!isMyTurn) {
-      return toCall === 0
-        ? 'When action reaches you: check or bet.'
-        : `When action reaches you: fold, call ${toCall}, or raise.`;
+  const turnStatusLabel = isMyTurn
+    ? `Your turn${tableTimerSeconds !== null ? ` • ${tableTimerSeconds}s` : ''}`
+    : `${actionOnPlayer?.name ?? 'Player'} acting${tableTimerSeconds !== null ? ` • ${tableTimerSeconds}s` : ''}`;
+  const discardLimit = 1;
+  const selectedDiscardCount = selectedDiscardIndex === null ? 0 : 1;
+  const canConfirmDiscard = discardPending && selectedDiscardIndex !== null && !discardSubmitted;
+  const quickRaiseOptions = useMemo(() => {
+    if (!hand || minRaiseTo === null || maxRaiseTo === null) {
+      return [] as Array<{ label: string; value: number; requiresConfirm?: boolean }>;
     }
-    if (toCall === 0) {
-      return raiseCapReached
-        ? 'Check is available. Raises are capped this street.'
-        : `Check for free, or ${raiseActionLabel.toLowerCase()} at least ${minRaiseTo ?? 0}.`;
+    const clamp = (value: number) => Math.min(maxRaiseTo, Math.max(minRaiseTo, Math.floor(value)));
+    const seed = [
+      { label: '1/2 pot', value: clamp(hand.currentBet + potAmount * 0.5) },
+      { label: 'pot', value: clamp(hand.currentBet + potAmount) },
+      { label: '2x', value: clamp(Math.max(hand.currentBet * 2, minRaiseTo)) },
+      { label: 'all-in', value: maxRaiseTo, requiresConfirm: true },
+    ];
+    const seen = new Set<number>();
+    const deduped: Array<{ label: string; value: number; requiresConfirm?: boolean }> = [];
+    for (const option of seed) {
+      if (seen.has(option.value)) continue;
+      seen.add(option.value);
+      deduped.push(option);
     }
-    return `Call ${toCall} to continue, or fold. ${
-      raiseCapReached ? 'Raises capped this street.' : `Raise to at least ${minRaiseTo ?? 0}.`
-    }`;
-  })();
-  const actionGuideTip = (() => {
-    if (!hand || hand.phase !== 'betting') return 'Tip: watch the timer and act early.';
-    if (!isMyTurn) return `Current bet ${hand.currentBet} · your call ${toCall}.`;
-    if (toCall === 0) return 'Tip: checking keeps the pot stable; betting applies pressure.';
-    if (you && toCall > Math.floor(you.stack * 0.45)) return 'Tip: large bets often justify tighter calls.';
-    return 'Tip: small calls keep your range wider.';
-  })();
+    return deduped;
+  }, [hand?.currentBet, minRaiseTo, maxRaiseTo, potAmount]);
   const disabledActionStyle: React.CSSProperties = {
     opacity: 0.48,
     cursor: 'not-allowed',
     transform: 'none',
     boxShadow: 'none',
-  };
-  const actionKeycapStyle: React.CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 16,
-    padding: '1px 4px',
-    borderRadius: 5,
-    border: '1px solid rgba(148,163,184,0.7)',
-    background: 'rgba(2,6,12,0.52)',
-    color: '#cbd5e1',
-    fontSize: 10,
-    fontWeight: 800,
-    lineHeight: 1.1,
   };
   const turnActionStyle = (
     enabled: boolean,
@@ -1647,11 +1645,8 @@ export const PokerGamePage = ({
   const reactionOnCooldown = reactionCooldownUntil > Date.now();
   const timerTone =
     tableTimerSeconds !== null ? (tableTimerSeconds <= 5 ? '#fda4af' : '#d1fae5') : 'rgba(226,232,240,0.72)';
-  const toCallValue = hand?.phase === 'betting' ? String(toCall) : '--';
-  const currentBetValue = hand?.phase === 'betting' ? String(hand.currentBet) : '--';
   const utilityEnabledCount =
     Number(soundEnabled) + Number(showActivityFeed) + Number(showTableChat);
-  const actionableCount = Number(canFold) + Number(canCheck) + Number(canCall) + Number(canRaise) + Number(canAllIn);
 
   useEffect(() => {
     if (!seated || !hand || hand.phase !== 'betting') {
@@ -1686,14 +1681,10 @@ export const PokerGamePage = ({
           return;
         }
       }
-      if (key === 'r' && canRaise) {
+      if (key === 'r' && canOpenRaiseDrawer) {
         event.preventDefault();
-        act(hand.currentBet === 0 ? 'bet' : 'raise', normalizedBetAmount);
-        return;
-      }
-      if (key === 'a' && canAllIn) {
-        event.preventDefault();
-        act('allIn');
+        setShowRaiseDrawer(true);
+        setConfirmAllIn(false);
       }
     };
 
@@ -1701,7 +1692,35 @@ export const PokerGamePage = ({
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [act, canAllIn, canCall, canCheck, canFold, canRaise, hand, normalizedBetAmount, seated]);
+  }, [act, canCall, canCheck, canFold, canOpenRaiseDrawer, seated]);
+
+  useEffect(() => {
+    if (maxRaiseTo === null || clampedRaiseTo < maxRaiseTo) {
+      setConfirmAllIn(false);
+    }
+  }, [clampedRaiseTo, maxRaiseTo]);
+
+  const toggleRaiseDrawer = () => {
+    if (!canOpenRaiseDrawer) {
+      return;
+    }
+    setShowRaiseDrawer((previous) => !previous);
+    setConfirmAllIn(false);
+  };
+
+  const submitRaiseAction = () => {
+    if (!hand || !canRaise) {
+      return;
+    }
+    const isAllInRaise = maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo;
+    if (isAllInRaise && !confirmAllIn) {
+      setConfirmAllIn(true);
+      return;
+    }
+    act(hand.currentBet === 0 ? 'bet' : 'raise', clampedRaiseTo);
+    setConfirmAllIn(false);
+    setShowRaiseDrawer(false);
+  };
 
   return (
     <div
@@ -1717,340 +1736,181 @@ export const PokerGamePage = ({
         backgroundPosition: 'center, center',
         backgroundRepeat: 'no-repeat, no-repeat',
         backgroundSize: 'cover, cover',
-        padding: isPhone ? '12px 10px calc(20px + env(safe-area-inset-bottom))' : '18px 18px calc(30px + env(safe-area-inset-bottom))',
+        padding: isPhone
+          ? `12px 10px calc(${20 + actionBarReserve}px + env(safe-area-inset-bottom))`
+          : `18px 18px calc(${30 + actionBarReserve}px + env(safe-area-inset-bottom))`,
       }}
     >
       <div
         style={{
           width: 'min(100%, 980px)',
           margin: '0 auto',
-          marginBottom: isMobile ? 12 : 18,
-          padding: isPhone ? '12px 10px' : '14px 16px',
-          borderRadius: 24,
-          border: '1px solid rgba(251,191,36,0.22)',
-          background: 'rgba(9,13,23,0.62)',
-          boxShadow: '0 16px 44px rgba(0,0,0,0.3)',
-          backdropFilter: 'blur(10px)',
+          marginBottom: isMobile ? 10 : 12,
+          padding: isPhone ? '8px 10px' : '10px 12px',
+          borderRadius: 14,
+          border: '1px solid rgba(71,85,105,0.6)',
+          background: 'rgba(6,10,18,0.78)',
+          boxShadow: '0 10px 24px rgba(0,0,0,0.26)',
         }}
       >
         <div
           style={{
             display: 'flex',
-            flexDirection: isPhone ? 'column' : 'row',
             justifyContent: 'space-between',
-            alignItems: isPhone ? 'flex-start' : 'center',
-            gap: isPhone ? 12 : 16,
+            alignItems: 'center',
+            gap: 10,
           }}
         >
-          <div style={{ minWidth: 0, width: '100%' }}>
-            <div style={{ textAlign: 'left', maxWidth: isMobile ? '100%' : 'min(70vw, 560px)' }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 999,
-              border: '1px solid rgba(251,191,36,0.4)',
-              background: 'rgba(251,191,36,0.1)',
-              color: '#fde68a',
-              padding: '3px 12px',
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: '0.18em',
-              textTransform: 'uppercase',
-              fontFamily:
-                'var(--font-display, "Sora", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-            }}
-          >
-            Bondi Poker
-          </div>
-          <div
-            style={{
-              marginTop: 8,
-              fontSize: isPhone ? 'clamp(28px, 9vw, 34px)' : 'clamp(34px, 4vw, 44px)',
-              fontWeight: 700,
-              letterSpacing: '-0.01em',
-              lineHeight: 1.05,
-              color: '#f8fafc',
-              fontFamily:
-                'var(--font-display, "Sora", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-            }}
-          >
-            Private Table
-          </div>
-          <div style={{ marginTop: 4 }}>
+          <div style={{ minWidth: 0 }}>
             <div
               style={{
-                fontSize: isPhone ? 13 : 15,
-                color: 'rgba(226,232,240,0.85)',
-                fontFamily:
-                  'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                fontSize: isPhone ? 14 : 15,
+                fontWeight: 700,
+                color: '#f8fafc',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
               }}
             >
-              Hold&apos;em with Hidden Discards
+              {tableLabel}
+            </div>
+            <div style={{ marginTop: 1, fontSize: 11, color: 'rgba(203,213,225,0.86)' }}>
+              {tablePhaseLabel}
             </div>
           </div>
-            </div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, position: 'relative' }}>
             {seated ? (
-              <div style={{ marginTop: 9, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-                {hand?.phase === 'betting' ? (
-                  <span
+              <span
+                style={{
+                  maxWidth: isPhone ? 150 : 260,
+                  borderRadius: 999,
+                  border: '1px solid rgba(56,189,248,0.52)',
+                  background: 'rgba(8,47,73,0.45)',
+                  color: '#e0f2fe',
+                  padding: '3px 10px',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {topBarStatus}
+              </span>
+            ) : null}
+            {seated || showExitButton ? (
+              <button
+                type="button"
+                onClick={() => setShowTopMenu((previous) => !previous)}
+                aria-label="Table menu"
+                style={{
+                  minHeight: 36,
+                  minWidth: 36,
+                  borderRadius: 10,
+                  border: '1px solid rgba(148,163,184,0.5)',
+                  background: 'rgba(15,23,42,0.82)',
+                  color: '#e2e8f0',
+                  fontSize: 18,
+                  lineHeight: 1,
+                  cursor: 'pointer',
+                }}
+              >
+                ⋯
+              </button>
+            ) : null}
+            {showTopMenu ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 'calc(100% + 8px)',
+                  zIndex: 40,
+                  width: isPhone ? 170 : 190,
+                  borderRadius: 12,
+                  border: '1px solid rgba(71,85,105,0.72)',
+                  background: 'rgba(2,6,14,0.96)',
+                  boxShadow: '0 16px 34px rgba(0,0,0,0.44)',
+                  padding: 6,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                }}
+              >
+                {seated ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUtilitiesPanel((previous) => !previous);
+                      setShowTopMenu(false);
+                    }}
                     style={{
-                      borderRadius: 999,
-                      border: isMyTurn
-                        ? '1px solid rgba(34,197,94,0.78)'
-                        : '1px solid rgba(56,189,248,0.6)',
-                      background: isMyTurn ? 'rgba(21,128,61,0.28)' : 'rgba(14,116,144,0.26)',
-                      color: isMyTurn ? '#dcfce7' : '#e0f2fe',
-                      padding: '4px 10px',
-                      fontSize: 11,
-                      fontWeight: 800,
-                      letterSpacing: '0.12em',
-                      textTransform: 'uppercase',
-                      animation: isMyTurn ? 'turn-pulse 1.2s ease-in-out infinite' : undefined,
+                      borderRadius: 8,
+                      border: '1px solid rgba(71,85,105,0.62)',
+                      background: 'rgba(15,23,42,0.72)',
+                      color: '#e2e8f0',
+                      padding: '8px 10px',
+                      textAlign: 'left',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
                     }}
                   >
-                    {isMyTurn ? 'Your Turn' : `${actionOnPlayer?.name ?? 'Player'} Acting`}
-                  </span>
+                    {showUtilitiesPanel ? 'Hide Extras' : 'Show Extras'} ({utilityEnabledCount})
+                  </button>
                 ) : null}
-                <span
-                  style={{
-                    borderRadius: 999,
-                    border: '1px solid rgba(148,163,184,0.45)',
-                    background: 'rgba(15,23,42,0.52)',
-                    color: 'rgba(203,213,225,0.9)',
-                    padding: '4px 10px',
-                    fontSize: 11,
-                    fontWeight: 700,
-                  }}
-                >
-                  {status}
-                </span>
+                {seated ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      connectionRef.current?.close();
+                      connectionRef.current = null;
+                      legacySocketRef.current = null;
+                      pendingMessagesRef.current = [];
+                      setStatus('Disconnected');
+                      setShowTopMenu(false);
+                    }}
+                    style={{
+                      borderRadius: 8,
+                      border: '1px solid rgba(71,85,105,0.62)',
+                      background: 'rgba(15,23,42,0.72)',
+                      color: '#e2e8f0',
+                      padding: '8px 10px',
+                      textAlign: 'left',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Disconnect
+                  </button>
+                ) : null}
+                {showExitButton ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTopMenu(false);
+                      handleExitTable();
+                    }}
+                    style={{
+                      borderRadius: 8,
+                      border: '1px solid rgba(248,113,113,0.72)',
+                      background: 'rgba(127,29,29,0.46)',
+                      color: '#fee2e2',
+                      padding: '8px 10px',
+                      textAlign: 'left',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Exit Table
+                  </button>
+                ) : null}
               </div>
-            ) : null}
-          </div>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              justifyContent: isPhone ? 'flex-start' : 'flex-end',
-              gap: 8,
-              width: isPhone ? '100%' : 'auto',
-            }}
-          >
-            {seated ? (
-              <button
-                type="button"
-                onClick={() => setShowUtilitiesPanel((previous) => !previous)}
-                style={{
-                  borderRadius: 12,
-                  border: '1px solid rgba(56,189,248,0.62)',
-                  background: showUtilitiesPanel ? 'rgba(14,116,144,0.3)' : 'rgba(15,23,42,0.65)',
-                  color: '#e0f2fe',
-                  padding: isPhone ? '9px 12px' : '10px 14px',
-                  fontFamily:
-                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  letterSpacing: 0.2,
-                  cursor: 'pointer',
-                }}
-              >
-                {showUtilitiesPanel ? 'Hide Extras' : 'Extras'} ({utilityEnabledCount})
-              </button>
-            ) : null}
-            {showExitButton ? (
-              <button
-                type="button"
-                onClick={handleExitTable}
-                aria-label="Exit table and return to game entry"
-                style={{
-                  borderRadius: 12,
-                  border: '1px solid rgba(251,191,36,0.6)',
-                  background: 'rgba(251,191,36,0.2)',
-                  color: '#fef3c7',
-                  padding: isPhone ? '9px 12px' : '10px 14px',
-                  fontFamily: '"Inter", sans-serif',
-                  fontSize: isPhone ? 12 : 13,
-                  fontWeight: 700,
-                  letterSpacing: 0.3,
-                  cursor: 'pointer',
-                }}
-              >
-                Exit Table
-              </button>
             ) : null}
           </div>
         </div>
       </div>
-      {uiTableV2 && hand && seated ? (
-        <div
-          style={{
-            width: 'min(100%, 980px)',
-            margin: '0 auto',
-            marginBottom: 14,
-            padding: isPhone ? '10px 10px' : '12px 14px',
-            borderRadius: 16,
-            border: '1px solid rgba(20,184,166,0.35)',
-            background: 'rgba(8,17,28,0.75)',
-            boxShadow: '0 14px 34px rgba(0,0,0,0.28)',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: isPhone ? 'column' : 'row',
-              justifyContent: 'space-between',
-              alignItems: isPhone ? 'flex-start' : 'center',
-              gap: isPhone ? 8 : 10,
-            }}
-          >
-            <div style={{ minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: isPhone ? 14 : 15,
-                  fontWeight: 700,
-                  color: '#f8fafc',
-                  fontFamily:
-                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-                }}
-              >
-                {tableStateTitle}
-              </div>
-              <div
-                style={{
-                  marginTop: 2,
-                  fontSize: 12,
-                  color: 'rgba(226,232,240,0.82)',
-                  fontFamily:
-                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-                }}
-              >
-                {tableStateSubtitle}
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(4, minmax(64px, auto))',
-                gap: 8,
-                width: isPhone ? '100%' : 'auto',
-              }}
-            >
-              <div
-                style={{
-                  borderRadius: 10,
-                  border: '1px solid rgba(148,163,184,0.35)',
-                  background: 'rgba(2,6,12,0.35)',
-                  padding: '6px 8px',
-                }}
-              >
-                <div style={{ fontSize: 10, color: 'rgba(203,213,225,0.82)', textTransform: 'uppercase' }}>Street</div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{currentStreetLabel}</div>
-              </div>
-              <div
-                style={{
-                  borderRadius: 10,
-                  border: '1px solid rgba(148,163,184,0.35)',
-                  background: 'rgba(2,6,12,0.35)',
-                  padding: '6px 8px',
-                }}
-              >
-                <div style={{ fontSize: 10, color: 'rgba(203,213,225,0.82)', textTransform: 'uppercase' }}>Pot</div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{potAmount}</div>
-              </div>
-              <div
-                style={{
-                  borderRadius: 10,
-                  border: '1px solid rgba(148,163,184,0.35)',
-                  background: 'rgba(2,6,12,0.35)',
-                  padding: '6px 8px',
-                }}
-              >
-                <div style={{ fontSize: 10, color: 'rgba(203,213,225,0.82)', textTransform: 'uppercase' }}>To Call</div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{toCallValue}</div>
-              </div>
-              <div
-                style={{
-                  borderRadius: 10,
-                  border: '1px solid rgba(148,163,184,0.35)',
-                  background: 'rgba(2,6,12,0.35)',
-                  padding: '6px 8px',
-                }}
-              >
-                <div style={{ fontSize: 10, color: 'rgba(203,213,225,0.82)', textTransform: 'uppercase' }}>Timer</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: timerTone }}>
-                  {tableTimerSeconds !== null ? `${tableTimerSeconds}s` : '--'}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {you ? (
-            <div
-              style={{
-                marginTop: 10,
-                paddingTop: 10,
-                borderTop: '1px solid rgba(71,85,105,0.45)',
-                display: 'flex',
-                flexWrap: 'wrap',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 11,
-                  letterSpacing: '0.12em',
-                  textTransform: 'uppercase',
-                  color: 'rgba(186,230,253,0.85)',
-                }}
-              >
-                Discard Track
-              </span>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                {discardMilestones.map((milestone, index) => {
-                  const isCurrent = cardsRemaining === milestone;
-                  const isComplete = cardsRemaining < milestone;
-                  return (
-                    <div key={milestone} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      <span
-                        style={{
-                          minWidth: 26,
-                          textAlign: 'center',
-                          borderRadius: 999,
-                          border: isCurrent
-                            ? '1px solid rgba(20,184,166,0.9)'
-                            : '1px solid rgba(148,163,184,0.5)',
-                          background: isCurrent
-                            ? 'rgba(20,184,166,0.2)'
-                            : isComplete
-                              ? 'rgba(34,197,94,0.16)'
-                              : 'rgba(15,23,42,0.65)',
-                          color: isCurrent ? '#ccfbf1' : isComplete ? '#bbf7d0' : '#cbd5e1',
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: '3px 6px',
-                        }}
-                      >
-                        {milestone}
-                      </span>
-                      {index < discardMilestones.length - 1 ? (
-                        <span style={{ fontSize: 11, color: 'rgba(148,163,184,0.8)' }}>→</span>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-              <span style={{ fontSize: 11, color: 'rgba(226,232,240,0.78)' }}>
-                Live cards: {cardsRemaining}
-              </span>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
       {seated && showUtilitiesPanel ? (
         <div
           style={{
@@ -2500,7 +2360,41 @@ export const PokerGamePage = ({
                 transformOrigin: 'center',
               }}
             >
-            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px - 0.4cm))', display: 'flex', gap: '1mm' }}>
+            <div
+              style={{
+                position: 'absolute',
+                top: '40%',
+                left: '50%',
+                transform: 'translate(-50%, -50%) translateY(calc(-19px - 2.1cm))',
+              }}
+            >
+              <div
+                style={{
+                  minWidth: 92,
+                  borderRadius: 999,
+                  border: '1px solid rgba(125,211,252,0.6)',
+                  background: 'rgba(8,47,73,0.78)',
+                  color: '#e0f2fe',
+                  padding: '6px 12px',
+                  textAlign: 'center',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  letterSpacing: 0.2,
+                }}
+              >
+                Pot {potAmount}
+              </div>
+            </div>
+            <div
+              style={{
+                position: 'absolute',
+                top: '40%',
+                left: '50%',
+                transform: 'translate(-50%, -50%) translateY(calc(-19px - 0.4cm))',
+                display: 'flex',
+                gap: '1mm',
+              }}
+            >
               {communityCards.map((c, idx) => (
                 <div
                   key={`${dealAnimationKey}-community-${idx}-${c.rank}${c.suit}`}
@@ -2515,68 +2409,6 @@ export const PokerGamePage = ({
                   <CardView key={idx} card={c} size="xlarge" highlight={isShowdown && winningCards.has(cardKey(c))} />
                 </div>
               ))}
-            </div>
-            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px - 3.2cm))' }}>
-              <img
-                src="/Casino dealer.png"
-                alt="Dealer"
-                style={{
-                  width: 84,
-                  height: 84,
-                  borderRadius: 999,
-                  objectFit: 'cover',
-                  border: '2px solid rgba(255,255,255,0.7)',
-                  boxShadow: '0 10px 24px rgba(0,0,0,0.35)',
-                  background: 'rgba(8, 12, 22, 0.6)',
-                }}
-              />
-            </div>
-            <div style={{ position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%) translateY(calc(-19px + 1.8cm)) translateX(-3.5cm)' }}>
-              <div style={{ width: '3.22cm', height: '0.92cm', padding: 0, borderRadius: 999, background: '#0f172a', border: '1px solid #2c3e66', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-                <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '0.04mm', fontSize: 15, lineHeight: 1.1 }}>
-                  <span style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', transform: 'translateY(-0.8mm)' }} aria-hidden="true">
-                    <svg viewBox="0 0 48 26" width="24" height="24" role="img" focusable="false" aria-hidden="true">
-                      <g>
-                        <ellipse cx="12" cy="6" rx="8" ry="3" fill="#b91c1c" stroke="#fee2e2" strokeWidth="1" />
-                        <ellipse cx="12" cy="10" rx="8" ry="3" fill="#dc2626" stroke="#fee2e2" strokeWidth="1" />
-                        <ellipse cx="12" cy="14" rx="8" ry="3" fill="#b91c1c" stroke="#fee2e2" strokeWidth="1" />
-                        <ellipse cx="12" cy="6" rx="5" ry="1.7" fill="none" stroke="#fff7f7" strokeWidth="0.8" />
-                        <rect x="6.2" y="4.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
-                        <rect x="15.4" y="4.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
-                        <rect x="10.3" y="7" width="2.6" height="2.2" rx="0.4" fill="#f9fafb" />
-                      </g>
-                      <g>
-                        <ellipse cx="26" cy="12" rx="8" ry="3" fill="#111827" stroke="#e5e7eb" strokeWidth="1" />
-                        <ellipse cx="26" cy="16" rx="8" ry="3" fill="#1f2937" stroke="#e5e7eb" strokeWidth="1" />
-                        <ellipse cx="26" cy="12" rx="5" ry="1.7" fill="none" stroke="#f3f4f6" strokeWidth="0.8" />
-                        <rect x="20.2" y="10.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
-                        <rect x="29.4" y="10.4" width="2.4" height="2.4" rx="0.4" fill="#f9fafb" />
-                      </g>
-                      <g>
-                        <ellipse cx="40" cy="10" rx="7.5" ry="2.8" fill="#1d4ed8" stroke="#dbeafe" strokeWidth="1" />
-                        <ellipse cx="40" cy="14" rx="7.5" ry="2.8" fill="#2563eb" stroke="#dbeafe" strokeWidth="1" />
-                        <ellipse cx="40" cy="10" rx="4.7" ry="1.6" fill="none" stroke="#eff6ff" strokeWidth="0.8" />
-                        <rect x="34.8" y="8.6" width="2.2" height="2.2" rx="0.4" fill="#f9fafb" />
-                        <rect x="42.8" y="8.6" width="2.2" height="2.2" rx="0.4" fill="#f9fafb" />
-                      </g>
-                    </svg>
-                  </span>
-                  <span
-                    style={{
-                      marginTop: '-2.2mm',
-                      minWidth: 24,
-                      maxWidth: '2.2cm',
-                      fontSize: 12,
-                      textAlign: 'center',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {potAmount}
-                  </span>
-                </span>
-              </div>
             </div>
             {isShowdown && showdownSummary && (
               <div
@@ -2901,7 +2733,7 @@ export const PokerGamePage = ({
                 >
                   {discardPending && !discardSubmitted && (
                     <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif', opacity: 0.85 }}>
-                      {uiDiscardOverlayV2 ? 'Select one card, then confirm discard' : 'Click a card to discard'}
+                      Select up to {discardLimit} to discard ({selectedDiscardCount}/{discardLimit})
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 10 }}>
@@ -2932,11 +2764,9 @@ export const PokerGamePage = ({
                               discardFlashIndex === idx
                                 ? 'red'
                                 : discardPending && !discardSubmitted && !animateHoleDeal
-                                  ? uiDiscardOverlayV2
-                                    ? selectedDiscardIndex === idx
-                                      ? 'green'
-                                      : undefined
-                                    : 'green'
+                                  ? selectedDiscardIndex === idx
+                                    ? 'green'
+                                    : undefined
                                   : undefined
                             }
                             fade={discardFlashIndex === idx}
@@ -2965,22 +2795,76 @@ export const PokerGamePage = ({
                 alignItems: 'stretch',
               }}
             >
-              {discardPending ? (
+              {isDiscardPhase ? (
                 <div
                   style={{
                     borderRadius: 12,
-                    border: '1px solid rgba(20,184,166,0.45)',
-                    background: 'rgba(8,15,24,0.74)',
-                    padding: '10px 12px',
-                    fontSize: 12,
-                    color: 'rgba(226,232,240,0.9)',
+                    border: '1px solid rgba(20,184,166,0.65)',
+                    background: 'rgba(6,20,24,0.86)',
+                    padding: isPhone ? '10px 12px' : '12px 14px',
+                    boxShadow: '0 0 0 1px rgba(20,184,166,0.25), 0 14px 28px rgba(8,47,73,0.28)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
                   }}
                 >
-                  {uiDiscardOverlayV2
-                    ? 'Discard step: select one of your cards and confirm discard.'
-                    : 'Discard step: tap a card to discard.'}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                    <span
+                      style={{
+                        borderRadius: 999,
+                        border: '1px solid rgba(20,184,166,0.75)',
+                        background: 'rgba(20,184,166,0.2)',
+                        color: '#ccfbf1',
+                        padding: '3px 10px',
+                        fontSize: 11,
+                        fontWeight: 800,
+                        letterSpacing: '0.12em',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Discard
+                    </span>
+                    <span style={{ fontSize: 11, color: timerTone }}>
+                      {tableTimerSeconds !== null ? `${tableTimerSeconds}s` : '--'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#e2e8f0' }}>
+                    Select up to {discardLimit} to discard ({selectedDiscardCount}/{discardLimit})
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDiscardIndex(null)}
+                      disabled={discardSubmitted}
+                      style={turnActionStyle(!discardSubmitted, {
+                        border: 'rgba(148,163,184,0.82)',
+                        background: 'rgba(30,41,59,0.78)',
+                        color: '#e2e8f0',
+                        glow: 'rgba(148,163,184,0.26)',
+                      })}
+                    >
+                      Keep All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmDiscardSelection}
+                      disabled={!canConfirmDiscard}
+                      style={turnActionStyle(canConfirmDiscard, {
+                        border: 'rgba(56,189,248,0.86)',
+                        background: 'rgba(14,116,144,0.58)',
+                        color: '#e0f2fe',
+                        glow: 'rgba(56,189,248,0.36)',
+                      })}
+                    >
+                      Confirm Discards
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(186,230,253,0.88)' }}>
+                    Keep All defers to timer auto-discard in this ruleset.
+                  </div>
                 </div>
-              ) : (
+              ) : null}
+              {isBettingPhase ? (
                 <div
                   style={{
                     width: '100%',
@@ -2992,89 +2876,48 @@ export const PokerGamePage = ({
                     borderRadius: 12,
                     border: isMyTurn
                       ? '1px solid rgba(56,189,248,0.76)'
-                      : '1px solid rgba(56,189,248,0.45)',
-                    background: isMyTurn ? 'rgba(8,15,24,0.84)' : 'rgba(8,15,24,0.72)',
+                      : '1px solid rgba(71,85,105,0.72)',
+                    background: 'rgba(8,15,24,0.9)',
                     padding: isPhone ? '10px 12px' : '12px 14px',
-                    boxShadow: isMyTurn ? '0 0 0 1px rgba(56,189,248,0.18), 0 14px 28px rgba(2,132,199,0.16)' : undefined,
+                    boxShadow: isMyTurn
+                      ? '0 0 0 1px rgba(56,189,248,0.2), 0 14px 28px rgba(2,132,199,0.2)'
+                      : '0 10px 20px rgba(0,0,0,0.22)',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 10,
+                    gap: 8,
                   }}
                 >
-                  <div
-                    style={{
-                      borderRadius: 10,
-                      border: '1px solid rgba(71,85,105,0.7)',
-                      background: 'rgba(2,6,12,0.55)',
-                      padding: '8px 10px',
-                    }}
-                  >
-                    <div
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <span
                       style={{
+                        borderRadius: 999,
+                        border: isMyTurn
+                          ? '1px solid rgba(56,189,248,0.8)'
+                          : '1px solid rgba(148,163,184,0.55)',
+                        background: isMyTurn ? 'rgba(8,47,73,0.52)' : 'rgba(15,23,42,0.58)',
+                        color: isMyTurn ? '#e0f2fe' : 'rgba(203,213,225,0.92)',
+                        padding: '3px 10px',
                         fontSize: 11,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.13em',
-                        color: isMyTurn ? '#7dd3fc' : 'rgba(148,163,184,0.92)',
-                        fontFamily:
-                          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-                      }}
-                    >
-                      Action Guide
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 3,
-                        fontSize: 14,
                         fontWeight: 700,
-                        color: '#f8fafc',
-                        fontFamily:
-                          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                        whiteSpace: 'nowrap',
                       }}
                     >
-                      {actionGuideTitle}
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 2,
-                        fontSize: 12,
-                        color: 'rgba(226,232,240,0.92)',
-                        fontFamily:
-                          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-                      }}
-                    >
-                      {actionGuideLine}
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 3,
-                        fontSize: 11,
-                        color: 'rgba(186,230,253,0.9)',
-                        fontFamily:
-                          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-                      }}
-                    >
-                      {actionGuideTip}
-                    </div>
-                    {hand?.phase === 'betting' ? (
-                      <div
-                        style={{
-                          marginTop: 6,
-                          fontSize: 11,
-                          color: isMyTurn ? 'rgba(125,211,252,0.96)' : 'rgba(148,163,184,0.9)',
-                          letterSpacing: 0.2,
-                        }}
-                      >
-                        {isMyTurn
-                          ? `${actionableCount} option${actionableCount === 1 ? '' : 's'} ready now.`
-                          : `Waiting for your turn. Current bet ${currentBetValue}.`}
-                      </div>
-                    ) : null}
+                      {turnStatusLabel}
+                    </span>
+                    <span style={{ fontSize: 11, color: timerTone }}>
+                      {tableTimerSeconds !== null ? `${tableTimerSeconds}s` : '--'}
+                    </span>
                   </div>
-
+                  <div style={{ fontSize: 12, color: 'rgba(226,232,240,0.9)' }}>{bettingHintLine}</div>
+                  {latestActionLine ? (
+                    <div style={{ fontSize: 11, color: 'rgba(148,163,184,0.9)' }}>
+                      Last action: {latestActionLine}
+                    </div>
+                  ) : null}
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))',
+                      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
                       gap: 8,
                       alignItems: 'stretch',
                       width: '100%',
@@ -3091,137 +2934,177 @@ export const PokerGamePage = ({
                         glow: 'rgba(248,113,113,0.35)',
                       })}
                     >
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        Fold
-                        <span style={actionKeycapStyle}>F</span>
-                      </span>
+                      Fold
                     </button>
                     <button
                       type="button"
-                      disabled={!canCheck}
-                      onClick={() => act('check')}
-                      style={turnActionStyle(canCheck, {
-                        border: 'rgba(148,163,184,0.82)',
-                        background: 'rgba(30,41,59,0.78)',
-                        color: '#e2e8f0',
-                        glow: 'rgba(148,163,184,0.26)',
-                      })}
-                    >
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        Check
-                        <span style={actionKeycapStyle}>C</span>
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!canCall}
-                      onClick={() => act('call')}
-                      style={turnActionStyle(canCall, {
-                        border: 'rgba(163,230,53,0.88)',
-                        background: 'rgba(54,83,20,0.58)',
-                        color: '#ecfccb',
-                        glow: 'rgba(163,230,53,0.34)',
-                      })}
-                    >
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        Call {toCall}
-                        <span style={actionKeycapStyle}>C</span>
-                      </span>
-                    </button>
-                    <div style={{ gridColumn: isPhone ? 'span 2' : 'span 1' }}>
-                      <input
-                        type="number"
-                        value={betAmount}
-                        min={minRaiseTo ?? undefined}
-                        max={maxRaiseTo ?? undefined}
-                        step={1}
-                        disabled={!isMyTurn || raiseCapReached}
-                        onChange={(e) => {
-                          const next = Number.parseInt(e.target.value, 10);
-                          setBetAmount(Number.isFinite(next) ? next : 0);
-                        }}
-                        onBlur={() => {
-                          if (minRaiseTo === null || maxRaiseTo === null) {
-                            return;
-                          }
-                          setBetAmount((previous) => {
-                            const normalized = Number.isFinite(previous) ? Math.floor(previous) : minRaiseTo;
-                            return Math.min(maxRaiseTo, Math.max(minRaiseTo, normalized));
-                          });
-                        }}
-                        style={{
-                          ...actionInputStyle,
-                          width: '100%',
-                          border:
-                            isMyTurn && !raiseCapReached
-                              ? '1px solid rgba(56,189,248,0.8)'
-                              : '1px solid rgba(71,85,105,0.9)',
-                          background:
-                            isMyTurn && !raiseCapReached
-                              ? 'rgba(8,47,73,0.48)'
-                              : 'rgba(2,6,12,0.62)',
-                          ...(isMyTurn && !raiseCapReached ? null : disabledActionStyle),
-                        }}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={!canRaise}
-                      onClick={() => act(hand && hand.currentBet === 0 ? 'bet' : 'raise', normalizedBetAmount)}
-                      style={turnActionStyle(canRaise, {
+                      disabled={!canCheckOrCall}
+                      onClick={() => {
+                        if (toCall === 0) {
+                          act('check');
+                          return;
+                        }
+                        act('call');
+                      }}
+                      style={turnActionStyle(canCheckOrCall, {
                         border: 'rgba(56,189,248,0.86)',
                         background: 'rgba(14,116,144,0.58)',
                         color: '#e0f2fe',
                         glow: 'rgba(56,189,248,0.36)',
                       })}
                     >
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        {raiseActionLabel} to {normalizedBetAmount}
-                        <span style={actionKeycapStyle}>R</span>
-                      </span>
+                      {checkOrCallLabel}
                     </button>
                     <button
                       type="button"
-                      disabled={!canAllIn}
-                      onClick={() => act('allIn')}
-                      style={turnActionStyle(canAllIn, {
-                        border: 'rgba(248,113,113,0.95)',
-                        background: 'rgba(185,28,28,0.76)',
-                        color: '#fff1f2',
-                        glow: 'rgba(248,113,113,0.38)',
+                      disabled={!canOpenRaiseDrawer}
+                      onClick={toggleRaiseDrawer}
+                      style={turnActionStyle(canOpenRaiseDrawer, {
+                        border: 'rgba(148,163,184,0.82)',
+                        background: 'rgba(30,41,59,0.78)',
+                        color: '#e2e8f0',
+                        glow: 'rgba(148,163,184,0.26)',
                       })}
                     >
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        All-in {you ? you.stack + you.betThisStreet : ''}
-                        <span style={actionKeycapStyle}>A</span>
-                      </span>
+                      {showRaiseDrawer ? 'Close Raise' : 'Raise'}
                     </button>
                   </div>
-
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: 'rgba(203,213,225,0.9)',
-                      fontFamily:
-                        'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-                    }}
-                  >
-                    {minRaiseTo !== null && maxRaiseTo !== null
-                      ? `Raise range ${minRaiseTo} - ${maxRaiseTo}. ${raiseDisabledHint}`
-                      : raiseDisabledHint}
-                  </div>
+                  {showRaiseDrawer ? (
+                    <div
+                      style={{
+                        marginTop: 2,
+                        borderRadius: 12,
+                        border: '1px solid rgba(71,85,105,0.72)',
+                        background: 'rgba(2,6,12,0.78)',
+                        padding: isPhone ? '10px' : '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 10,
+                      }}
+                    >
+                      <div style={{ fontSize: 12, color: '#e2e8f0' }}>
+                        Raise to <strong>{clampedRaiseTo}</strong>
+                      </div>
+                      <input
+                        type="range"
+                        min={minRaiseTo ?? undefined}
+                        max={maxRaiseTo ?? undefined}
+                        value={clampedRaiseTo}
+                        step={1}
+                        disabled={!canOpenRaiseDrawer || minRaiseTo === null || maxRaiseTo === null}
+                        onChange={(event) => {
+                          const next = Number.parseInt(event.target.value, 10);
+                          setBetAmount(Number.isFinite(next) ? next : 0);
+                        }}
+                        style={{ width: '100%' }}
+                      />
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
+                        {quickRaiseOptions.map((option) => (
+                          <button
+                            key={`${option.label}-${option.value}`}
+                            type="button"
+                            onClick={() => {
+                              setBetAmount(option.value);
+                              setConfirmAllIn(false);
+                            }}
+                            style={{
+                              borderRadius: 8,
+                              border: '1px solid rgba(71,85,105,0.72)',
+                              background: option.requiresConfirm ? 'rgba(127,29,29,0.46)' : 'rgba(30,41,59,0.74)',
+                              color: option.requiresConfirm ? '#fee2e2' : '#e2e8f0',
+                              padding: '7px 6px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr auto', gap: 8 }}>
+                        <input
+                          type="number"
+                          value={betAmount}
+                          min={minRaiseTo ?? undefined}
+                          max={maxRaiseTo ?? undefined}
+                          step={1}
+                          disabled={!canOpenRaiseDrawer}
+                          onChange={(event) => {
+                            const next = Number.parseInt(event.target.value, 10);
+                            setBetAmount(Number.isFinite(next) ? next : 0);
+                          }}
+                          style={{
+                            minHeight: 42,
+                            borderRadius: 10,
+                            border: '1px solid rgba(71,85,105,0.85)',
+                            background: 'rgba(2,6,12,0.62)',
+                            color: '#f8fafc',
+                            padding: '8px 10px',
+                            fontSize: 13,
+                            outline: 'none',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          disabled={!canRaise}
+                          onClick={submitRaiseAction}
+                          style={turnActionStyle(canRaise, {
+                            border: maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
+                              ? 'rgba(248,113,113,0.9)'
+                              : 'rgba(56,189,248,0.86)',
+                            background: maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
+                              ? 'rgba(127,29,29,0.58)'
+                              : 'rgba(14,116,144,0.58)',
+                            color: maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo ? '#fee2e2' : '#e0f2fe',
+                            glow: maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
+                              ? 'rgba(248,113,113,0.35)'
+                              : 'rgba(56,189,248,0.36)',
+                          })}
+                        >
+                          {maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo && !confirmAllIn
+                            ? `Confirm all-in ${clampedRaiseTo}`
+                            : `${raiseActionLabel} ${clampedRaiseTo}`}
+                        </button>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'rgba(203,213,225,0.9)' }}>{raiseDisabledHint}</div>
+                    </div>
+                  ) : null}
                 </div>
-              )}
-              {!showUtilitiesPanel ? (
+              ) : null}
+              {isRevealPhase ? (
                 <div
                   style={{
-                    fontSize: 11,
-                    color: 'rgba(186,230,253,0.9)',
-                    textAlign: isMobile ? 'center' : 'left',
-                    letterSpacing: 0.2,
+                    borderRadius: 12,
+                    border: '1px solid rgba(34,197,94,0.6)',
+                    background: 'rgba(20,83,45,0.36)',
+                    padding: isPhone ? '10px 12px' : '12px 14px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 10,
                   }}
                 >
-                  Extras are hidden to keep gameplay clear. Use the top Extras button for chat, feed, reactions, and sound.
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#bbf7d0' }}>
+                      Reveal
+                    </div>
+                    <div style={{ marginTop: 2, fontSize: 13, color: '#dcfce7' }}>
+                      {showdownSummary ?? 'Showdown in progress'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => send({ type: 'nextHand' })}
+                    style={turnActionStyle(true, {
+                      border: 'rgba(56,189,248,0.86)',
+                      background: 'rgba(14,116,144,0.58)',
+                      color: '#e0f2fe',
+                      glow: 'rgba(56,189,248,0.36)',
+                    })}
+                  >
+                    Next Hand
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -3246,83 +3129,6 @@ export const PokerGamePage = ({
                 <span style={ellipsisDotStyle(200)}>.</span>
                 <span style={ellipsisDotStyle(400)}>.</span>
               </span>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      {uiDiscardOverlayV2 && discardPending && you ? (
-        <div
-          style={{
-            position: 'fixed',
-            left: '50%',
-            bottom: isPhone ? 'calc(10px + env(safe-area-inset-bottom))' : 'calc(14px + env(safe-area-inset-bottom))',
-            transform: 'translateX(-50%)',
-            zIndex: 95,
-            width: isPhone ? 'calc(100vw - 20px)' : 'min(560px, calc(100vw - 30px))',
-            borderRadius: 14,
-            border: '1px solid rgba(20,184,166,0.55)',
-            background: 'rgba(2,6,14,0.92)',
-            boxShadow: '0 16px 40px rgba(0,0,0,0.45)',
-            padding: isPhone ? '10px 12px' : '12px 14px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-            <div>
-              <div
-                style={{
-                  fontSize: 15,
-                  fontWeight: 700,
-                  color: '#ccfbf1',
-                  fontFamily:
-                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-                }}
-              >
-                Discard 1 Card
-              </div>
-              <div style={{ marginTop: 2, fontSize: 12, color: 'rgba(226,232,240,0.82)' }}>
-                {selectedDiscardIndex === null
-                  ? 'Tap a card to select it.'
-                  : `Card ${selectedDiscardIndex + 1} selected.`}
-              </div>
-            </div>
-
-            <div style={{ display: 'inline-flex', gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => setSelectedDiscardIndex(null)}
-                disabled={selectedDiscardIndex === null || discardSubmitted}
-                style={{
-                  borderRadius: 10,
-                  border: '1px solid rgba(148,163,184,0.55)',
-                  background: 'rgba(30,41,59,0.55)',
-                  color: '#e2e8f0',
-                  padding: '8px 12px',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  cursor: selectedDiscardIndex === null || discardSubmitted ? 'not-allowed' : 'pointer',
-                  opacity: selectedDiscardIndex === null || discardSubmitted ? 0.55 : 1,
-                }}
-              >
-                Clear
-              </button>
-              <button
-                type="button"
-                onClick={confirmDiscardSelection}
-                disabled={selectedDiscardIndex === null || discardSubmitted}
-                style={{
-                  borderRadius: 10,
-                  border: '1px solid rgba(20,184,166,0.75)',
-                  background: 'rgba(20,184,166,0.2)',
-                  color: '#ccfbf1',
-                  padding: '8px 12px',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  cursor: selectedDiscardIndex === null || discardSubmitted ? 'not-allowed' : 'pointer',
-                  opacity: selectedDiscardIndex === null || discardSubmitted ? 0.55 : 1,
-                }}
-              >
-                Confirm Discard
-              </button>
             </div>
           </div>
         </div>
