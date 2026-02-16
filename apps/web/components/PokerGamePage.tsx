@@ -448,6 +448,7 @@ export const PokerGamePage = ({
   const nextMutatingSeqRef = useRef(1);
   const discardTimerRef = useRef<number | null>(null);
   const holeDealTimerRef = useRef<number | null>(null);
+  const joinTimeoutRef = useRef<number | null>(null);
   const tableRef = useRef<HTMLDivElement | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -565,15 +566,23 @@ export const PokerGamePage = ({
     }
 
     let disposed = false;
+    const clearJoinTimeout = () => {
+      if (joinTimeoutRef.current !== null) {
+        window.clearTimeout(joinTimeoutRef.current);
+        joinTimeoutRef.current = null;
+      }
+    };
 
     const onServerMessage = (msg: ServerMessage) => {
       if (msg.type === 'welcome') {
+        clearJoinTimeout();
         setPlayerId(msg.playerId);
         if (typeof window !== 'undefined') {
           localStorage.setItem(STORAGE_KEYS.playerId, msg.playerId);
         }
       }
       if (msg.type === 'state') {
+        clearJoinTimeout();
         const statePlayerId =
           msg.state &&
           typeof msg.state === 'object' &&
@@ -593,6 +602,7 @@ export const PokerGamePage = ({
         setState(msg.state);
       }
       if (msg.type === 'error') {
+        clearJoinTimeout();
         setStatus(msg.message);
       }
       if (msg.type === 'reaction') {
@@ -815,6 +825,10 @@ export const PokerGamePage = ({
 
     return () => {
       disposed = true;
+      if (joinTimeoutRef.current !== null) {
+        window.clearTimeout(joinTimeoutRef.current);
+        joinTimeoutRef.current = null;
+      }
       connectionRef.current?.close();
       connectionRef.current = null;
       legacySocketRef.current = null;
@@ -1180,6 +1194,14 @@ export const PokerGamePage = ({
       return;
     }
     setStatus('Joining table...');
+    if (joinTimeoutRef.current !== null) {
+      window.clearTimeout(joinTimeoutRef.current);
+      joinTimeoutRef.current = null;
+    }
+    joinTimeoutRef.current = window.setTimeout(() => {
+      setStatus('Join timed out. Return to lobby and try another table.');
+      joinTimeoutRef.current = null;
+    }, 7000);
     send({ type: 'join', name: trimmed, buyIn });
     window.setTimeout(() => {
       send({ type: 'requestState' });

@@ -2,7 +2,12 @@ import { useState } from 'react';
 import { useRouter } from 'next/router';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { useFeatureFlags } from '../lib/featureFlags';
-import { ensureNakamaReady, formatNakamaError, quickPlayLobby } from '../lib/nakamaClient';
+import {
+  ensureNakamaReady,
+  ensurePdhMatch,
+  formatNakamaError,
+  quickPlayLobby,
+} from '../lib/nakamaClient';
 import { buildQuickPlayRequest, recordQuickPlayResolved } from '../lib/quickPlayProfile';
 import { upsertRecentTable } from '../lib/recentTables';
 
@@ -91,7 +96,23 @@ export default function HeroSection() {
       });
       await router.push(`/table/${encodeURIComponent(result.matchId)}`);
     } catch (error) {
-      setPlayNowError(formatNakamaError(error));
+      const message = formatNakamaError(error);
+      if (message.toLowerCase().includes('404')) {
+        try {
+          const fallback = await ensurePdhMatch({ tableId: 'main' });
+          logClientEvent('landing_quick_play_fallback', {
+            reason: 'rpc_404',
+            matchId: fallback.matchId,
+            tableId: fallback.tableId,
+          });
+          await router.push(`/table/${encodeURIComponent(fallback.matchId)}`);
+          return;
+        } catch (fallbackError) {
+          setPlayNowError(formatNakamaError(fallbackError));
+          return;
+        }
+      }
+      setPlayNowError(message);
     } finally {
       setPlayNowLoading(false);
     }

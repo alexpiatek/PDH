@@ -5,6 +5,7 @@ export const LOBBY_RPC_CREATE_TABLE = 'rpc_create_table';
 export const LOBBY_RPC_JOIN_BY_CODE = 'rpc_join_by_code';
 export const LOBBY_RPC_QUICK_PLAY = 'rpc_quick_play';
 export const LOBBY_RPC_LIST_TABLES = 'rpc_list_tables';
+export const PDH_RPC_ENSURE_MATCH = 'pdh_ensure_match';
 
 export type QuickPlaySkillTier = 'newcomer' | 'casual' | 'regular' | 'pro';
 
@@ -79,6 +80,18 @@ export interface ListTablesRpcTable {
 
 export interface ListTablesRpcResponse {
   tables: ListTablesRpcTable[];
+}
+
+export interface EnsurePdhMatchRpcRequest {
+  tableId?: string;
+  module?: string;
+}
+
+export interface EnsurePdhMatchRpcResponse {
+  tableId: string;
+  module: string;
+  matchId: string;
+  created: boolean;
 }
 
 let clientSingleton: NakamaClient | null = null;
@@ -379,6 +392,12 @@ export async function listLobbyTables(
   input: ListTablesRpcRequest = {}
 ): Promise<ListTablesRpcResponse> {
   return callNakamaRpc<ListTablesRpcResponse>(LOBBY_RPC_LIST_TABLES, input);
+}
+
+export async function ensurePdhMatch(
+  input: EnsurePdhMatchRpcRequest = {}
+): Promise<EnsurePdhMatchRpcResponse> {
+  return callNakamaRpc<EnsurePdhMatchRpcResponse>(PDH_RPC_ENSURE_MATCH, input);
 }
 
 export async function ensureNakamaReady() {

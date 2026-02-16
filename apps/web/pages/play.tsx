@@ -8,6 +8,7 @@ import { TABLE_CODE_LENGTH, isValidTableCodeFormat, normalizeTableCode } from '@
 import {
   createLobbyTable,
   ensureNakamaReady,
+  ensurePdhMatch,
   formatNakamaError,
   listLobbyTables,
   type ListTablesRpcTable,
@@ -262,7 +263,23 @@ const PlayLobbyPage: NextPage = () => {
 
       await router.push(`/table/${encodeURIComponent(result.matchId)}`);
     } catch (error) {
-      setQuickPlayError(formatNakamaError(error));
+      const message = formatNakamaError(error);
+      if (message.toLowerCase().includes('404')) {
+        try {
+          const fallback = await ensurePdhMatch({ tableId: 'main' });
+          logClientEvent('quick_play_fallback', {
+            reason: 'rpc_404',
+            matchId: fallback.matchId,
+            tableId: fallback.tableId,
+          });
+          await router.push(`/table/${encodeURIComponent(fallback.matchId)}`);
+          return;
+        } catch (fallbackError) {
+          setQuickPlayError(formatNakamaError(fallbackError));
+          return;
+        }
+      }
+      setQuickPlayError(message);
     } finally {
       setQuickPlayLoading(false);
     }
