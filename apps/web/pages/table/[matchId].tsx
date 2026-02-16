@@ -6,6 +6,14 @@ import { useRouter } from 'next/router';
 import { Loader2, Users } from 'lucide-react';
 import { ensureNakamaSocket, formatNakamaError } from '../../lib/nakamaClient';
 
+function safePresenceDelta(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function safeInitialPlayerCount(value: unknown): number {
+  return Array.isArray(value) ? value.length + 1 : 1;
+}
+
 const TablePlaceholderPage: NextPage = () => {
   const router = useRouter();
 
@@ -52,17 +60,29 @@ const TablePlaceholderPage: NextPage = () => {
 
         const previousPresenceHandler = socket.onmatchpresence;
         socket.onmatchpresence = (event) => {
-          if (typeof previousPresenceHandler === 'function') {
-            previousPresenceHandler.call(socket, event);
+          try {
+            if (typeof previousPresenceHandler === 'function') {
+              previousPresenceHandler.call(socket, event);
+            }
+          } catch {
+            // Never let a stale socket callback crash the React tree.
           }
-          if (event.match_id !== matchId) {
+
+          const payload =
+            event && typeof event === 'object'
+              ? (event as { match_id?: unknown; joins?: unknown; leaves?: unknown })
+              : null;
+          if (!payload || payload.match_id !== matchId) {
             return;
           }
+
+          const joins = safePresenceDelta(payload.joins);
+          const leaves = safePresenceDelta(payload.leaves);
           setPlayerCount((current) => {
             if (typeof current !== 'number') {
-              return Math.max(1, event.joins.length + 1 - event.leaves.length);
+              return Math.max(1, joins + 1 - leaves);
             }
-            return Math.max(0, current + event.joins.length - event.leaves.length);
+            return Math.max(0, current + joins - leaves);
           });
         };
 
@@ -77,7 +97,7 @@ const TablePlaceholderPage: NextPage = () => {
         }
 
         setJoinStatus('joined');
-        setPlayerCount((joinedMatch.presences?.length ?? 0) + 1);
+        setPlayerCount(safeInitialPlayerCount(joinedMatch.presences));
       } catch (error) {
         if (cancelled) {
           return;
