@@ -1,10 +1,9 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
+import PokerGamePage from '../../components/PokerGamePage';
 
-const MATCH_ID_STORAGE_KEY = 'nakamaMatchId';
-
-export default function TableRouteRedirectPage() {
+export default function TableMatchPage() {
   const router = useRouter();
 
   const matchId = useMemo(() => {
@@ -18,36 +17,34 @@ export default function TableRouteRedirectPage() {
     return '';
   }, [router.query.matchId]);
 
-  useEffect(() => {
-    if (!router.isReady || !matchId) {
-      return;
-    }
-
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(MATCH_ID_STORAGE_KEY, matchId);
-    }
-
-    void router.replace('/game');
-  }, [matchId, router]);
+  if (!router.isReady || !matchId) {
+    return (
+      <>
+        <Head>
+          <title>Loading Table...</title>
+        </Head>
+        <main
+          style={{
+            minHeight: '100vh',
+            display: 'grid',
+            placeItems: 'center',
+            background: '#0a1120',
+            color: '#e4e7ee',
+            fontFamily: 'Inter, system-ui, sans-serif',
+          }}
+        >
+          Loading table...
+        </main>
+      </>
+    );
+  }
 
   return (
     <>
       <Head>
-        <title>Joining Table...</title>
+        <title>Bondi Poker Table</title>
       </Head>
-      <main
-        style={{
-          minHeight: '100vh',
-          display: 'grid',
-          placeItems: 'center',
-          background: '#0a1120',
-          color: '#e4e7ee',
-          fontFamily: 'Manrope, system-ui, sans-serif',
-          padding: 24,
-        }}
-      >
-        <p>Joining table...</p>
-      </main>
+      <PokerGamePage forcedMatchId={matchId} onExitLobby={() => void router.push('/play')} />
     </>
   );
 }
