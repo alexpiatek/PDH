@@ -2,71 +2,208 @@ import { useEffect, useState, type FormEvent } from 'react';
 import Head from 'next/head';
 import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
+import { isValidTableCodeFormat, normalizeTableCode } from '@pdh/protocol';
 import { logClientEvent } from '../lib/clientTelemetry';
-import { formatNakamaError, ensureNakamaReady, ensurePdhMatch } from '../lib/nakamaClient';
+import {
+  ensureNakamaReady,
+  formatNakamaError,
+  quickPlayLobby,
+  resolveLobbyCode,
+} from '../lib/nakamaClient';
 import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
+import {
+  buildQuickPlayRequest,
+  recordQuickPlayResolved,
+  recordTableJoin,
+} from '../lib/quickPlayProfile';
+import { getRecentTables, type RecentLobbyTable, upsertRecentTable } from '../lib/recentTables';
 
 const NETWORK_BACKEND = (
   process.env.NEXT_PUBLIC_NETWORK_BACKEND ||
   (process.env.NEXT_PUBLIC_NAKAMA_HOST ? 'nakama' : 'legacy')
 ).toLowerCase();
 const USE_NAKAMA_BACKEND = NETWORK_BACKEND === 'nakama';
-const NAKAMA_TABLE_ID = process.env.NEXT_PUBLIC_NAKAMA_TABLE_ID || 'main';
 const LEGACY_FALLBACK_MATCH_ID = 'main';
+
+type LoadingMode = 'quick_play' | 'join_code' | `recent:${string}` | null;
 
 const PlayLobbyPage: NextPage = () => {
   const router = useRouter();
   const [name, setName] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [loadingMode, setLoadingMode] = useState<LoadingMode>(null);
   const [error, setError] = useState('');
+  const [recentTables, setRecentTables] = useState<RecentLobbyTable[]>([]);
 
   useEffect(() => {
     setName(readStoredPlayerName());
+    setRecentTables(getRecentTables());
   }, []);
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const loading = loadingMode !== null;
+
+  const preparePlayerName = () => {
+    const normalized = normalizePlayerName(name);
+    if (!normalized) {
+      setError('Please enter your name.');
+      return null;
+    }
+    setName(normalized);
+    setError('');
+    storePlayerName(normalized);
+    return normalized;
+  };
+
+  const enterMatch = async (matchId: string) => {
+    await router.push(`/table/${encodeURIComponent(matchId)}`);
+  };
+
+  const handleQuickPlay = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (loading) {
+      return;
+    }
+    const normalizedName = preparePlayerName();
+    if (!normalizedName) {
+      return;
+    }
+
+    setLoadingMode('quick_play');
+    logClientEvent('quick_play_click', {
+      backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
+    });
+
+    try {
+      if (!USE_NAKAMA_BACKEND) {
+        await enterMatch(LEGACY_FALLBACK_MATCH_ID);
+        return;
+      }
+
+      await ensureNakamaReady();
+      const quickPlayRequest = buildQuickPlayRequest();
+      const resolved = await quickPlayLobby(quickPlayRequest);
+
+      recordQuickPlayResolved(resolved);
+      recordTableJoin(resolved.quickPlayBuyIn);
+      setRecentTables(
+        upsertRecentTable({
+          code: resolved.code,
+          name: resolved.name,
+          matchId: resolved.matchId,
+          maxPlayers: resolved.maxPlayers,
+          isPrivate: resolved.isPrivate,
+        })
+      );
+
+      await enterMatch(resolved.matchId);
+    } catch (submitError) {
+      setError(formatNakamaError(submitError));
+    } finally {
+      setLoadingMode(null);
+    }
+  };
+
+  const resolveTableCode = async (rawCode: string) => {
+    const code = normalizeTableCode(rawCode);
+    if (!isValidTableCodeFormat(code)) {
+      throw new Error('Enter a valid 6-character table code.');
+    }
+
+    if (!USE_NAKAMA_BACKEND) {
+      return {
+        code,
+        matchId: LEGACY_FALLBACK_MATCH_ID,
+      };
+    }
+
+    await ensureNakamaReady();
+    const resolved = await resolveLobbyCode({ code });
+    return {
+      code,
+      matchId: resolved.matchId,
+    };
+  };
+
+  const handleJoinByCode = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (loading) {
       return;
     }
 
-    const normalized = normalizePlayerName(name);
-    if (!normalized) {
-      setError('Please enter your name.');
+    const normalizedName = preparePlayerName();
+    if (!normalizedName) {
       return;
     }
 
-    setLoading(true);
+    setLoadingMode('join_code');
     setError('');
-    storePlayerName(normalized);
-
-    logClientEvent('single_table_enter_click', {
+    logClientEvent('join_by_code_click', {
       backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
-      tableId: NAKAMA_TABLE_ID,
     });
 
     try {
-      let matchId = LEGACY_FALLBACK_MATCH_ID;
-      if (USE_NAKAMA_BACKEND) {
-        await ensureNakamaReady();
-        const ensured = await ensurePdhMatch({ tableId: NAKAMA_TABLE_ID });
-        matchId = ensured.matchId;
-      }
-      await router.push(`/table/${encodeURIComponent(matchId)}`);
+      const resolved = await resolveTableCode(joinCode);
+      recordTableJoin();
+      setRecentTables(
+        upsertRecentTable({
+          code: resolved.code,
+          name: `Table ${resolved.code}`,
+          matchId: resolved.matchId,
+        })
+      );
+      setJoinCode(resolved.code);
+      await enterMatch(resolved.matchId);
     } catch (submitError) {
       setError(formatNakamaError(submitError));
     } finally {
-      setLoading(false);
+      setLoadingMode(null);
+    }
+  };
+
+  const handleJoinRecent = async (table: RecentLobbyTable) => {
+    if (loading) {
+      return;
+    }
+
+    const normalizedName = preparePlayerName();
+    if (!normalizedName) {
+      return;
+    }
+
+    setLoadingMode(`recent:${table.code}`);
+    setError('');
+    logClientEvent('recent_table_click', {
+      backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
+      code: table.code,
+    });
+
+    try {
+      const resolved = await resolveTableCode(table.code);
+      recordTableJoin();
+      setRecentTables(
+        upsertRecentTable({
+          code: resolved.code,
+          name: table.name || `Table ${resolved.code}`,
+          matchId: resolved.matchId,
+          maxPlayers: table.maxPlayers,
+          isPrivate: table.isPrivate,
+        })
+      );
+      await enterMatch(resolved.matchId);
+    } catch (submitError) {
+      setError(formatNakamaError(submitError));
+    } finally {
+      setLoadingMode(null);
     }
   };
 
   return (
     <>
       <Head>
-        <title>Join Game | BondiPoker</title>
+        <title>Play Lobby | BondiPoker</title>
         <meta
           name="description"
-          content="Enter your name and join the main BondiPoker table."
+          content="Quick Play to join an active table, or enter a table code to join friends."
         />
       </Head>
 
@@ -82,16 +219,17 @@ const PlayLobbyPage: NextPage = () => {
         <div className="relative mx-auto flex min-h-screen w-full max-w-3xl items-center justify-center px-4 py-10 sm:px-6">
           <section className="w-full rounded-3xl border border-amber-200/20 bg-zinc-950/70 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:p-8">
             <p className="inline-flex rounded-full border border-amber-300/35 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-200">
-              Single Table Mode
+              Play Lobby
             </p>
             <h1 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              Identify Yourself, Then Enter The Game
+              Enter Fast, Or Join By Code
             </h1>
             <p className="mt-3 text-sm text-zinc-300 sm:text-base">
-              One table. No lobby setup. Enter your name and jump straight into the main game.
+              Quick Play seats you at the best available table. Joining a friend by table code is
+              still available.
             </p>
 
-            <form onSubmit={(event) => void handleSubmit(event)} className="mt-8 space-y-4">
+            <form onSubmit={(event) => void handleQuickPlay(event)} className="mt-8 space-y-4">
               <label htmlFor="player-name" className="block text-sm font-medium text-zinc-100">
                 Player Name
               </label>
@@ -117,15 +255,77 @@ const PlayLobbyPage: NextPage = () => {
                 disabled={loading}
                 className="inline-flex w-full items-center justify-center rounded-xl border border-amber-200/65 bg-amber-400/20 px-5 py-3 text-sm font-semibold text-amber-50 transition hover:bg-amber-400/30 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? 'Entering Game...' : 'Enter Game'}
+                {loadingMode === 'quick_play' ? 'Finding Table...' : 'Quick Play'}
               </button>
-
-              {error ? (
-                <p className="rounded-xl border border-rose-400/45 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
-                  {error}
-                </p>
-              ) : null}
             </form>
+
+            <form
+              onSubmit={(event) => void handleJoinByCode(event)}
+              className="mt-6 rounded-2xl border border-zinc-200/15 bg-zinc-900/45 p-4 sm:p-5"
+            >
+              <label htmlFor="join-code" className="block text-sm font-medium text-zinc-100">
+                Join By Code
+              </label>
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                <input
+                  id="join-code"
+                  value={joinCode}
+                  onChange={(event) => {
+                    setJoinCode(normalizeTableCode(event.target.value));
+                    if (error) {
+                      setError('');
+                    }
+                  }}
+                  maxLength={6}
+                  placeholder="ABC234"
+                  className="w-full rounded-xl border border-zinc-300/30 bg-zinc-950/70 px-4 py-3 text-base uppercase tracking-[0.1em] text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-zinc-200/60 focus:ring-2 focus:ring-zinc-300/35"
+                />
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-zinc-300/45 bg-zinc-800/55 px-5 py-3 text-sm font-semibold text-zinc-100 transition hover:bg-zinc-700/60 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                >
+                  {loadingMode === 'join_code' ? 'Joining...' : 'Join Code'}
+                </button>
+              </div>
+            </form>
+
+            <div className="mt-6">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-300">
+                Recent Tables
+              </h2>
+              {recentTables.length > 0 ? (
+                <div className="mt-3 grid gap-2">
+                  {recentTables.slice(0, 4).map((table) => {
+                    const buttonLoading = loadingMode === `recent:${table.code}`;
+                    return (
+                      <button
+                        key={`${table.code}-${table.updatedAt}`}
+                        type="button"
+                        disabled={loading}
+                        onClick={() => {
+                          void handleJoinRecent(table);
+                        }}
+                        className="inline-flex items-center justify-between rounded-xl border border-zinc-300/25 bg-zinc-900/45 px-4 py-3 text-left text-sm text-zinc-100 transition hover:bg-zinc-800/60 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <span className="truncate pr-3">{table.name || `Table ${table.code}`}</span>
+                        <span className="font-semibold tracking-[0.08em] text-zinc-200">
+                          {buttonLoading ? 'Joining...' : table.code}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-zinc-400">No recent tables yet.</p>
+              )}
+            </div>
+
+            {error ? (
+              <p className="mt-5 rounded-xl border border-rose-400/45 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+                {error}
+              </p>
+            ) : null}
           </section>
         </div>
       </main>

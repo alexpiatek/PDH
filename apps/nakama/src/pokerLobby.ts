@@ -200,7 +200,9 @@ function parseMaxPlayers(value: unknown): number {
     return DEFAULT_MAX_PLAYERS;
   }
   if (!Number.isInteger(value)) {
-    throw new Error(`Max players must be an integer between ${MIN_MAX_PLAYERS} and ${MAX_MAX_PLAYERS}.`);
+    throw new Error(
+      `Max players must be an integer between ${MIN_MAX_PLAYERS} and ${MAX_MAX_PLAYERS}.`
+    );
   }
   const maxPlayers = Number(value);
   if (maxPlayers < MIN_MAX_PLAYERS || maxPlayers > MAX_MAX_PLAYERS) {
@@ -345,8 +347,7 @@ function parseListTablesInput(payload: string | undefined): ListTablesInput {
   ) {
     throw new Error('includePrivate must be a boolean.');
   }
-  const includePrivate =
-    typeof includePrivateRaw === 'boolean' ? includePrivateRaw : false;
+  const includePrivate = typeof includePrivateRaw === 'boolean' ? includePrivateRaw : false;
 
   const limitRaw = parsed.limit;
   if (limitRaw !== undefined && limitRaw !== null && !Number.isInteger(limitRaw)) {
@@ -615,7 +616,8 @@ function preferredOccupancyForSkill(skillTier: QuickPlaySkillTier): number {
 }
 
 function scoreQuickPlayCandidate(table: LobbyTableSummary, input: QuickPlayInput): number {
-  const buyInDelta = Math.abs(table.quickPlayBuyIn - input.targetBuyIn) / Math.max(1, input.targetBuyIn);
+  const buyInDelta =
+    Math.abs(table.quickPlayBuyIn - input.targetBuyIn) / Math.max(1, input.targetBuyIn);
   const skillDelta = Math.abs(
     QUICK_PLAY_SKILL_RANK[table.quickPlaySkillTier] - QUICK_PLAY_SKILL_RANK[input.skillTier]
   );
@@ -667,6 +669,28 @@ function chooseBestQuickPlayCandidate(
   }
 
   return best;
+}
+
+function listQuickPlayCandidates(
+  nk: NakamaWithStorage,
+  input: Pick<QuickPlayInput, 'maxPlayers'>
+): LobbyTableSummary[] {
+  return listActiveLobbyTables(nk).filter(
+    (table) => !table.isPrivate && table.seatsOpen > 0 && table.maxPlayers === input.maxPlayers
+  );
+}
+
+function quickPlayResultFromSummary(table: LobbyTableSummary, created: boolean): QuickPlayResult {
+  return {
+    code: table.code,
+    matchId: table.matchId,
+    name: table.name,
+    maxPlayers: table.maxPlayers,
+    isPrivate: table.isPrivate,
+    created,
+    quickPlayBuyIn: table.quickPlayBuyIn,
+    quickPlaySkillTier: table.quickPlaySkillTier,
+  };
 }
 
 export function rpcCreateTable(
@@ -748,12 +772,7 @@ export function rpcQuickPlay(
   const input = parseQuickPlayInput(payload);
   const runtimeNakama = nk as NakamaWithStorage;
 
-  const candidates = listActiveLobbyTables(runtimeNakama).filter(
-    (table) =>
-      !table.isPrivate &&
-      table.seatsOpen > 0 &&
-      table.maxPlayers === input.maxPlayers
-  );
+  const candidates = listQuickPlayCandidates(runtimeNakama, input);
 
   const chosen = chooseBestQuickPlayCandidate(candidates, input);
   if (chosen) {
@@ -768,17 +787,7 @@ export function rpcQuickPlay(
       input.targetBuyIn,
       input.skillTier
     );
-    const result: QuickPlayResult = {
-      code: chosen.code,
-      matchId: chosen.matchId,
-      name: chosen.name,
-      maxPlayers: chosen.maxPlayers,
-      isPrivate: chosen.isPrivate,
-      created: false,
-      quickPlayBuyIn: chosen.quickPlayBuyIn,
-      quickPlaySkillTier: chosen.quickPlaySkillTier,
-    };
-    return JSON.stringify(result);
+    return JSON.stringify(quickPlayResultFromSummary(chosen, false));
   }
 
   const created = createQuickPlayTable(runtimeNakama, input.maxPlayers, {
@@ -793,7 +802,26 @@ export function rpcQuickPlay(
     created.quickPlayBuyIn,
     created.quickPlaySkillTier
   );
-  return JSON.stringify(created);
+
+  // Re-resolve after creation so concurrent first entrants deterministically
+  // converge onto the same table selection rather than splitting.
+  const convergedCandidates = listQuickPlayCandidates(runtimeNakama, input);
+  const converged = chooseBestQuickPlayCandidate(convergedCandidates, input);
+  if (!converged) {
+    return JSON.stringify(created);
+  }
+
+  const createdByThisCall = converged.matchId === created.matchId;
+  if (!createdByThisCall) {
+    logger.info(
+      'Quick play converged to existing table code=%v matchId=%v after create attempt code=%v matchId=%v',
+      converged.code,
+      converged.matchId,
+      created.code,
+      created.matchId
+    );
+  }
+  return JSON.stringify(quickPlayResultFromSummary(converged, createdByThisCall));
 }
 
 export function rpcListTables(

@@ -81,8 +81,9 @@ function makeNakamaMock() {
             value,
           };
         })
-        .filter((value): value is { collection: string; key: string; userId: string; value: object } =>
-          Boolean(value)
+        .filter(
+          (value): value is { collection: string; key: string; userId: string; value: object } =>
+            Boolean(value)
         );
     }),
     storageWrite: vi.fn(
@@ -263,6 +264,38 @@ describe('poker lobby RPCs', () => {
     expect(stored.quickPlay.skillTier).toBe('regular');
   });
 
+  it('quick play converges to canonical table after concurrent create race', () => {
+    const { nk, setMatchSize } = makeNakamaMock();
+
+    const existingCreate = rpcCreateTable(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ name: 'Existing Table', maxPlayers: 6, isPrivate: false })
+    );
+    const existing = JSON.parse(existingCreate) as { code: string; matchId: string };
+    setMatchSize(existing.matchId, 0);
+
+    const defaultMatchList = nk.matchList.getMockImplementation();
+    nk.matchList
+      .mockImplementationOnce(() => [])
+      .mockImplementation((...args: any[]) => {
+        return defaultMatchList ? defaultMatchList(...args) : [];
+      });
+
+    const quick = rpcQuickPlay(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ maxPlayers: 6, targetBuyIn: 10000, skillTier: 'casual' })
+    );
+    const parsed = JSON.parse(quick) as { code: string; matchId: string; created: boolean };
+
+    expect(parsed.created).toBe(false);
+    expect(parsed.code).toBe(existing.code);
+    expect(parsed.matchId).toBe(existing.matchId);
+  });
+
   it('quick play prefers tables with closer buy-in metadata', () => {
     const { nk, setMatchSize, storage } = makeNakamaMock();
 
@@ -408,19 +441,22 @@ describe('poker_table match handler', () => {
     const { nk } = makeNakamaMock();
     const dispatcher = { broadcastMessage: vi.fn() };
 
-    const init = pokerTableMatchHandler.matchInit(
-      {},
-      logger as any,
-      nk as any,
-      { code: 'ABC234', maxPlayers: 2, name: 'Two Seat' }
-    );
+    const init = pokerTableMatchHandler.matchInit({}, logger as any, nk as any, {
+      code: 'ABC234',
+      maxPlayers: 2,
+      name: 'Two Seat',
+    });
     const state = init.state as any;
 
     const p1 = { userId: 'u1' };
     const p2 = { userId: 'u2' };
 
-    pokerTableMatchHandler.matchJoin({}, logger as any, nk as any, dispatcher as any, 1, state, [p1]);
-    pokerTableMatchHandler.matchJoin({}, logger as any, nk as any, dispatcher as any, 1, state, [p2]);
+    pokerTableMatchHandler.matchJoin({}, logger as any, nk as any, dispatcher as any, 1, state, [
+      p1,
+    ]);
+    pokerTableMatchHandler.matchJoin({}, logger as any, nk as any, dispatcher as any, 1, state, [
+      p2,
+    ]);
 
     const attempt = pokerTableMatchHandler.matchJoinAttempt(
       {},
