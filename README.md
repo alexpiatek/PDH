@@ -109,6 +109,30 @@ pnpm run typecheck
 pnpm run build
 ```
 
+Remote web deploy after push:
+
+```bash
+DEPLOY_REMOTE=user@your-server DEPLOY_DIR=/root/PDH pnpm run deploy:remote:web
+```
+
+Shortcut alias:
+
+```bash
+pnpm restart web serv
+```
+
+Remote git pull only:
+
+```bash
+ONLINE_REMOTE=user@your-server ONLINE_DIR=/root/PDH ONLINE_BRANCH=main pnpm online pull
+```
+
+You can set those values once in `.env`, then just run:
+
+```bash
+pnpm online pull
+```
+
 ## Quality Commands
 
 ```bash
