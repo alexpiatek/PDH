@@ -56,7 +56,7 @@ set -euo pipefail
 cd "$ONLINE_DIR"
 git fetch origin
 git checkout "$ONLINE_BRANCH"
-git pull --rebase origin "$ONLINE_BRANCH"
+git pull --rebase --autostash origin "$ONLINE_BRANCH"
 git rev-parse --short HEAD
 EOF
 else
@@ -67,7 +67,7 @@ set -euo pipefail
 cd "$ONLINE_DIR"
 git fetch origin
 git checkout "$ONLINE_BRANCH"
-git pull --rebase origin "$ONLINE_BRANCH"
+git pull --rebase --autostash origin "$ONLINE_BRANCH"
 git rev-parse --short HEAD
 EOF
 fi

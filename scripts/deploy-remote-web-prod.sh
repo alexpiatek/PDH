@@ -60,7 +60,7 @@ set -euo pipefail
 cd "$DEPLOY_DIR"
 git fetch origin
 git checkout "$DEPLOY_BRANCH"
-git pull --rebase origin "$DEPLOY_BRANCH"
+git pull --rebase --autostash origin "$DEPLOY_BRANCH"
 if ! chmod +x scripts/*.sh 2>/dev/null; then
   echo "WARN: could not chmod scripts/*.sh; continuing."
 fi
@@ -74,7 +74,7 @@ set -euo pipefail
 cd "$DEPLOY_DIR"
 git fetch origin
 git checkout "$DEPLOY_BRANCH"
-git pull --rebase origin "$DEPLOY_BRANCH"
+git pull --rebase --autostash origin "$DEPLOY_BRANCH"
 if ! chmod +x scripts/*.sh 2>/dev/null; then
   echo "WARN: could not chmod scripts/*.sh; continuing."
 fi
