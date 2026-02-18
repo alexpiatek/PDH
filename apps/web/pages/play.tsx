@@ -18,10 +18,18 @@ import {
 } from '../lib/quickPlayProfile';
 import { getRecentTables, type RecentLobbyTable, upsertRecentTable } from '../lib/recentTables';
 
-const NETWORK_BACKEND = (
-  process.env.NEXT_PUBLIC_NETWORK_BACKEND ||
-  (process.env.NEXT_PUBLIC_NAKAMA_HOST ? 'nakama' : 'legacy')
-).toLowerCase();
+const resolveNetworkBackend = () => {
+  const explicit = (process.env.NEXT_PUBLIC_NETWORK_BACKEND || '').trim().toLowerCase();
+  if (explicit === 'nakama' || explicit === 'legacy') {
+    return explicit;
+  }
+  if (process.env.NEXT_PUBLIC_WS_URL) {
+    return 'legacy';
+  }
+  return 'nakama';
+};
+
+const NETWORK_BACKEND = resolveNetworkBackend();
 const USE_NAKAMA_BACKEND = NETWORK_BACKEND === 'nakama';
 const LEGACY_FALLBACK_MATCH_ID = 'main';
 

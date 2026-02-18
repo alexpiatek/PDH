@@ -30,7 +30,11 @@ if [[ ! -d "$SEEDS_DIR" ]]; then
   exit 0
 fi
 
-mapfile -t seed_files < <(find "$SEEDS_DIR" -maxdepth 1 -type f -name '*.sql' | sort)
+seed_files=()
+while IFS= read -r file; do
+  seed_files+=("$file")
+done < <(find "$SEEDS_DIR" -maxdepth 1 -type f -name '*.sql' | sort)
+
 if [[ ${#seed_files[@]} -eq 0 ]]; then
   echo "No seed files found in $SEEDS_DIR"
   exit 0
@@ -39,6 +43,23 @@ fi
 compose=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
 "${compose[@]}" up -d postgres >/dev/null
+
+sha256_file() {
+  local file="$1"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+    return
+  fi
+
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+    return
+  fi
+
+  echo "No SHA-256 tool found (expected sha256sum or shasum)." >&2
+  exit 1
+}
 
 db_exec() {
   "${compose[@]}" exec -T postgres env PGPASSWORD="$POSTGRES_PASSWORD" \
@@ -55,7 +76,7 @@ EOSQL
 
 for file in "${seed_files[@]}"; do
   seed_name="$(basename "$file")"
-  checksum="$(sha256sum "$file" | awk '{print $1}')"
+  checksum="$(sha256_file "$file")"
   applied_checksum="$(db_exec -tAc "SELECT checksum FROM public.app_seed_runs WHERE seed_name = '$seed_name'" | tr -d '[:space:]')"
 
   if [[ -n "$applied_checksum" && "$applied_checksum" == "$checksum" ]]; then

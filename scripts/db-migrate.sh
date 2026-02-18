@@ -25,7 +25,11 @@ if [[ ! -d "$MIGRATIONS_DIR" ]]; then
   exit 0
 fi
 
-mapfile -t migration_files < <(find "$MIGRATIONS_DIR" -maxdepth 1 -type f -name '*.sql' | sort)
+migration_files=()
+while IFS= read -r file; do
+  migration_files+=("$file")
+done < <(find "$MIGRATIONS_DIR" -maxdepth 1 -type f -name '*.sql' | sort)
+
 if [[ ${#migration_files[@]} -eq 0 ]]; then
   echo "No migration files found in $MIGRATIONS_DIR"
   exit 0
@@ -34,6 +38,23 @@ fi
 compose=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
 "${compose[@]}" up -d postgres >/dev/null
+
+sha256_file() {
+  local file="$1"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+    return
+  fi
+
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+    return
+  fi
+
+  echo "No SHA-256 tool found (expected sha256sum or shasum)." >&2
+  exit 1
+}
 
 db_exec() {
   "${compose[@]}" exec -T postgres env PGPASSWORD="$POSTGRES_PASSWORD" \
@@ -50,7 +71,7 @@ EOSQL
 
 for file in "${migration_files[@]}"; do
   version="$(basename "$file")"
-  checksum="$(sha256sum "$file" | awk '{print $1}')"
+  checksum="$(sha256_file "$file")"
   applied_checksum="$(db_exec -tAc "SELECT checksum FROM public.app_schema_migrations WHERE version = '$version'" | tr -d '[:space:]')"
 
   if [[ -n "$applied_checksum" ]]; then

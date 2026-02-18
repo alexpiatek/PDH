@@ -4,11 +4,18 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.dev.yml"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env}"
+WEB_ENV_FILE="${WEB_ENV_FILE:-$ROOT_DIR/apps/web/.env.local}"
+WEB_ENV_TEMPLATE="${WEB_ENV_TEMPLATE:-$ROOT_DIR/apps/web/.env.local.example}"
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-pdh}"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   cp "$ROOT_DIR/.env.example" "$ENV_FILE"
   echo "Created $ENV_FILE from .env.example"
+fi
+
+if [[ ! -f "$WEB_ENV_FILE" && -f "$WEB_ENV_TEMPLATE" ]]; then
+  cp "$WEB_ENV_TEMPLATE" "$WEB_ENV_FILE"
+  echo "Created $WEB_ENV_FILE from $WEB_ENV_TEMPLATE"
 fi
 
 set -a

@@ -788,7 +788,7 @@ export class PokerTable {
 
   beginNextHandIfReady() {
     if (this.state.hand) return;
-    const ready = this.state.seats.filter((s) => s && s.stack > 0) as Seat[];
+    const ready = this.state.seats.filter((s) => s && s.stack > 0 && !s.sittingOut) as Seat[];
     if (ready.length >= 2) {
       this.startHand();
     }

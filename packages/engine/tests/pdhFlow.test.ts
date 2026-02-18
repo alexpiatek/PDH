@@ -180,6 +180,21 @@ describe('PDH flow contract', () => {
     expect(table.state.hand?.phase).toBe('showdown');
   });
 
+  it('does not try to start a new hand with sitting-out players only', () => {
+    const table = createTableWithPlayers(2, 10000, 0x91aa55ff);
+    const hand = table.state.hand!;
+    const disconnectedId = hand.players[1].id;
+
+    table.handleDisconnect(disconnectedId);
+
+    const disconnectedSeat = table.state.seats.find((seat) => seat?.id === disconnectedId);
+    expect(disconnectedSeat?.sittingOut).toBe(true);
+    expect(table.state.hand?.phase).toBe('showdown');
+
+    expect(() => table.advanceToNextHand()).not.toThrow();
+    expect(table.state.hand).toBeNull();
+  });
+
   it('is deterministic for equal seed + equal actions', () => {
     const t1 = createTableWithPlayers(4, 10000, 0xabc123);
     const t2 = createTableWithPlayers(4, 10000, 0xabc123);

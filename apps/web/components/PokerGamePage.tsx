@@ -8,10 +8,19 @@ import { logClientEvent } from '../lib/clientTelemetry';
 import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000';
-const NETWORK_BACKEND = (
-  process.env.NEXT_PUBLIC_NETWORK_BACKEND ||
-  (process.env.NEXT_PUBLIC_NAKAMA_HOST ? 'nakama' : 'legacy')
-).toLowerCase();
+
+const resolveNetworkBackend = () => {
+  const explicit = (process.env.NEXT_PUBLIC_NETWORK_BACKEND || '').trim().toLowerCase();
+  if (explicit === 'nakama' || explicit === 'legacy') {
+    return explicit;
+  }
+  if (process.env.NEXT_PUBLIC_WS_URL) {
+    return 'legacy';
+  }
+  return 'nakama';
+};
+
+const NETWORK_BACKEND = resolveNetworkBackend();
 const NAKAMA_HOST = process.env.NEXT_PUBLIC_NAKAMA_HOST || '127.0.0.1';
 const NAKAMA_PORT = process.env.NEXT_PUBLIC_NAKAMA_PORT || '7350';
 const NAKAMA_CLIENT_KEY =
@@ -77,6 +86,28 @@ const getOrCreateDeviceId = () => {
   const created = createDeviceId();
   window.localStorage.setItem(STORAGE_KEYS.deviceId, created);
   return created;
+};
+
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+
+const authenticateDeviceWithRetries = async (client: NakamaClient, deviceId: string) => {
+  try {
+    return await client.authenticateDevice(deviceId, true);
+  } catch (createError) {
+    let lastError: unknown = createError;
+    for (const delayMs of [50, 150, 350, 700]) {
+      await sleep(delayMs);
+      try {
+        return await client.authenticateDevice(deviceId, false);
+      } catch (loginError) {
+        lastError = loginError;
+      }
+    }
+    throw lastError;
+  }
 };
 
 const errorMessage = (error: unknown) => {
@@ -769,7 +800,7 @@ export const PokerGamePage = ({
       }
 
       const client = new NakamaClient(NAKAMA_CLIENT_KEY, NAKAMA_HOST, NAKAMA_PORT, NAKAMA_USE_SSL);
-      const session = await client.authenticateDevice(getOrCreateDeviceId(), true);
+      const session = await authenticateDeviceWithRetries(client, getOrCreateDeviceId());
       if (disposed) return;
       const sessionUserId =
         session && typeof (session as Session & { user_id?: unknown }).user_id === 'string'
