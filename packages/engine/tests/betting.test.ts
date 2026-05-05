@@ -152,4 +152,46 @@ describe('betting rules', () => {
     expect(actor.status).toBe('folded');
     expect(hand.log.some((entry) => entry.message.includes('auto-folded (timeout)'))).toBe(true);
   });
+
+  it('starts heads-up post-flop action on the big blind', () => {
+    const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
+    table.seatPlayer(0, { id: 'button', name: 'Button', stack: 5000 });
+    table.seatPlayer(1, { id: 'bb', name: 'Big Blind', stack: 5000 });
+    table.startHand(rng);
+
+    table.applyAction('button', { type: 'call' });
+    table.applyAction('bb', { type: 'check' });
+    table.advancePendingPhase(Number.MAX_SAFE_INTEGER);
+
+    const hand = table.state.hand!;
+    expect(hand.street).toBe('flop');
+    expect(hand.phase).toBe('betting');
+    expect(hand.actionOnSeat).toBe(1);
+  });
+
+  it('advances the button once between hands', () => {
+    const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
+    table.seatPlayer(0, { id: 'p0', name: 'P0', stack: 5000 });
+    table.seatPlayer(1, { id: 'p1', name: 'P1', stack: 5000 });
+    table.startHand(rng);
+    expect(table.state.hand?.buttonSeat).toBe(0);
+
+    table.state.hand!.phase = 'showdown';
+    table.advanceToNextHand();
+    expect(table.state.hand?.buttonSeat).toBe(1);
+
+    table.state.hand!.phase = 'showdown';
+    table.advanceToNextHand();
+    expect(table.state.hand?.buttonSeat).toBe(0);
+  });
+
+  it('does not start a hand with only one active ready seat', () => {
+    const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
+    table.seatPlayer(0, { id: 'p0', name: 'P0', stack: 5000 });
+    table.seatPlayer(1, { id: 'p1', name: 'P1', stack: 5000 });
+    table.setSittingOut('p1', true);
+
+    expect(() => table.beginNextHandIfReady()).not.toThrow();
+    expect(table.state.hand).toBeNull();
+  });
 });

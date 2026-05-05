@@ -5,7 +5,9 @@ you start with 5 hole cards, then discard one after flop, turn, and river, endin
 
 ## Play Online
 
-- Web: `https://play.bondipoker.online`
+- Landing: `https://bondipoker.online/`
+- Web: `https://bondipoker.online/play`
+- Play subdomain: `https://play.bondipoker.online`
 - API health: `https://api.bondipoker.online/healthcheck`
 
 ## Why It Is Different

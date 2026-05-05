@@ -21,7 +21,7 @@ const DEFAULT_CONFIG: TableConfig = {
   smallBlind: 400,
   bigBlind: 800,
   actionTimeoutMs: 30_000,
-  discardTimeoutMs: null,
+  discardTimeoutMs: 30_000,
 };
 
 function nowTs() {
@@ -102,10 +102,6 @@ function resetStreetState(hand: HandState, nextStreet: Street, table: TableState
 }
 
 function seatAfterButton(table: TableState, hand: HandState): number {
-  const buttonSeat = table.seats[hand.buttonSeat];
-  if (buttonSeat && playerBySeat(hand, buttonSeat.seat).status === 'active') {
-    return buttonSeat.seat;
-  }
   const order = seatOrderFrom(table.seats, hand.buttonSeat);
   const first = order.find((s) => s && playerBySeat(hand, s.seat).status === 'active');
   if (!first) return hand.buttonSeat;
@@ -819,10 +815,6 @@ export class PokerTable {
       if (seat && seat.stack === 0) {
         seat.stack = 10000;
       }
-    }
-    const nextBtn = nextOccupiedSeat(this.state.seats, this.state.buttonSeat);
-    if (nextBtn) {
-      this.state.buttonSeat = nextBtn.seat;
     }
     this.beginNextHandIfReady();
   }

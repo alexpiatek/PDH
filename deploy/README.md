@@ -12,6 +12,7 @@ This note defines expected production routing for Next.js + Nakama behind Caddy.
 ## Public Routes
 
 - `https://<root-domain>` -> Next.js
+- `https://<root-domain>/play` -> game entry
 - `https://www.<root-domain>` -> Next.js
 - `https://play.<root-domain>` -> Next.js
 - `https://api.<root-domain>` -> Nakama (`/healthcheck`, `/v2/*`, `/ws`)

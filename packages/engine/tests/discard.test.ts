@@ -4,6 +4,12 @@ import { PokerTable } from '../src/table';
 const zeroRng = () => 0.42; // deterministic-ish
 
 describe('discard phase timeout', () => {
+  it('uses a default discard timeout', () => {
+    const table = new PokerTable('t');
+
+    expect(table.state.config.discardTimeoutMs).toBe(30_000);
+  });
+
   it('auto-discards leftmost card on timeout', () => {
     const table = new PokerTable('t', { discardTimeoutMs: 0 });
     table.seatPlayer(0, { id: 'p1', name: 'Alice', stack: 1000 });

@@ -202,6 +202,26 @@ const avatarSuitColor = (suit: Card['suit']) =>
 const cardRankLabel = (rank: Card['rank']) => (rank === 'T' ? '10' : rank);
 const cardText = (c: Card) => `${cardRankLabel(c.rank)}${suitSymbol(c.suit)}`;
 type PlayerActionType = Extract<ClientMessage, { type: 'action' }>['action'];
+type ServerStatePayload = Extract<ServerMessage, { type: 'state' }>['state'];
+const seatBelongsToPlayer = (seat: unknown, playerId: string) =>
+  Boolean(
+    seat &&
+      typeof seat === 'object' &&
+      'id' in seat &&
+      (seat as { id?: unknown }).id === playerId
+  );
+const playerIdFromState = (state: ServerStatePayload) =>
+  state &&
+  typeof state === 'object' &&
+  'you' in state &&
+  state.you &&
+  typeof state.you === 'object' &&
+  'playerId' in state.you &&
+  typeof state.you.playerId === 'string'
+    ? state.you.playerId
+    : null;
+const stateHasSeatedPlayer = (state: ServerStatePayload, playerId: string) =>
+  Array.isArray(state.seats) && state.seats.some((seat) => seatBelongsToPlayer(seat, playerId));
 const isHiddenCard = (card: Card) =>
   (card as unknown as { rank: string }).rank === 'X' ||
   (card as unknown as { suit: string }).suit === 'X';
@@ -647,29 +667,21 @@ export const PokerGamePage = ({
 
     const onServerMessage = (msg: ServerMessage) => {
       if (msg.type === 'welcome') {
-        clearJoinTimeout();
         setPlayerId(msg.playerId);
         if (typeof window !== 'undefined') {
           localStorage.setItem(STORAGE_KEYS.playerId, msg.playerId);
         }
       }
       if (msg.type === 'state') {
-        clearJoinTimeout();
         setHasReceivedState(true);
-        const statePlayerId =
-          msg.state &&
-          typeof msg.state === 'object' &&
-          'you' in msg.state &&
-          msg.state.you &&
-          typeof msg.state.you === 'object' &&
-          'playerId' in msg.state.you &&
-          typeof msg.state.you.playerId === 'string'
-            ? msg.state.you.playerId
-            : null;
+        const statePlayerId = playerIdFromState(msg.state);
         if (statePlayerId) {
           setPlayerId(statePlayerId);
           if (typeof window !== 'undefined') {
             localStorage.setItem(STORAGE_KEYS.playerId, statePlayerId);
+          }
+          if (stateHasSeatedPlayer(msg.state, statePlayerId)) {
+            clearJoinTimeout();
           }
         }
         setState(msg.state);
@@ -1309,7 +1321,7 @@ export const PokerGamePage = ({
       joinTimeoutRef.current = null;
     }
     joinTimeoutRef.current = window.setTimeout(() => {
-      setStatus('Join timed out. Please try again.');
+      setStatus('Join timed out before seating. Please try again or refresh the table.');
       joinTimeoutRef.current = null;
     }, 7000);
     send({ type: 'join', name: trimmed, buyIn });
@@ -1341,7 +1353,7 @@ export const PokerGamePage = ({
       joinTimeoutRef.current = null;
     }
     joinTimeoutRef.current = window.setTimeout(() => {
-      setStatus('Join timed out. Please try again.');
+      setStatus('Join timed out before seating. Please try again or refresh the table.');
       joinTimeoutRef.current = null;
     }, 7000);
     send({ type: 'join', name: normalizedName, buyIn });
@@ -1878,6 +1890,9 @@ export const PokerGamePage = ({
             <div style={{ marginTop: 1, fontSize: 11, color: 'rgba(203,213,225,0.86)' }}>
               {tablePhaseLabel}
             </div>
+            <span data-testid="street-indicator" style={{ display: 'none' }}>
+              {hand ? `${hand.street} / ${hand.phase}` : 'waiting / idle'}
+            </span>
           </div>
           <div
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, position: 'relative' }}
@@ -2510,6 +2525,7 @@ export const PokerGamePage = ({
                 }}
               >
                 <div
+                  data-testid="pot-amount"
                   style={{
                     minWidth: 92,
                     borderRadius: 999,
@@ -2925,7 +2941,10 @@ export const PokerGamePage = ({
                         >
                           {you.name}
                         </div>
-                        <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
+                        <div
+                          data-testid="hero-stack"
+                          style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}
+                        >
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             <StackChipsIcon size={14} />
                             {you.stack}
@@ -3062,6 +3081,7 @@ export const PokerGamePage = ({
                     }}
                   >
                     <span
+                      data-testid="turn-indicator"
                       style={{
                         borderRadius: 999,
                         border: '1px solid rgba(20,184,166,0.75)',
@@ -3132,6 +3152,7 @@ export const PokerGamePage = ({
                     }}
                   >
                     <span
+                      data-testid="turn-indicator"
                       style={{
                         borderRadius: 999,
                         border: isMyTurn
@@ -3166,6 +3187,7 @@ export const PokerGamePage = ({
                     }}
                   >
                     <button
+                      data-testid="action-fold"
                       type="button"
                       disabled={!canFold}
                       onClick={() => act('fold')}
@@ -3179,6 +3201,7 @@ export const PokerGamePage = ({
                       Fold
                     </button>
                     <button
+                      data-testid={toCall === 0 ? 'action-check' : 'action-call'}
                       type="button"
                       disabled={!canCheckOrCall}
                       onClick={() => {
@@ -3197,6 +3220,13 @@ export const PokerGamePage = ({
                     >
                       {checkOrCallLabel}
                     </button>
+                    <button
+                      data-testid={toCall === 0 ? 'action-call' : 'action-check'}
+                      type="button"
+                      disabled
+                      aria-hidden="true"
+                      style={{ display: 'none' }}
+                    />
                     <button
                       type="button"
                       disabled={!canOpenRaiseDrawer}
@@ -3302,6 +3332,7 @@ export const PokerGamePage = ({
                           }}
                         />
                         <button
+                          data-testid="action-raise"
                           type="button"
                           disabled={!canRaise}
                           onClick={submitRaiseAction}
@@ -3334,6 +3365,22 @@ export const PokerGamePage = ({
                       </div>
                     </div>
                   ) : null}
+                  {!showRaiseDrawer ? (
+                    <button
+                      data-testid="action-raise"
+                      type="button"
+                      disabled
+                      aria-hidden="true"
+                      style={{ display: 'none' }}
+                    />
+                  ) : null}
+                  <button
+                    data-testid="action-allin"
+                    type="button"
+                    disabled
+                    aria-hidden="true"
+                    style={{ display: 'none' }}
+                  />
                 </div>
               ) : null}
               {isRevealPhase ? (
