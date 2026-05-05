@@ -33,7 +33,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bash scripts/run-pnpm.sh install --no-frozen-lockfile --prod=false
 
       - name: Lint
         run: pnpm run lint
@@ -63,7 +63,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bash scripts/run-pnpm.sh install --no-frozen-lockfile --prod=false
 
       - name: Run unit tests
         run: pnpm test
@@ -87,7 +87,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bash scripts/run-pnpm.sh install --no-frozen-lockfile --prod=false
 
       - name: Run integration tests
         run: pnpm run test:integration
@@ -111,7 +111,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bash scripts/run-pnpm.sh install --no-frozen-lockfile --prod=false
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
