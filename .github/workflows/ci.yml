@@ -36,13 +36,13 @@ jobs:
         run: bash scripts/run-pnpm.sh install --no-frozen-lockfile --prod=false
 
       - name: Lint
-        run: pnpm run lint
+        run: bash scripts/run-pnpm.sh run lint
 
       - name: Typecheck
-        run: pnpm run typecheck
+        run: bash scripts/run-pnpm.sh run typecheck
 
       - name: Changelog check
-        run: pnpm run changelog:check
+        run: bash scripts/run-pnpm.sh run changelog:check
 
   unit_tests:
     name: Unit Tests
@@ -66,7 +66,7 @@ jobs:
         run: bash scripts/run-pnpm.sh install --no-frozen-lockfile --prod=false
 
       - name: Run unit tests
-        run: pnpm test
+        run: bash scripts/run-pnpm.sh test
 
   integration_tests:
     name: Integration Tests
@@ -90,7 +90,7 @@ jobs:
         run: bash scripts/run-pnpm.sh install --no-frozen-lockfile --prod=false
 
       - name: Run integration tests
-        run: pnpm run test:integration
+        run: bash scripts/run-pnpm.sh run test:integration
 
   e2e_tests:
     name: E2E Tests (Playwright)
@@ -114,10 +114,10 @@ jobs:
         run: bash scripts/run-pnpm.sh install --no-frozen-lockfile --prod=false
 
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        run: bash scripts/run-pnpm.sh exec playwright install --with-deps chromium
 
       - name: Run E2E tests
-        run: pnpm run test:e2e
+        run: bash scripts/run-pnpm.sh run test:e2e
 
       - name: Upload Playwright artifacts (failure only)
         if: failure()
