@@ -16,6 +16,18 @@ export interface EarlyAccessSignupInput {
 
 export interface EarlyAccessSignupResult {
   created: boolean;
+  signup: EarlyAccessSignupRecord | null;
+}
+
+export interface EarlyAccessSignupRecord {
+  email: string;
+  name: string | null;
+  source: string | null;
+  referrer: string | null;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  createdAt: string;
 }
 
 type GlobalPool = typeof globalThis & {
@@ -23,6 +35,7 @@ type GlobalPool = typeof globalThis & {
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DISCORD_FIELD_LIMIT = 350;
 
 function earlyAccessPoolConfig(): PoolConfig | null {
   const connectionString = process.env.EARLY_ACCESS_DATABASE_URL || process.env.DATABASE_URL;
@@ -115,6 +128,67 @@ function optionalText(value: unknown, maxLength: number): string | null {
   return trimmed.slice(0, maxLength);
 }
 
+function formatDiscordValue(value: string | null | undefined): string {
+  if (!value) {
+    return 'Not provided';
+  }
+
+  const singleLine = value.replace(/[\r\n]+/g, ' ').trim();
+  if (!singleLine) {
+    return 'Not provided';
+  }
+
+  if (singleLine.length <= DISCORD_FIELD_LIMIT) {
+    return singleLine;
+  }
+
+  return `${singleLine.slice(0, DISCORD_FIELD_LIMIT - 1)}…`;
+}
+
+function buildEarlyAccessDiscordContent(signup: EarlyAccessSignupRecord): string {
+  return [
+    '🎴 New Bondi Poker early access signup',
+    '',
+    `Email: ${formatDiscordValue(signup.email)}`,
+    `Name: ${formatDiscordValue(signup.name)}`,
+    `Source: ${formatDiscordValue(signup.source)}`,
+    `Referrer: ${formatDiscordValue(signup.referrer)}`,
+    `UTM Source: ${formatDiscordValue(signup.utmSource)}`,
+    `UTM Medium: ${formatDiscordValue(signup.utmMedium)}`,
+    `UTM Campaign: ${formatDiscordValue(signup.utmCampaign)}`,
+    `Created: ${formatDiscordValue(signup.createdAt)}`,
+  ].join('\n');
+}
+
+export async function notifyEarlyAccessSignup(signup: EarlyAccessSignupRecord): Promise<void> {
+  const webhookUrl = process.env.EARLY_ACCESS_DISCORD_WEBHOOK_URL;
+  if (!webhookUrl) {
+    console.warn('early access Discord webhook is not configured');
+    return;
+  }
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: buildEarlyAccessDiscordContent(signup),
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn('early access Discord webhook request failed', {
+        status: response.status,
+      });
+    }
+  } catch (error) {
+    void error;
+    console.warn('early access Discord webhook request failed');
+  }
+}
+
 export async function createEarlyAccessSignup(
   input: EarlyAccessSignupInput
 ): Promise<EarlyAccessSignupResult> {
@@ -123,7 +197,16 @@ export async function createEarlyAccessSignup(
     throw new Error('early access database is not configured');
   }
 
-  const result = await pool.query<{ id: number }>(
+  const result = await pool.query<{
+    email: string;
+    name: string | null;
+    source: string | null;
+    referrer: string | null;
+    utm_source: string | null;
+    utm_medium: string | null;
+    utm_campaign: string | null;
+    created_at: string | Date;
+  }>(
     `
       INSERT INTO public.early_access_signups (
         email,
@@ -139,7 +222,7 @@ export async function createEarlyAccessSignup(
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       ON CONFLICT (email) DO NOTHING
-      RETURNING id
+      RETURNING email, name, source, referrer, utm_source, utm_medium, utm_campaign, created_at
     `,
     [
       input.email,
@@ -154,8 +237,22 @@ export async function createEarlyAccessSignup(
       optionalText(input.utmCampaign, 120),
     ]
   );
+  const row = result.rows[0];
 
   return {
     created: result.rowCount === 1,
+    signup: row
+      ? {
+          email: row.email,
+          name: row.name,
+          source: row.source,
+          referrer: row.referrer,
+          utmSource: row.utm_source,
+          utmMedium: row.utm_medium,
+          utmCampaign: row.utm_campaign,
+          createdAt:
+            row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+        }
+      : null,
   };
 }

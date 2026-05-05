@@ -11,12 +11,14 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 type CardFace = {
   src: string;
   alt: string;
+  code: string;
 };
 
 type FlowRow = {
-  street: string;
-  cards: CardFace[];
-  note?: string;
+  label: string;
+  holeLabel: string;
+  holeCards: CardFace[];
+  discarded?: CardFace;
 };
 
 type WhyCard = {
@@ -34,49 +36,56 @@ type EarlyAccessFormFields = {
 
 type EarlyAccessFormErrors = Partial<Record<keyof EarlyAccessFormFields | 'form', string>>;
 
-const STARTING_HAND: CardFace[] = [
-  { src: `${CARD_BASE}/ace_of_spades.png`, alt: 'Ace of spades' },
-  { src: `${CARD_BASE}/king_of_hearts.png`, alt: 'King of hearts' },
-  { src: `${CARD_BASE}/queen_of_clubs.png`, alt: 'Queen of clubs' },
-  { src: `${CARD_BASE}/jack_of_diamonds.png`, alt: 'Jack of diamonds' },
-  { src: `${CARD_BASE}/10_of_spades.png`, alt: 'Ten of spades' },
-];
+const ACE_SPADES = {
+  src: `${CARD_BASE}/ace_of_spades.png`,
+  alt: 'Ace of spades',
+  code: 'A\u2660',
+};
+const KING_HEARTS = {
+  src: `${CARD_BASE}/king_of_hearts.png`,
+  alt: 'King of hearts',
+  code: 'K\u2665',
+};
+const QUEEN_CLUBS = {
+  src: `${CARD_BASE}/queen_of_clubs.png`,
+  alt: 'Queen of clubs',
+  code: 'Q\u2663',
+};
+const JACK_DIAMONDS = {
+  src: `${CARD_BASE}/jack_of_diamonds.png`,
+  alt: 'Jack of diamonds',
+  code: 'J\u2666',
+};
+const TEN_SPADES = {
+  src: `${CARD_BASE}/10_of_spades.png`,
+  alt: 'Ten of spades',
+  code: '10\u2660',
+};
+const STARTING_HAND: CardFace[] = [ACE_SPADES, KING_HEARTS, QUEEN_CLUBS, JACK_DIAMONDS, TEN_SPADES];
 
 const FLOW_ROWS: FlowRow[] = [
   {
-    street: 'Flop',
-    cards: [
-      { src: `${CARD_BASE}/7_of_clubs.png`, alt: 'Seven of clubs' },
-      { src: `${CARD_BASE}/8_of_diamonds.png`, alt: 'Eight of diamonds' },
-      { src: `${CARD_BASE}/2_of_hearts.png`, alt: 'Two of hearts' },
-    ],
+    label: 'Flop',
+    holeLabel: '4 hole cards',
+    holeCards: [ACE_SPADES, KING_HEARTS, QUEEN_CLUBS, JACK_DIAMONDS],
+    discarded: TEN_SPADES,
   },
   {
-    street: 'Turn',
-    cards: [
-      { src: `${CARD_BASE}/7_of_clubs.png`, alt: 'Seven of clubs' },
-      { src: `${CARD_BASE}/8_of_diamonds.png`, alt: 'Eight of diamonds' },
-      { src: `${CARD_BASE}/2_of_hearts.png`, alt: 'Two of hearts' },
-      { src: `${CARD_BASE}/king_of_spades.png`, alt: 'King of spades' },
-    ],
+    label: 'Turn',
+    holeLabel: '3 hole cards',
+    holeCards: [ACE_SPADES, KING_HEARTS, QUEEN_CLUBS],
+    discarded: JACK_DIAMONDS,
   },
   {
-    street: 'River',
-    cards: [
-      { src: `${CARD_BASE}/7_of_clubs.png`, alt: 'Seven of clubs' },
-      { src: `${CARD_BASE}/8_of_diamonds.png`, alt: 'Eight of diamonds' },
-      { src: `${CARD_BASE}/2_of_hearts.png`, alt: 'Two of hearts' },
-      { src: `${CARD_BASE}/king_of_spades.png`, alt: 'King of spades' },
-      { src: `${CARD_BASE}/5_of_diamonds.png`, alt: 'Five of diamonds' },
-    ],
+    label: 'River',
+    holeLabel: '2 hole cards',
+    holeCards: [ACE_SPADES, KING_HEARTS],
+    discarded: QUEEN_CLUBS,
   },
   {
-    street: 'Showdown',
-    cards: [
-      { src: `${CARD_BASE}/ace_of_spades.png`, alt: 'Ace of spades' },
-      { src: `${CARD_BASE}/queen_of_hearts.png`, alt: 'Queen of hearts' },
-    ],
-    note: '2 hole cards',
+    label: 'Showdown',
+    holeLabel: '2 hole cards',
+    holeCards: [ACE_SPADES, KING_HEARTS],
   },
 ];
 
@@ -121,19 +130,25 @@ function CardImage({ card, className = '' }: { card: CardFace; className?: strin
     <img
       src={card.src}
       alt={card.alt}
-      className={`aspect-[5/7] w-10 rounded-md border border-zinc-950/25 bg-stone-100 object-cover shadow-[0_9px_18px_rgba(0,0,0,0.45)] sm:w-12 lg:w-14 ${className}`}
+      className={`aspect-[5/7] w-12 rounded-md border border-zinc-950/25 bg-stone-100 object-cover shadow-[0_9px_18px_rgba(0,0,0,0.45)] sm:w-14 lg:w-16 ${className}`}
     />
   );
 }
 
-function DiscardCard() {
+function DiscardCard({ card }: { card: CardFace }) {
   return (
-    <div
-      aria-label="Hidden discard"
-      className="aspect-[5/7] w-10 rounded-md border border-amber-300/60 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.18),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.95),rgba(5,9,12,0.96))] shadow-[0_9px_18px_rgba(0,0,0,0.45)] ring-1 ring-black/40 sm:w-12 lg:w-14"
-    >
-      <div className="flex h-full items-center justify-center text-xl text-amber-300/80">
-        <Spade aria-hidden="true" className="h-5 w-5" />
+    <div className="flex items-center gap-4">
+      <div className="hidden h-px min-w-10 flex-1 bg-gradient-to-r from-teal-300/70 to-transparent sm:block" />
+      <div
+        role="img"
+        aria-label={`Discarded ${card.alt}`}
+        title={`Discarded ${card.code}`}
+        className="flex aspect-[5/7] w-12 items-center justify-center rounded-md border border-amber-300/75 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.14),transparent_48%),linear-gradient(135deg,rgba(24,24,27,0.98),rgba(3,7,10,0.98))] shadow-[0_9px_18px_rgba(0,0,0,0.45),inset_0_0_0_4px_rgba(251,191,36,0.12)] sm:w-14 lg:w-16"
+      >
+        <Spade aria-hidden="true" className="h-6 w-6 text-amber-200" strokeWidth={1.6} />
+      </div>
+      <div className="whitespace-nowrap font-[var(--font-display)] text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-amber-200">
+        Discard 1
       </div>
     </div>
   );
@@ -153,67 +168,51 @@ function SectionTitle({ children }: { children: string }) {
 
 function FlowDiagram() {
   return (
-    <div className="relative mx-auto w-full max-w-[660px] py-2 lg:py-0">
-      <div className="pointer-events-none absolute inset-x-0 top-20 hidden h-[360px] rounded-[999px] border border-amber-500/30 bg-teal-950/20 shadow-[inset_0_0_70px_rgba(20,184,166,0.09)] lg:block" />
-      <div className="pointer-events-none absolute inset-x-8 top-24 hidden h-[344px] rounded-[999px] border border-amber-500/20 lg:block" />
+    <div className="relative mx-auto w-full max-w-[850px] py-2 lg:py-0">
+      <div className="pointer-events-none absolute inset-x-0 top-28 hidden h-[430px] rounded-[999px] border border-amber-500/28 bg-teal-950/25 shadow-[inset_0_0_90px_rgba(20,184,166,0.12)] lg:block" />
+      <div className="pointer-events-none absolute inset-x-10 top-32 hidden h-[405px] rounded-[999px] border border-amber-500/16 lg:block" />
 
       <div className="relative space-y-5 sm:space-y-6">
-        <div className="flex flex-col items-center gap-3">
-          <div className="flex items-center gap-3 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">
-            <span className="h-px w-10 bg-amber-300/45" />
+        <div>
+          <div className="flex items-center justify-center gap-3 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">
+            <span className="hidden h-px w-14 bg-amber-300/45 sm:block" />
             Start: 5 hole cards
-            <span className="h-px w-10 bg-amber-300/45" />
+            <span className="hidden h-px w-14 bg-amber-300/45 sm:block" />
           </div>
-          <div className="flex justify-center gap-1.5 sm:gap-2">
+          <div className="mt-4 flex flex-wrap justify-center gap-2 sm:gap-3">
             {STARTING_HAND.map((card) => (
               <CardImage key={card.alt} card={card} />
             ))}
           </div>
         </div>
 
-        {FLOW_ROWS.map((row, index) => (
+        {FLOW_ROWS.map((row) => (
           <div
-            key={row.street}
-            className="relative grid grid-cols-[82px_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[112px_minmax(0,1fr)]"
+            key={row.label}
+            className="relative grid gap-3 sm:grid-cols-[126px_minmax(190px,1fr)] sm:items-center lg:grid-cols-[132px_minmax(230px,1fr)_minmax(220px,0.9fr)]"
           >
-            <div className="flex items-center justify-end gap-2 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.16em] text-amber-200">
-              <CircleDot aria-hidden="true" className="h-3 w-3 text-teal-300" />
-              {row.street}
+            <div className="flex items-center gap-3 font-[var(--font-display)] text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-amber-200">
+              <CircleDot aria-hidden="true" className="h-4 w-4 text-teal-300" />
+              {row.label}
             </div>
 
-            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-              <div className="flex min-w-0 gap-1.5 sm:gap-2">
-                {row.cards.map((card) => (
-                  <CardImage
-                    key={`${row.street}-${card.alt}`}
-                    card={card}
-                    className={row.street === 'Showdown' ? 'lg:w-[3.4rem]' : ''}
-                  />
-                ))}
+            <div className="flex min-w-0 flex-wrap gap-2 sm:gap-3">
+              {row.holeCards.map((card) => (
+                <CardImage key={`${row.label}-${card.alt}`} card={card} />
+              ))}
+            </div>
+
+            {row.discarded ? (
+              <DiscardCard card={row.discarded} />
+            ) : (
+              <div className="font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.18em] text-amber-200 sm:col-start-2 lg:col-start-auto">
+                {row.holeLabel}
               </div>
-
-              {row.street !== 'Showdown' ? (
-                <>
-                  <div className="h-px w-5 shrink-0 bg-gradient-to-r from-teal-300/70 to-transparent sm:w-8" />
-                  <DiscardCard />
-                  <div className="hidden shrink-0 font-[var(--font-display)] text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-amber-200 sm:block">
-                    Discard 1
-                  </div>
-                </>
-              ) : (
-                <div className="shrink-0 font-[var(--font-display)] text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-amber-200">
-                  {row.note}
-                </div>
-              )}
-            </div>
-
-            {index < FLOW_ROWS.length - 1 ? (
-              <div className="absolute -bottom-4 left-[calc(82px+42%)] hidden h-5 w-px bg-amber-300/50 sm:left-[calc(112px+36%)] sm:block" />
-            ) : null}
+            )}
           </div>
         ))}
 
-        <div className="pl-[95px] text-xs font-semibold text-teal-200 sm:pl-[128px]">
+        <div className="text-center text-sm font-semibold leading-5 text-teal-200">
           Best 5-card hand from 2 hole cards + 5 board cards wins.
         </div>
       </div>
@@ -463,6 +462,7 @@ function EarlyAccessForm() {
 export default function HeroSection() {
   const router = useRouter();
   const [playNowLoading, setPlayNowLoading] = useState(false);
+  const [earlyAccessOpen, setEarlyAccessOpen] = useState(false);
 
   const handlePlayNow = async () => {
     if (playNowLoading) {
@@ -513,26 +513,33 @@ export default function HeroSection() {
           </div>
         </header>
 
-        <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-12 px-6 py-14 sm:px-8 sm:py-16 lg:min-h-[640px] lg:grid-cols-[0.9fr_1.1fr] lg:gap-10">
-          <div className="max-w-xl">
-            <div className="inline-flex rounded-lg border border-teal-300/70 bg-teal-400/10 px-5 py-2 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.22em] text-teal-200 shadow-[0_0_24px_rgba(20,184,166,0.12)]">
-              PDH - Discard Hold&apos;em
-            </div>
-
-            <h1 className="mt-7 font-[var(--font-serif)] text-6xl font-semibold leading-[0.9] text-white sm:text-7xl lg:text-[5.8rem]">
+        <div className="relative z-10 mx-auto grid max-w-[100rem] items-center gap-12 px-6 py-16 sm:px-8 sm:py-20 lg:min-h-[760px] lg:grid-cols-[0.78fr_1.22fr] lg:gap-12 xl:px-10">
+          <div className="max-w-2xl">
+            <h1 className="font-[var(--font-serif)] text-6xl font-semibold leading-[0.9] text-white sm:text-7xl lg:text-[6.4rem] xl:text-[7rem]">
               A new kind of online Hold&apos;em.
             </h1>
 
-            <p className="mt-7 max-w-lg text-lg leading-8 text-zinc-300 sm:text-xl">
+            <p className="mt-9 max-w-xl text-lg leading-8 text-zinc-300 sm:text-xl">
               Real-time multiplayer poker with a twist: start with 5 hole cards, discard one after
               the flop, turn, and river, and reach showdown with just 2 hole cards.
             </p>
 
-            <div className="mt-9 max-w-lg">
-              <EarlyAccessForm />
-            </div>
-
-            <div className="mt-4">
+            <div className="mt-9 flex flex-col gap-4 sm:flex-row">
+              <button
+                type="button"
+                aria-expanded={earlyAccessOpen}
+                aria-controls="early-access-form"
+                onClick={() => {
+                  setEarlyAccessOpen(true);
+                  logClientEvent('landing_cta', {
+                    cta: 'hero_join_early_access',
+                    destination: '#early-access-form',
+                  });
+                }}
+                className="inline-flex items-center justify-center rounded-md border border-teal-200/70 bg-teal-400/[0.45] px-7 py-4 text-base font-semibold text-white shadow-[0_0_24px_rgba(20,184,166,0.22)] transition hover:bg-teal-300/[0.55]"
+              >
+                Sign up for updates
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -544,6 +551,12 @@ export default function HeroSection() {
                 {playNowLoading ? 'Opening...' : 'Quick Play'}
               </button>
             </div>
+
+            {earlyAccessOpen ? (
+              <div id="early-access-form" className="mt-4 max-w-lg">
+                <EarlyAccessForm />
+              </div>
+            ) : null}
           </div>
 
           <FlowDiagram />

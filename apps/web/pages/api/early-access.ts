@@ -1,5 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createEarlyAccessSignup, normalizeEmail } from '../../lib/earlyAccessServer';
+import {
+  createEarlyAccessSignup,
+  normalizeEmail,
+  notifyEarlyAccessSignup,
+} from '../../lib/earlyAccessServer';
 
 const SUCCESS_MESSAGE =
   'You\u2019re on the list. We\u2019ll send early access invites, test-night announcements, and launch updates.';
@@ -71,6 +75,10 @@ export default async function handler(
       utmMedium: typeof req.body.utmMedium === 'string' ? req.body.utmMedium : undefined,
       utmCampaign: typeof req.body.utmCampaign === 'string' ? req.body.utmCampaign : undefined,
     });
+
+    if (result.created && result.signup) {
+      await notifyEarlyAccessSignup(result.signup);
+    }
 
     res.setHeader('Cache-Control', 'no-store');
     return res.status(result.created ? 201 : 200).json({
