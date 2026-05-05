@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { notifyEarlyAccessSignup, type EarlyAccessSignupRecord } from '../lib/earlyAccessServer';
+import {
+  notifyEarlyAccessSignup,
+  resolveEarlyAccessDiscordWebhook,
+  type EarlyAccessSignupRecord,
+} from '../lib/earlyAccessServer';
 
 const signup: EarlyAccessSignupRecord = {
   email: 'player@example.com',
@@ -13,7 +17,8 @@ const signup: EarlyAccessSignupRecord = {
 };
 
 describe('notifyEarlyAccessSignup', () => {
-  const originalWebhookUrl = process.env.EARLY_ACCESS_DISCORD_WEBHOOK_URL;
+  const originalEarlyAccessWebhookUrl = process.env.EARLY_ACCESS_DISCORD_WEBHOOK_URL;
+  const originalDiscordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
   const originalFetch = global.fetch;
 
   beforeEach(() => {
@@ -21,10 +26,15 @@ describe('notifyEarlyAccessSignup', () => {
   });
 
   afterEach(() => {
-    if (originalWebhookUrl === undefined) {
+    if (originalEarlyAccessWebhookUrl === undefined) {
       delete process.env.EARLY_ACCESS_DISCORD_WEBHOOK_URL;
     } else {
-      process.env.EARLY_ACCESS_DISCORD_WEBHOOK_URL = originalWebhookUrl;
+      process.env.EARLY_ACCESS_DISCORD_WEBHOOK_URL = originalEarlyAccessWebhookUrl;
+    }
+    if (originalDiscordWebhookUrl === undefined) {
+      delete process.env.DISCORD_WEBHOOK_URL;
+    } else {
+      process.env.DISCORD_WEBHOOK_URL = originalDiscordWebhookUrl;
     }
     global.fetch = originalFetch;
     vi.restoreAllMocks();
@@ -32,6 +42,7 @@ describe('notifyEarlyAccessSignup', () => {
 
   it('does not fail when the Discord webhook is missing', async () => {
     delete process.env.EARLY_ACCESS_DISCORD_WEBHOOK_URL;
+    delete process.env.DISCORD_WEBHOOK_URL;
     const fetchMock = vi.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
 
@@ -39,6 +50,26 @@ describe('notifyEarlyAccessSignup', () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(console.warn).toHaveBeenCalledWith('early access Discord webhook is not configured');
+  });
+
+  it('resolves the dedicated early access webhook first', () => {
+    process.env.EARLY_ACCESS_DISCORD_WEBHOOK_URL = 'https://discord.test/early-access';
+    process.env.DISCORD_WEBHOOK_URL = 'https://discord.test/fallback';
+
+    expect(resolveEarlyAccessDiscordWebhook()).toEqual({
+      url: 'https://discord.test/early-access',
+      envKey: 'EARLY_ACCESS_DISCORD_WEBHOOK_URL',
+    });
+  });
+
+  it('falls back to the generic Discord webhook for existing deployments', () => {
+    delete process.env.EARLY_ACCESS_DISCORD_WEBHOOK_URL;
+    process.env.DISCORD_WEBHOOK_URL = 'https://discord.test/fallback';
+
+    expect(resolveEarlyAccessDiscordWebhook()).toEqual({
+      url: 'https://discord.test/fallback',
+      envKey: 'DISCORD_WEBHOOK_URL',
+    });
   });
 
   it('posts a formatted Discord message when configured', async () => {

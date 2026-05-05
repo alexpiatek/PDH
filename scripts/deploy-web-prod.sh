@@ -78,18 +78,23 @@ main() {
 
   ensure_service_workdir_matches_repo
 
-  local backend_key frontend_key frontend_host frontend_port frontend_ssl
+  local backend_key frontend_key frontend_host frontend_port frontend_ssl signup_webhook_url
   backend_key="$(read_env_value "$ENV_FILE" "NAKAMA_SOCKET_SERVER_KEY" || true)"
   frontend_key="$(read_env_value "$WEB_ENV_FILE" "NEXT_PUBLIC_NAKAMA_SERVER_KEY" || true)"
   frontend_host="$(read_env_value "$WEB_ENV_FILE" "NEXT_PUBLIC_NAKAMA_HOST" || true)"
   frontend_port="$(read_env_value "$WEB_ENV_FILE" "NEXT_PUBLIC_NAKAMA_PORT" || true)"
   frontend_ssl="$(read_env_value "$WEB_ENV_FILE" "NEXT_PUBLIC_NAKAMA_USE_SSL" || true)"
+  signup_webhook_url="$(read_env_value "$WEB_ENV_FILE" "EARLY_ACCESS_DISCORD_WEBHOOK_URL" || true)"
+  if [[ -z "$signup_webhook_url" ]]; then
+    signup_webhook_url="$(read_env_value "$WEB_ENV_FILE" "DISCORD_WEBHOOK_URL" || true)"
+  fi
 
   [[ -n "$backend_key" ]] || die "NAKAMA_SOCKET_SERVER_KEY missing in $ENV_FILE"
   [[ -n "$frontend_key" ]] || die "NEXT_PUBLIC_NAKAMA_SERVER_KEY missing in $WEB_ENV_FILE"
   [[ -n "$frontend_host" ]] || die "NEXT_PUBLIC_NAKAMA_HOST missing in $WEB_ENV_FILE"
   [[ -n "$frontend_port" ]] || die "NEXT_PUBLIC_NAKAMA_PORT missing in $WEB_ENV_FILE"
   [[ -n "$frontend_ssl" ]] || die "NEXT_PUBLIC_NAKAMA_USE_SSL missing in $WEB_ENV_FILE"
+  [[ -n "$signup_webhook_url" ]] || die "EARLY_ACCESS_DISCORD_WEBHOOK_URL missing in $WEB_ENV_FILE. Set it to the Discord webhook URL for signup notifications; DISCORD_WEBHOOK_URL is accepted as a legacy fallback."
 
   if looks_like_placeholder "$backend_key" || looks_like_placeholder "$frontend_key"; then
     die "Socket server key looks like a placeholder in .env or apps/web/.env.local."
@@ -99,6 +104,9 @@ main() {
   [[ "$frontend_host" == "$EXPECTED_NAKAMA_HOST" ]] || die "Bad NEXT_PUBLIC_NAKAMA_HOST=$frontend_host (expected $EXPECTED_NAKAMA_HOST)."
   [[ "$frontend_port" == "$EXPECTED_NAKAMA_PORT" ]] || die "Bad NEXT_PUBLIC_NAKAMA_PORT=$frontend_port (expected $EXPECTED_NAKAMA_PORT)."
   [[ "$frontend_ssl" == "$EXPECTED_NAKAMA_USE_SSL" ]] || die "Bad NEXT_PUBLIC_NAKAMA_USE_SSL=$frontend_ssl (expected $EXPECTED_NAKAMA_USE_SSL)."
+  if [[ "$signup_webhook_url" != https://discord.com/api/webhooks/* && "$signup_webhook_url" != https://discordapp.com/api/webhooks/* ]]; then
+    die "Signup Discord webhook URL must look like a Discord webhook URL."
+  fi
 
   echo "Installing dependencies (including dev deps for Next.js typecheck)..."
   (

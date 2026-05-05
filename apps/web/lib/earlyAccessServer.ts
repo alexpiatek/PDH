@@ -36,6 +36,26 @@ type GlobalPool = typeof globalThis & {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DISCORD_FIELD_LIMIT = 350;
+const EARLY_ACCESS_DISCORD_WEBHOOK_ENV_KEYS = [
+  'EARLY_ACCESS_DISCORD_WEBHOOK_URL',
+  'DISCORD_WEBHOOK_URL',
+] as const;
+
+type EarlyAccessDiscordWebhookEnvKey = (typeof EARLY_ACCESS_DISCORD_WEBHOOK_ENV_KEYS)[number];
+
+export function resolveEarlyAccessDiscordWebhook(): {
+  url: string;
+  envKey: EarlyAccessDiscordWebhookEnvKey;
+} | null {
+  for (const envKey of EARLY_ACCESS_DISCORD_WEBHOOK_ENV_KEYS) {
+    const url = process.env[envKey]?.trim();
+    if (url) {
+      return { url, envKey };
+    }
+  }
+
+  return null;
+}
 
 function earlyAccessPoolConfig(): PoolConfig | null {
   const connectionString = process.env.EARLY_ACCESS_DATABASE_URL || process.env.DATABASE_URL;
@@ -161,14 +181,14 @@ function buildEarlyAccessDiscordContent(signup: EarlyAccessSignupRecord): string
 }
 
 export async function notifyEarlyAccessSignup(signup: EarlyAccessSignupRecord): Promise<void> {
-  const webhookUrl = process.env.EARLY_ACCESS_DISCORD_WEBHOOK_URL;
-  if (!webhookUrl) {
+  const webhook = resolveEarlyAccessDiscordWebhook();
+  if (!webhook) {
     console.warn('early access Discord webhook is not configured');
     return;
   }
 
   try {
-    const response = await fetch(webhookUrl, {
+    const response = await fetch(webhook.url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

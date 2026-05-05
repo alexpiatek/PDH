@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { MoreHorizontal } from 'lucide-react';
 import { Client as NakamaClient } from '@heroiclabs/nakama-js';
 import type { Match, Session, Socket as NakamaSocket } from '@heroiclabs/nakama-js';
 import { Card, HandState, PlayerInHand } from '@pdh/engine';
@@ -67,6 +68,30 @@ const parseBoolean = (value: string | undefined, fallback: boolean) => {
 const NAKAMA_USE_SSL = parseBoolean(process.env.NEXT_PUBLIC_NAKAMA_USE_SSL, false);
 const USE_NAKAMA_BACKEND = NETWORK_BACKEND === 'nakama';
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+const TABLE_THEME = {
+  fontSans:
+    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+  fontDisplay:
+    'var(--font-display, "Sora", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+  pageBackground:
+    'radial-gradient(circle at 72% 18%, rgba(20,184,166,0.17), transparent 31%), ' +
+    'radial-gradient(circle at 16% 16%, rgba(251,191,36,0.1), transparent 29%), ' +
+    'linear-gradient(180deg, rgba(3,8,11,0.94), rgba(2,7,9,0.985)), ' +
+    'url("/Casino floor background.png")',
+  panel: 'rgba(3,8,11,0.76)',
+  panelStrong: 'rgba(2,7,9,0.92)',
+  panelSoft: 'rgba(255,255,255,0.035)',
+  border: 'rgba(255,255,255,0.14)',
+  borderStrong: 'rgba(251,191,36,0.42)',
+  amber: '#fde68a',
+  amberStrong: '#fbbf24',
+  teal: '#5eead4',
+  tealSoft: 'rgba(20,184,166,0.24)',
+  tealBorder: 'rgba(94,234,212,0.54)',
+  text: '#f8fafc',
+  muted: 'rgba(212,212,216,0.78)',
+  dim: 'rgba(161,161,170,0.78)',
+};
 
 const createDeviceId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -205,10 +230,7 @@ type PlayerActionType = Extract<ClientMessage, { type: 'action' }>['action'];
 type ServerStatePayload = Extract<ServerMessage, { type: 'state' }>['state'];
 const seatBelongsToPlayer = (seat: unknown, playerId: string) =>
   Boolean(
-    seat &&
-      typeof seat === 'object' &&
-      'id' in seat &&
-      (seat as { id?: unknown }).id === playerId
+    seat && typeof seat === 'object' && 'id' in seat && (seat as { id?: unknown }).id === playerId
   );
 const playerIdFromState = (state: ServerStatePayload) =>
   state &&
@@ -424,12 +446,12 @@ const ACTION_TONE_STYLES: Record<
   ActionTone,
   { background: string; border: string; color: string }
 > = {
-  raise: { background: 'rgba(30, 41, 59, 0.9)', border: '#38bdf8', color: '#e0f2fe' },
-  call: { background: 'rgba(30, 41, 59, 0.9)', border: '#a3e635', color: '#f7fee7' },
-  allin: { background: 'rgba(88, 28, 28, 0.9)', border: '#f97316', color: '#fff7ed' },
+  raise: { background: 'rgba(20,184,166,0.2)', border: '#5eead4', color: '#ccfbf1' },
+  call: { background: 'rgba(20,83,45,0.42)', border: '#86efac', color: '#dcfce7' },
+  allin: { background: 'rgba(127,29,29,0.62)', border: '#fbbf24', color: '#fef3c7' },
   fold: { background: 'rgba(63, 29, 29, 0.9)', border: '#ef4444', color: '#fee2e2' },
-  check: { background: 'rgba(30, 41, 59, 0.9)', border: '#94a3b8', color: '#e2e8f0' },
-  bet: { background: 'rgba(30, 41, 59, 0.9)', border: '#facc15', color: '#fef9c3' },
+  check: { background: 'rgba(255,255,255,0.06)', border: '#a1a1aa', color: '#f4f4f5' },
+  bet: { background: 'rgba(251,191,36,0.18)', border: '#fbbf24', color: '#fef3c7' },
 };
 
 const parseActionMessage = (message: string): ActionBadge | null => {
@@ -1465,7 +1487,7 @@ export const PokerGamePage = ({
           border: `1px solid ${tone.border}`,
           color: tone.color,
           fontSize: 11,
-          fontFamily: '"Inter", sans-serif',
+          fontFamily: TABLE_THEME.fontSans,
           whiteSpace: 'nowrap',
           boxShadow: '0 8px 18px rgba(0,0,0,0.35)',
         }}
@@ -1496,7 +1518,7 @@ export const PokerGamePage = ({
           fontSize: 10,
           fontWeight: 800,
           letterSpacing: 0.5,
-          fontFamily: '"Inter", sans-serif',
+          fontFamily: TABLE_THEME.fontSans,
           boxShadow: '0 10px 20px rgba(0,0,0,0.38)',
           whiteSpace: 'nowrap',
           pointerEvents: 'none',
@@ -1596,12 +1618,12 @@ export const PokerGamePage = ({
       height: infoAvatarSize,
       borderRadius: '50%',
       background: '#f8fafc',
-      border: youIsWinner ? '3px solid #22c55e' : '3px solid #314066',
+      border: youIsWinner ? '3px solid #22c55e' : `3px solid ${TABLE_THEME.borderStrong}`,
       boxShadow: '0 0 18px rgba(0,0,0,0.45)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      fontFamily: '"Inter", sans-serif',
+      fontFamily: TABLE_THEME.fontSans,
       fontWeight: 800,
       fontSize: 18,
     };
@@ -1645,11 +1667,10 @@ export const PokerGamePage = ({
     fontWeight: 700,
     minHeight: isPhone ? 42 : 44,
     borderRadius: 12,
-    border: '1px solid rgba(71,85,105,0.9)',
-    background: 'rgba(15,23,42,0.82)',
-    color: '#e2e8f0',
-    fontFamily:
-      'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+    border: `1px solid ${TABLE_THEME.border}`,
+    background: TABLE_THEME.panelSoft,
+    color: TABLE_THEME.text,
+    fontFamily: TABLE_THEME.fontSans,
     fontSize: isPhone ? 13 : 14,
     letterSpacing: 0.2,
     transition: 'all 140ms ease',
@@ -1738,9 +1759,9 @@ export const PokerGamePage = ({
     tone: { border: string; background: string; color: string; glow: string }
   ): React.CSSProperties => ({
     ...actionButtonBaseStyle,
-    border: `1px solid ${enabled ? tone.border : 'rgba(71,85,105,0.82)'}`,
-    background: enabled ? tone.background : 'rgba(15,23,42,0.58)',
-    color: enabled ? tone.color : 'rgba(148,163,184,0.86)',
+    border: `1px solid ${enabled ? tone.border : TABLE_THEME.border}`,
+    background: enabled ? tone.background : 'rgba(255,255,255,0.035)',
+    color: enabled ? tone.color : TABLE_THEME.dim,
     boxShadow: enabled ? `0 0 0 1px ${tone.glow}, 0 12px 26px rgba(2,6,23,0.4)` : 'none',
     transform: enabled ? 'translateY(-1px)' : 'none',
     ...(enabled ? null : disabledActionStyle),
@@ -1838,17 +1859,14 @@ export const PokerGamePage = ({
   return (
     <div
       style={{
-        fontFamily:
-          'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-        color: '#e5e7eb',
+        fontFamily: TABLE_THEME.fontSans,
+        color: TABLE_THEME.text,
         minHeight: '100vh',
         overflowX: 'hidden',
-        background:
-          'linear-gradient(rgba(8, 6, 10, 0.65), rgba(8, 6, 10, 0.7)), ' +
-          'url(\"/Casino floor background.png\")',
-        backgroundPosition: 'center, center',
-        backgroundRepeat: 'no-repeat, no-repeat',
-        backgroundSize: 'cover, cover',
+        background: TABLE_THEME.pageBackground,
+        backgroundPosition: 'center, center, center, center',
+        backgroundRepeat: 'no-repeat, no-repeat, no-repeat, no-repeat',
+        backgroundSize: 'auto, auto, auto, cover',
         padding: isPhone
           ? `12px 10px calc(${20 + actionBarReserve}px + env(safe-area-inset-bottom))`
           : `18px 18px calc(${30 + actionBarReserve}px + env(safe-area-inset-bottom))`,
@@ -1859,11 +1877,12 @@ export const PokerGamePage = ({
           width: 'min(100%, 980px)',
           margin: '0 auto',
           marginBottom: isMobile ? 10 : 12,
-          padding: isPhone ? '8px 10px' : '10px 12px',
-          borderRadius: 14,
-          border: '1px solid rgba(71,85,105,0.6)',
-          background: 'rgba(6,10,18,0.78)',
-          boxShadow: '0 10px 24px rgba(0,0,0,0.26)',
+          padding: isPhone ? '9px 10px' : '11px 14px',
+          borderRadius: 8,
+          border: `1px solid ${TABLE_THEME.borderStrong}`,
+          background: TABLE_THEME.panel,
+          boxShadow: '0 18px 48px rgba(0,0,0,0.28)',
+          backdropFilter: 'blur(14px)',
         }}
       >
         <div
@@ -1877,9 +1896,23 @@ export const PokerGamePage = ({
           <div style={{ minWidth: 0 }}>
             <div
               style={{
+                fontFamily: TABLE_THEME.fontDisplay,
+                fontSize: isPhone ? 10 : 11,
+                fontWeight: 700,
+                color: TABLE_THEME.amber,
+                textTransform: 'uppercase',
+                letterSpacing: '0.28em',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Bondi Poker
+            </div>
+            <div
+              style={{
+                marginTop: 3,
                 fontSize: isPhone ? 14 : 15,
                 fontWeight: 700,
-                color: '#f8fafc',
+                color: TABLE_THEME.text,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -1887,7 +1920,7 @@ export const PokerGamePage = ({
             >
               {tableLabel}
             </div>
-            <div style={{ marginTop: 1, fontSize: 11, color: 'rgba(203,213,225,0.86)' }}>
+            <div style={{ marginTop: 1, fontSize: 11, color: TABLE_THEME.muted }}>
               {tablePhaseLabel}
             </div>
             <span data-testid="street-indicator" style={{ display: 'none' }}>
@@ -1902,9 +1935,9 @@ export const PokerGamePage = ({
                 style={{
                   maxWidth: isPhone ? 150 : 260,
                   borderRadius: 999,
-                  border: '1px solid rgba(56,189,248,0.52)',
-                  background: 'rgba(8,47,73,0.45)',
-                  color: '#e0f2fe',
+                  border: `1px solid ${TABLE_THEME.tealBorder}`,
+                  background: TABLE_THEME.tealSoft,
+                  color: '#ccfbf1',
                   padding: '3px 10px',
                   fontSize: 11,
                   fontWeight: 700,
@@ -1924,16 +1957,18 @@ export const PokerGamePage = ({
                 style={{
                   minHeight: 36,
                   minWidth: 36,
-                  borderRadius: 10,
-                  border: '1px solid rgba(148,163,184,0.5)',
-                  background: 'rgba(15,23,42,0.82)',
-                  color: '#e2e8f0',
-                  fontSize: 18,
+                  borderRadius: 8,
+                  border: `1px solid ${TABLE_THEME.border}`,
+                  background: TABLE_THEME.panelSoft,
+                  color: TABLE_THEME.text,
                   lineHeight: 1,
                   cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
               >
-                ⋯
+                <MoreHorizontal aria-hidden="true" size={18} strokeWidth={1.8} />
               </button>
             ) : null}
             {showTopMenu ? (
@@ -1944,9 +1979,9 @@ export const PokerGamePage = ({
                   top: 'calc(100% + 8px)',
                   zIndex: 40,
                   width: isPhone ? 170 : 190,
-                  borderRadius: 12,
-                  border: '1px solid rgba(71,85,105,0.72)',
-                  background: 'rgba(2,6,14,0.96)',
+                  borderRadius: 8,
+                  border: `1px solid ${TABLE_THEME.border}`,
+                  background: TABLE_THEME.panelStrong,
                   boxShadow: '0 16px 34px rgba(0,0,0,0.44)',
                   padding: 6,
                   display: 'flex',
@@ -1962,10 +1997,10 @@ export const PokerGamePage = ({
                       setShowTopMenu(false);
                     }}
                     style={{
-                      borderRadius: 8,
-                      border: '1px solid rgba(71,85,105,0.62)',
-                      background: 'rgba(15,23,42,0.72)',
-                      color: '#e2e8f0',
+                      borderRadius: 6,
+                      border: `1px solid ${TABLE_THEME.border}`,
+                      background: TABLE_THEME.panelSoft,
+                      color: TABLE_THEME.text,
                       padding: '8px 10px',
                       textAlign: 'left',
                       fontSize: 12,
@@ -1988,10 +2023,10 @@ export const PokerGamePage = ({
                       setShowTopMenu(false);
                     }}
                     style={{
-                      borderRadius: 8,
-                      border: '1px solid rgba(71,85,105,0.62)',
-                      background: 'rgba(15,23,42,0.72)',
-                      color: '#e2e8f0',
+                      borderRadius: 6,
+                      border: `1px solid ${TABLE_THEME.border}`,
+                      background: TABLE_THEME.panelSoft,
+                      color: TABLE_THEME.text,
                       padding: '8px 10px',
                       textAlign: 'left',
                       fontSize: 12,
@@ -2010,7 +2045,7 @@ export const PokerGamePage = ({
                       handleExitTable();
                     }}
                     style={{
-                      borderRadius: 8,
+                      borderRadius: 6,
                       border: '1px solid rgba(248,113,113,0.72)',
                       background: 'rgba(127,29,29,0.46)',
                       color: '#fee2e2',
@@ -2036,9 +2071,9 @@ export const PokerGamePage = ({
             margin: '0 auto',
             marginBottom: 12,
             padding: isPhone ? '10px' : '12px',
-            borderRadius: 14,
-            border: '1px solid rgba(56,189,248,0.35)',
-            background: 'rgba(4,12,22,0.78)',
+            borderRadius: 8,
+            border: `1px solid ${TABLE_THEME.tealBorder}`,
+            background: TABLE_THEME.panel,
             boxShadow: '0 12px 28px rgba(0,0,0,0.28)',
             display: 'flex',
             flexDirection: 'column',
@@ -2052,12 +2087,12 @@ export const PokerGamePage = ({
                 setSoundEnabled((previous) => !previous);
               }}
               style={{
-                borderRadius: 10,
-                border: '1px solid rgba(148,163,184,0.55)',
-                background: soundEnabled ? 'rgba(15,118,110,0.34)' : 'rgba(30,41,59,0.62)',
-                color: '#e2e8f0',
+                borderRadius: 6,
+                border: `1px solid ${soundEnabled ? TABLE_THEME.tealBorder : TABLE_THEME.border}`,
+                background: soundEnabled ? TABLE_THEME.tealSoft : TABLE_THEME.panelSoft,
+                color: soundEnabled ? '#ccfbf1' : TABLE_THEME.text,
                 padding: '7px 10px',
-                fontFamily: '"Inter", sans-serif',
+                fontFamily: TABLE_THEME.fontSans,
                 fontSize: 11,
                 fontWeight: 700,
                 letterSpacing: 0.25,
@@ -2072,12 +2107,14 @@ export const PokerGamePage = ({
                 setShowActivityFeed((previous) => !previous);
               }}
               style={{
-                borderRadius: 10,
-                border: '1px solid rgba(148,163,184,0.55)',
-                background: showActivityFeed ? 'rgba(56,189,248,0.26)' : 'rgba(30,41,59,0.62)',
-                color: '#e2e8f0',
+                borderRadius: 6,
+                border: `1px solid ${
+                  showActivityFeed ? TABLE_THEME.tealBorder : TABLE_THEME.border
+                }`,
+                background: showActivityFeed ? TABLE_THEME.tealSoft : TABLE_THEME.panelSoft,
+                color: showActivityFeed ? '#ccfbf1' : TABLE_THEME.text,
                 padding: '7px 10px',
-                fontFamily: '"Inter", sans-serif',
+                fontFamily: TABLE_THEME.fontSans,
                 fontSize: 11,
                 fontWeight: 700,
                 letterSpacing: 0.25,
@@ -2092,12 +2129,12 @@ export const PokerGamePage = ({
                 setShowTableChat((previous) => !previous);
               }}
               style={{
-                borderRadius: 10,
-                border: '1px solid rgba(148,163,184,0.55)',
-                background: showTableChat ? 'rgba(20,184,166,0.26)' : 'rgba(30,41,59,0.62)',
-                color: '#e2e8f0',
+                borderRadius: 6,
+                border: `1px solid ${showTableChat ? TABLE_THEME.tealBorder : TABLE_THEME.border}`,
+                background: showTableChat ? TABLE_THEME.tealSoft : TABLE_THEME.panelSoft,
+                color: showTableChat ? '#ccfbf1' : TABLE_THEME.text,
                 padding: '7px 10px',
-                fontFamily: '"Inter", sans-serif',
+                fontFamily: TABLE_THEME.fontSans,
                 fontSize: 11,
                 fontWeight: 700,
                 letterSpacing: 0.25,
@@ -2121,9 +2158,8 @@ export const PokerGamePage = ({
                 fontSize: 11,
                 textTransform: 'uppercase',
                 letterSpacing: '0.14em',
-                color: 'rgba(186,230,253,0.82)',
-                fontFamily:
-                  'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                color: TABLE_THEME.amber,
+                fontFamily: TABLE_THEME.fontDisplay,
               }}
             >
               Reactions
@@ -2136,14 +2172,14 @@ export const PokerGamePage = ({
                 disabled={reactionOnCooldown || !seated}
                 style={{
                   borderRadius: 999,
-                  border: '1px solid rgba(20,184,166,0.55)',
-                  background: 'rgba(15,23,42,0.75)',
+                  border: `1px solid ${TABLE_THEME.tealBorder}`,
+                  background: TABLE_THEME.panelSoft,
                   color: '#ccfbf1',
                   padding: isPhone ? '6px 10px' : '6px 12px',
                   fontSize: 10,
                   fontWeight: 800,
                   letterSpacing: 0.4,
-                  fontFamily: '"Inter", sans-serif',
+                  fontFamily: TABLE_THEME.fontSans,
                   cursor: reactionOnCooldown || !seated ? 'not-allowed' : 'pointer',
                   opacity: reactionOnCooldown || !seated ? 0.5 : 1,
                 }}
@@ -2152,16 +2188,16 @@ export const PokerGamePage = ({
               </button>
             ))}
             {reactionOnCooldown ? (
-              <span style={{ fontSize: 11, color: 'rgba(226,232,240,0.68)' }}>Cooling down...</span>
+              <span style={{ fontSize: 11, color: TABLE_THEME.dim }}>Cooling down...</span>
             ) : null}
           </div>
 
           {showActivityFeed ? (
             <div
               style={{
-                borderRadius: 10,
-                border: '1px solid rgba(148,163,184,0.35)',
-                background: 'rgba(9, 12, 20, 0.72)',
+                borderRadius: 8,
+                border: `1px solid ${TABLE_THEME.border}`,
+                background: TABLE_THEME.panelSoft,
                 padding: '8px 10px',
               }}
             >
@@ -2170,7 +2206,7 @@ export const PokerGamePage = ({
                   fontSize: 11,
                   textTransform: 'uppercase',
                   letterSpacing: '0.14em',
-                  color: 'rgba(186,230,253,0.82)',
+                  color: TABLE_THEME.amber,
                   marginBottom: 6,
                 }}
               >
@@ -2184,7 +2220,7 @@ export const PokerGamePage = ({
                       fontSize: 12,
                       opacity: 0.85,
                       marginBottom: 4,
-                      fontFamily: '"Inter", sans-serif',
+                      fontFamily: TABLE_THEME.fontSans,
                     }}
                   >
                     {l.message}
@@ -2197,9 +2233,9 @@ export const PokerGamePage = ({
           {showTableChat ? (
             <div
               style={{
-                borderRadius: 12,
-                border: '1px solid rgba(56,189,248,0.4)',
-                background: 'rgba(8,15,24,0.74)',
+                borderRadius: 8,
+                border: `1px solid ${TABLE_THEME.tealBorder}`,
+                background: TABLE_THEME.panelSoft,
                 padding: isPhone ? '10px 10px' : '11px 12px',
                 display: 'flex',
                 flexDirection: 'column',
@@ -2219,9 +2255,8 @@ export const PokerGamePage = ({
                     fontSize: 11,
                     textTransform: 'uppercase',
                     letterSpacing: '0.14em',
-                    color: 'rgba(186,230,253,0.82)',
-                    fontFamily:
-                      'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                    color: TABLE_THEME.amber,
+                    fontFamily: TABLE_THEME.fontDisplay,
                   }}
                 >
                   Table Chat
@@ -2243,9 +2278,7 @@ export const PokerGamePage = ({
                 }}
               >
                 {visibleChatMessages.length === 0 ? (
-                  <div style={{ fontSize: 12, color: 'rgba(203,213,225,0.74)' }}>
-                    No chat yet. Say hi.
-                  </div>
+                  <div style={{ fontSize: 12, color: TABLE_THEME.muted }}>No chat yet. Say hi.</div>
                 ) : (
                   visibleChatMessages.slice(-18).map((entry) => {
                     const senderName =
@@ -2257,9 +2290,9 @@ export const PokerGamePage = ({
                       <div
                         key={entry.id}
                         style={{
-                          borderRadius: 8,
-                          border: '1px solid rgba(51,65,85,0.8)',
-                          background: 'rgba(2,6,12,0.5)',
+                          borderRadius: 6,
+                          border: `1px solid ${TABLE_THEME.border}`,
+                          background: 'rgba(0,0,0,0.24)',
                           padding: '6px 8px',
                         }}
                       >
@@ -2271,7 +2304,7 @@ export const PokerGamePage = ({
                             gap: 8,
                           }}
                         >
-                          <span style={{ fontSize: 11, fontWeight: 700, color: '#bfdbfe' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: TABLE_THEME.teal }}>
                             {senderName}
                           </span>
                           {!isSelf ? (
@@ -2280,9 +2313,9 @@ export const PokerGamePage = ({
                               onClick={() => toggleMuteChatPlayer(entry.playerId)}
                               style={{
                                 borderRadius: 999,
-                                border: '1px solid rgba(148,163,184,0.5)',
-                                background: 'rgba(30,41,59,0.58)',
-                                color: '#e2e8f0',
+                                border: `1px solid ${TABLE_THEME.border}`,
+                                background: TABLE_THEME.panelSoft,
+                                color: TABLE_THEME.text,
                                 padding: '2px 7px',
                                 fontSize: 10,
                                 fontWeight: 700,
@@ -2293,7 +2326,7 @@ export const PokerGamePage = ({
                             </button>
                           ) : null}
                         </div>
-                        <div style={{ marginTop: 3, fontSize: 12, color: 'rgba(226,232,240,0.9)' }}>
+                        <div style={{ marginTop: 3, fontSize: 12, color: 'rgba(244,244,245,0.9)' }}>
                           {entry.message}
                         </div>
                       </div>
@@ -2315,15 +2348,14 @@ export const PokerGamePage = ({
                   placeholder="Type message..."
                   style={{
                     minHeight: 40,
-                    borderRadius: 10,
-                    border: '1px solid rgba(71,85,105,0.85)',
-                    background: 'rgba(2,6,12,0.62)',
-                    color: '#f8fafc',
+                    borderRadius: 6,
+                    border: `1px solid ${TABLE_THEME.border}`,
+                    background: 'rgba(0,0,0,0.32)',
+                    color: TABLE_THEME.text,
                     padding: '8px 10px',
                     fontSize: 13,
                     outline: 'none',
-                    fontFamily:
-                      'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                    fontFamily: TABLE_THEME.fontSans,
                   }}
                 />
                 <button
@@ -2331,10 +2363,10 @@ export const PokerGamePage = ({
                   disabled={!chatInput.trim() || !seated}
                   style={{
                     minHeight: 40,
-                    borderRadius: 10,
-                    border: '1px solid rgba(56,189,248,0.75)',
-                    background: 'rgba(14,116,144,0.3)',
-                    color: '#e0f2fe',
+                    borderRadius: 6,
+                    border: `1px solid ${TABLE_THEME.tealBorder}`,
+                    background: TABLE_THEME.tealSoft,
+                    color: '#ccfbf1',
                     padding: '8px 12px',
                     fontSize: 12,
                     fontWeight: 700,
@@ -2365,11 +2397,36 @@ export const PokerGamePage = ({
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: 8,
+              gap: 12,
               transform: isMobile ? 'none' : 'translateY(-2.4cm)',
               width: isPhone ? '100%' : 'min(94vw, 560px)',
+              padding: isPhone ? '18px 16px' : '22px',
+              borderRadius: 8,
+              border: `1px solid ${TABLE_THEME.borderStrong}`,
+              background: TABLE_THEME.panel,
+              boxShadow: '0 24px 70px rgba(0,0,0,0.34)',
+              backdropFilter: 'blur(14px)',
             }}
           >
+            <div style={{ width: '100%', textAlign: isPhone ? 'left' : 'center' }}>
+              <div
+                style={{
+                  fontFamily: TABLE_THEME.fontDisplay,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.28em',
+                  textTransform: 'uppercase',
+                  color: TABLE_THEME.amber,
+                }}
+              >
+                Table Entry
+              </div>
+              <div
+                style={{ marginTop: 6, fontSize: 14, lineHeight: 1.5, color: TABLE_THEME.muted }}
+              >
+                Enter your table name to take a seat.
+              </div>
+            </div>
             <div
               style={{
                 display: 'flex',
@@ -2402,14 +2459,13 @@ export const PokerGamePage = ({
                   padding: '12px 14px',
                   width: isPhone ? '100%' : undefined,
                   minWidth: isPhone ? 0 : 300,
-                  borderRadius: 12,
-                  border: nameError ? '1px solid #fca5a5' : '1px solid rgba(251,191,36,0.4)',
-                  background: 'rgba(9,13,23,0.82)',
-                  color: '#f8fafc',
-                  caretColor: '#f8fafc',
+                  borderRadius: 6,
+                  border: nameError ? '1px solid #fca5a5' : `1px solid ${TABLE_THEME.border}`,
+                  background: 'rgba(0,0,0,0.34)',
+                  color: TABLE_THEME.text,
+                  caretColor: TABLE_THEME.text,
                   fontSize: 16,
-                  fontFamily:
-                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                  fontFamily: TABLE_THEME.fontSans,
                 }}
               />
               <button
@@ -2423,16 +2479,14 @@ export const PokerGamePage = ({
                   padding: '12px 18px',
                   width: isPhone ? '100%' : undefined,
                   minHeight: 44,
-                  borderRadius: 12,
-                  border: '1px solid rgba(251,191,36,0.62)',
-                  background:
-                    'linear-gradient(135deg, rgba(251,191,36,0.35), rgba(217,119,6,0.45))',
-                  color: '#fef3c7',
+                  borderRadius: 6,
+                  border: `1px solid ${TABLE_THEME.tealBorder}`,
+                  background: TABLE_THEME.tealSoft,
+                  color: '#ccfbf1',
                   fontWeight: 700,
-                  fontFamily:
-                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                  fontFamily: TABLE_THEME.fontSans,
                   letterSpacing: 0.5,
-                  boxShadow: '0 10px 24px rgba(217,119,6,0.3)',
+                  boxShadow: '0 0 24px rgba(20,184,166,0.18)',
                   cursor: name.trim() ? 'pointer' : 'not-allowed',
                   opacity: name.trim() ? 1 : 0.58,
                 }}
@@ -2455,9 +2509,8 @@ export const PokerGamePage = ({
             <div
               style={{
                 fontSize: 12,
-                color: 'rgba(226,232,240,0.8)',
-                fontFamily:
-                  'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                color: TABLE_THEME.muted,
+                fontFamily: TABLE_THEME.fontSans,
                 alignSelf: 'center',
                 textAlign: 'center',
                 marginLeft: 0,
@@ -2469,8 +2522,7 @@ export const PokerGamePage = ({
               <div
                 style={{
                   fontSize: 12,
-                  fontFamily:
-                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+                  fontFamily: TABLE_THEME.fontSans,
                   color:
                     status.toLowerCase().includes('error') ||
                     status.toLowerCase().includes('failed')
@@ -2500,9 +2552,10 @@ export const PokerGamePage = ({
               marginTop: isMobile ? 8 : '1cm',
               borderRadius: isPhone ? 120 : 999,
               background:
-                'radial-gradient(circle at 50% 45%, #1f5a2f 0%, #184524 50%, #11331a 100%)',
-              border: `${tableOuterBorder}px solid #2d2a40`,
-              boxShadow: '0 30px 80px rgba(0,0,0,0.45), inset 0 0 40px rgba(0,0,0,0.5)',
+                'radial-gradient(circle at 50% 44%, rgba(20,184,166,0.24) 0%, rgba(13,74,57,0.95) 48%, rgba(6,43,32,0.98) 100%)',
+              border: `${tableOuterBorder}px solid rgba(251,191,36,0.34)`,
+              boxShadow:
+                '0 34px 90px rgba(0,0,0,0.5), 0 0 0 1px rgba(251,191,36,0.18), inset 0 0 58px rgba(0,0,0,0.56)',
             }}
           >
             <div
@@ -2529,9 +2582,9 @@ export const PokerGamePage = ({
                   style={{
                     minWidth: 92,
                     borderRadius: 999,
-                    border: '1px solid rgba(125,211,252,0.6)',
-                    background: 'rgba(8,47,73,0.78)',
-                    color: '#e0f2fe',
+                    border: `1px solid ${TABLE_THEME.tealBorder}`,
+                    background: 'rgba(3,8,11,0.74)',
+                    color: '#ccfbf1',
                     padding: '6px 12px',
                     textAlign: 'center',
                     fontSize: 13,
@@ -2597,7 +2650,7 @@ export const PokerGamePage = ({
                       textAlign: 'center',
                       fontSize: 11,
                       lineHeight: 1.1,
-                      fontFamily: '"Inter", sans-serif',
+                      fontFamily: TABLE_THEME.fontSans,
                       overflow: 'hidden',
                       whiteSpace: 'normal',
                     }}
@@ -2612,7 +2665,9 @@ export const PokerGamePage = ({
                 const isYou = p.id === playerId;
                 const roleChips = roleChipsBySeat.get(p.seat) ?? [];
                 const avatarSize = infoAvatarSize;
-                const avatarBorder = winner ? '3px solid #22c55e' : '3px solid #314066';
+                const avatarBorder = winner
+                  ? '3px solid #22c55e'
+                  : `3px solid ${TABLE_THEME.borderStrong}`;
                 const avatarSuit = avatarSuitForId(p.id);
                 const avatarColor = avatarSuitColor(avatarSuit);
                 const isTurn = Boolean(
@@ -2633,7 +2688,7 @@ export const PokerGamePage = ({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontFamily: '"Inter", sans-serif',
+                  fontFamily: TABLE_THEME.fontSans,
                   fontWeight: 800,
                   fontSize: 18,
                   color: avatarColor,
@@ -2678,16 +2733,14 @@ export const PokerGamePage = ({
                               position: 'relative',
                               padding: '6px 10px 6px 60px',
                               borderRadius: 10,
-                              background: infoDimmed
-                                ? 'rgba(10, 16, 30, 0.6)'
-                                : 'rgba(10, 16, 30, 0.85)',
+                              background: infoDimmed ? 'rgba(3,8,11,0.58)' : 'rgba(3,8,11,0.82)',
                               border: isTurn
-                                ? '1px solid rgba(56,189,248,0.95)'
+                                ? `1px solid ${TABLE_THEME.tealBorder}`
                                 : winner
                                   ? '2px solid #22c55e'
-                                  : '1px solid #2c3e66',
+                                  : `1px solid ${TABLE_THEME.border}`,
                               boxShadow: isTurn
-                                ? '0 0 0 2px rgba(56,189,248,0.32), 0 0 24px rgba(14,165,233,0.38)'
+                                ? '0 0 0 2px rgba(20,184,166,0.24), 0 0 24px rgba(20,184,166,0.28)'
                                 : winner
                                   ? '0 0 0 2px rgba(34, 197, 94, 0.2)'
                                   : undefined,
@@ -2712,14 +2765,14 @@ export const PokerGamePage = ({
                             <div
                               style={{
                                 fontWeight: 700,
-                                fontFamily: '"Inter", sans-serif',
+                                fontFamily: TABLE_THEME.fontSans,
                                 fontSize: 12,
                               }}
                             >
                               {p.name}
                             </div>
                             {p.id !== playerId && (
-                              <div style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}>
+                              <div style={{ fontSize: 12, fontFamily: TABLE_THEME.fontSans }}>
                                 <span
                                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                                 >
@@ -2848,9 +2901,9 @@ export const PokerGamePage = ({
                         padding: '6px 10px',
                         borderRadius: 8,
                         background: '#0f172a',
-                        border: '1px solid #2c3e66',
+                        border: `1px solid ${TABLE_THEME.border}`,
                         fontSize: 12,
-                        fontFamily: '"Inter", sans-serif',
+                        fontFamily: TABLE_THEME.fontSans,
                       }}
                     >
                       {p.name} (Seat {p.seat + 1})
@@ -2897,16 +2950,14 @@ export const PokerGamePage = ({
                         style={{
                           padding: '6px 10px 6px 60px',
                           borderRadius: 10,
-                          background: youInfoDimmed
-                            ? 'rgba(10, 16, 30, 0.6)'
-                            : 'rgba(10, 16, 30, 0.85)',
+                          background: youInfoDimmed ? 'rgba(3,8,11,0.58)' : 'rgba(3,8,11,0.82)',
                           border: isMyTurn
-                            ? '1px solid rgba(56,189,248,0.95)'
+                            ? `1px solid ${TABLE_THEME.tealBorder}`
                             : winnersById.has(you.id)
                               ? '2px solid #22c55e'
-                              : '1px solid #2c3e66',
+                              : `1px solid ${TABLE_THEME.border}`,
                           boxShadow: isMyTurn
-                            ? '0 0 0 2px rgba(56,189,248,0.34), 0 0 26px rgba(14,165,233,0.38)'
+                            ? '0 0 0 2px rgba(20,184,166,0.24), 0 0 26px rgba(20,184,166,0.28)'
                             : winnersById.has(you.id)
                               ? '0 0 0 2px rgba(34, 197, 94, 0.2)'
                               : undefined,
@@ -2935,7 +2986,7 @@ export const PokerGamePage = ({
                         <div
                           style={{
                             fontWeight: 700,
-                            fontFamily: '"Inter", sans-serif',
+                            fontFamily: TABLE_THEME.fontSans,
                             fontSize: 12,
                           }}
                         >
@@ -2943,7 +2994,7 @@ export const PokerGamePage = ({
                         </div>
                         <div
                           data-testid="hero-stack"
-                          style={{ fontSize: 12, fontFamily: '"Inter", sans-serif' }}
+                          style={{ fontSize: 12, fontFamily: TABLE_THEME.fontSans }}
                         >
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             <StackChipsIcon size={14} />
@@ -2983,7 +3034,7 @@ export const PokerGamePage = ({
                   >
                     {discardPending && !discardSubmitted && (
                       <div
-                        style={{ fontSize: 12, fontFamily: '"Inter", sans-serif', opacity: 0.85 }}
+                        style={{ fontSize: 12, fontFamily: TABLE_THEME.fontSans, opacity: 0.85 }}
                       >
                         Select {discardLimit} card to discard ({selectedDiscardCount}/{discardLimit}
                         )
@@ -3062,9 +3113,9 @@ export const PokerGamePage = ({
               {isDiscardPhase ? (
                 <div
                   style={{
-                    borderRadius: 12,
-                    border: '1px solid rgba(20,184,166,0.65)',
-                    background: 'rgba(6,20,24,0.86)',
+                    borderRadius: 8,
+                    border: `1px solid ${TABLE_THEME.tealBorder}`,
+                    background: TABLE_THEME.panelStrong,
                     padding: isPhone ? '10px 12px' : '12px 14px',
                     boxShadow: '0 0 0 1px rgba(20,184,166,0.25), 0 14px 28px rgba(8,47,73,0.28)',
                     display: 'flex',
@@ -3100,7 +3151,7 @@ export const PokerGamePage = ({
                       {tableTimerSeconds !== null ? `${tableTimerSeconds}s` : '--'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 13, color: '#e2e8f0' }}>
+                  <div style={{ fontSize: 13, color: TABLE_THEME.text }}>
                     Select {discardLimit} card to discard ({selectedDiscardCount}/{discardLimit})
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
@@ -3109,10 +3160,10 @@ export const PokerGamePage = ({
                       onClick={confirmDiscardSelection}
                       disabled={!canConfirmDiscard}
                       style={turnActionStyle(canConfirmDiscard, {
-                        border: 'rgba(56,189,248,0.86)',
-                        background: 'rgba(14,116,144,0.58)',
-                        color: '#e0f2fe',
-                        glow: 'rgba(56,189,248,0.36)',
+                        border: 'rgba(94,234,212,0.78)',
+                        background: 'rgba(20,184,166,0.28)',
+                        color: '#ccfbf1',
+                        glow: 'rgba(20,184,166,0.3)',
                       })}
                     >
                       Confirm Discards
@@ -3129,14 +3180,14 @@ export const PokerGamePage = ({
                       ? 'calc(8px + env(safe-area-inset-bottom))'
                       : 'calc(12px + env(safe-area-inset-bottom))',
                     zIndex: isMobile ? 30 : 'auto',
-                    borderRadius: 12,
+                    borderRadius: 8,
                     border: isMyTurn
-                      ? '1px solid rgba(56,189,248,0.76)'
-                      : '1px solid rgba(71,85,105,0.72)',
-                    background: 'rgba(8,15,24,0.9)',
+                      ? `1px solid ${TABLE_THEME.tealBorder}`
+                      : `1px solid ${TABLE_THEME.border}`,
+                    background: TABLE_THEME.panelStrong,
                     padding: isPhone ? '10px 12px' : '12px 14px',
                     boxShadow: isMyTurn
-                      ? '0 0 0 1px rgba(56,189,248,0.2), 0 14px 28px rgba(2,132,199,0.2)'
+                      ? '0 0 0 1px rgba(20,184,166,0.2), 0 14px 28px rgba(20,184,166,0.16)'
                       : '0 10px 20px rgba(0,0,0,0.22)',
                     display: 'flex',
                     flexDirection: 'column',
@@ -3156,10 +3207,10 @@ export const PokerGamePage = ({
                       style={{
                         borderRadius: 999,
                         border: isMyTurn
-                          ? '1px solid rgba(56,189,248,0.8)'
-                          : '1px solid rgba(148,163,184,0.55)',
-                        background: isMyTurn ? 'rgba(8,47,73,0.52)' : 'rgba(15,23,42,0.58)',
-                        color: isMyTurn ? '#e0f2fe' : 'rgba(203,213,225,0.92)',
+                          ? `1px solid ${TABLE_THEME.tealBorder}`
+                          : `1px solid ${TABLE_THEME.border}`,
+                        background: isMyTurn ? TABLE_THEME.tealSoft : TABLE_THEME.panelSoft,
+                        color: isMyTurn ? '#ccfbf1' : TABLE_THEME.muted,
                         padding: '3px 10px',
                         fontSize: 11,
                         fontWeight: 700,
@@ -3169,7 +3220,7 @@ export const PokerGamePage = ({
                       {turnStatusLabel}
                     </span>
                   </div>
-                  <div style={{ fontSize: 12, color: 'rgba(226,232,240,0.9)' }}>
+                  <div style={{ fontSize: 12, color: 'rgba(244,244,245,0.9)' }}>
                     {bettingHintLine}
                   </div>
                   {latestActionLine && !isPhone ? (
@@ -3212,10 +3263,10 @@ export const PokerGamePage = ({
                         act('call');
                       }}
                       style={turnActionStyle(canCheckOrCall, {
-                        border: 'rgba(56,189,248,0.86)',
-                        background: 'rgba(14,116,144,0.58)',
+                        border: 'rgba(94,234,212,0.78)',
+                        background: 'rgba(20,184,166,0.28)',
                         color: '#e0f2fe',
-                        glow: 'rgba(56,189,248,0.36)',
+                        glow: 'rgba(20,184,166,0.3)',
                       })}
                     >
                       {checkOrCallLabel}
@@ -3233,7 +3284,7 @@ export const PokerGamePage = ({
                       onClick={toggleRaiseDrawer}
                       style={turnActionStyle(canOpenRaiseDrawer, {
                         border: 'rgba(148,163,184,0.82)',
-                        background: 'rgba(30,41,59,0.78)',
+                        background: 'rgba(255,255,255,0.06)',
                         color: '#e2e8f0',
                         glow: 'rgba(148,163,184,0.26)',
                       })}
@@ -3245,9 +3296,9 @@ export const PokerGamePage = ({
                     <div
                       style={{
                         marginTop: 2,
-                        borderRadius: 12,
-                        border: '1px solid rgba(71,85,105,0.72)',
-                        background: 'rgba(2,6,12,0.78)',
+                        borderRadius: 8,
+                        border: `1px solid ${TABLE_THEME.border}`,
+                        background: 'rgba(0,0,0,0.3)',
                         padding: isPhone ? '10px' : '12px',
                         display: 'flex',
                         flexDirection: 'column',
@@ -3286,12 +3337,12 @@ export const PokerGamePage = ({
                               setConfirmAllIn(false);
                             }}
                             style={{
-                              borderRadius: 8,
-                              border: '1px solid rgba(71,85,105,0.72)',
+                              borderRadius: 6,
+                              border: `1px solid ${TABLE_THEME.border}`,
                               background: option.requiresConfirm
                                 ? 'rgba(127,29,29,0.46)'
-                                : 'rgba(30,41,59,0.74)',
-                              color: option.requiresConfirm ? '#fee2e2' : '#e2e8f0',
+                                : TABLE_THEME.panelSoft,
+                              color: option.requiresConfirm ? '#fee2e2' : TABLE_THEME.text,
                               padding: '7px 6px',
                               fontSize: 11,
                               fontWeight: 700,
@@ -3322,10 +3373,10 @@ export const PokerGamePage = ({
                           }}
                           style={{
                             minHeight: 42,
-                            borderRadius: 10,
-                            border: '1px solid rgba(71,85,105,0.85)',
-                            background: 'rgba(2,6,12,0.62)',
-                            color: '#f8fafc',
+                            borderRadius: 6,
+                            border: `1px solid ${TABLE_THEME.border}`,
+                            background: 'rgba(0,0,0,0.32)',
+                            color: TABLE_THEME.text,
                             padding: '8px 10px',
                             fontSize: 13,
                             outline: 'none',
@@ -3340,19 +3391,19 @@ export const PokerGamePage = ({
                             border:
                               maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
                                 ? 'rgba(248,113,113,0.9)'
-                                : 'rgba(56,189,248,0.86)',
+                                : 'rgba(94,234,212,0.78)',
                             background:
                               maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
                                 ? 'rgba(127,29,29,0.58)'
-                                : 'rgba(14,116,144,0.58)',
+                                : 'rgba(20,184,166,0.28)',
                             color:
                               maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
                                 ? '#fee2e2'
-                                : '#e0f2fe',
+                                : '#ccfbf1',
                             glow:
                               maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
                                 ? 'rgba(248,113,113,0.35)'
-                                : 'rgba(56,189,248,0.36)',
+                                : 'rgba(20,184,166,0.3)',
                           })}
                         >
                           {maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo && !confirmAllIn
@@ -3386,7 +3437,7 @@ export const PokerGamePage = ({
               {isRevealPhase ? (
                 <div
                   style={{
-                    borderRadius: 12,
+                    borderRadius: 8,
                     border: '1px solid rgba(34,197,94,0.6)',
                     background: 'rgba(20,83,45,0.36)',
                     padding: isPhone ? '10px 12px' : '12px 14px',
@@ -3415,10 +3466,10 @@ export const PokerGamePage = ({
                     type="button"
                     onClick={() => send({ type: 'nextHand' })}
                     style={turnActionStyle(true, {
-                      border: 'rgba(56,189,248,0.86)',
-                      background: 'rgba(14,116,144,0.58)',
-                      color: '#e0f2fe',
-                      glow: 'rgba(56,189,248,0.36)',
+                      border: 'rgba(94,234,212,0.78)',
+                      background: 'rgba(20,184,166,0.28)',
+                      color: '#ccfbf1',
+                      glow: 'rgba(20,184,166,0.3)',
                     })}
                   >
                     Next Hand
@@ -3449,7 +3500,7 @@ export const PokerGamePage = ({
           >
             <div
               style={{
-                fontFamily: '"Inter", sans-serif',
+                fontFamily: TABLE_THEME.fontSans,
                 fontSize: 16,
                 fontWeight: 700,
                 opacity: 0.85,
@@ -3476,7 +3527,7 @@ export const PokerGamePage = ({
         body {
           margin: 0;
           padding: 0;
-          background: #090406;
+          background: #03080b;
           -webkit-text-size-adjust: 100%;
         }
         @keyframes deal-card {
@@ -3604,7 +3655,7 @@ const CardView = ({
     ? '2px solid #22c55e'
     : isClassicSize
       ? '1px solid #d1d5db'
-      : '1px solid #2c3e66';
+      : `1px solid ${TABLE_THEME.border}`;
   const baseShadow = isClassicSize ? '0 6px 16px rgba(0,0,0,0.25)' : undefined;
   const outlineColor = outline === 'green' ? '#22c55e' : outline === 'red' ? '#ef4444' : null;
   const outlineShadow = outlineColor ? `0 0 0 2px ${outlineColor}` : undefined;
@@ -3658,7 +3709,11 @@ const CardView = ({
           aria-label={`${rankLabel} of ${suit}`}
         >
           <rect x="0" y="0" width="100" height="140" rx="10" fill={MINIMAL_DECK_PALETTE.face} />
-          <g fontFamily='"Inter", sans-serif' fontWeight={700} fill={suitColor}>
+          <g
+            fontFamily="var(--font-sans, Manrope, ui-sans-serif, system-ui)"
+            fontWeight={700}
+            fill={suitColor}
+          >
             <text x="8" y="18" fontSize={cornerFontSize}>
               {rankLabel}
             </text>
@@ -3669,7 +3724,7 @@ const CardView = ({
               x="8"
               y="18"
               fontSize={cornerFontSize}
-              fontFamily='"Inter", sans-serif'
+              fontFamily="var(--font-sans, Manrope, ui-sans-serif, system-ui)"
               fontWeight={700}
               fill={suitColor}
             >
@@ -3812,15 +3867,16 @@ const RoleChip = ({ label, tone }: { label: string; tone: 'dealer' | 'blind' }) 
         width: 22,
         height: 22,
         borderRadius: '50%',
-        background: isDealer ? '#ef4444' : '#9ca3af',
-        border: isDealer ? '1px solid #fecaca' : '1px solid #e5e7eb',
-        color: isDealer ? '#ffffff' : '#111827',
+        background: isDealer ? TABLE_THEME.amberStrong : TABLE_THEME.teal,
+        border: isDealer ? '1px solid #fef3c7' : '1px solid #ccfbf1',
+        color: '#031014',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         fontSize: 10,
         fontWeight: 700,
         letterSpacing: 0.2,
+        fontFamily: TABLE_THEME.fontSans,
       }}
     >
       {label}

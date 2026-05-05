@@ -3,6 +3,7 @@ import Head from 'next/head';
 import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import { isValidTableCodeFormat, normalizeTableCode } from '@pdh/protocol';
+import { ArrowRight, Clock3, KeyRound, Spade, Users } from 'lucide-react';
 import { logClientEvent } from '../lib/clientTelemetry';
 import {
   ensureNakamaReady,
@@ -215,64 +216,111 @@ const PlayLobbyPage: NextPage = () => {
         />
       </Head>
 
-      <main className="relative min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
+      <main className="relative min-h-screen overflow-hidden bg-[#03080b] text-zinc-100">
         <div className="pointer-events-none absolute inset-0">
           <div
-            className="absolute inset-0 bg-cover bg-center opacity-30"
+            className="absolute inset-0 bg-cover bg-center opacity-[0.08]"
             style={{ backgroundImage: "url('/Casino floor background.png')" }}
           />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_8%,rgba(251,191,36,0.18),transparent_38%),radial-gradient(circle_at_80%_92%,rgba(20,184,166,0.16),transparent_45%),linear-gradient(180deg,rgba(6,10,20,0.8),rgba(3,6,14,0.94))]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_22%,rgba(20,184,166,0.16),transparent_30%),radial-gradient(circle_at_17%_16%,rgba(251,191,36,0.09),transparent_27%),linear-gradient(180deg,rgba(3,8,11,0.94),rgba(2,7,9,0.985))]" />
         </div>
 
-        <div className="relative mx-auto flex min-h-screen w-full max-w-3xl items-center justify-center px-4 py-10 sm:px-6">
-          <section className="w-full rounded-3xl border border-amber-200/20 bg-zinc-950/70 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:p-8">
-            <p className="inline-flex rounded-full border border-amber-300/35 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-200">
+        <header className="relative z-10 border-b border-amber-300/40 bg-[#03080b]/70 backdrop-blur">
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-6 sm:px-8">
+            <a
+              href="/"
+              className="font-[var(--font-display)] text-xl font-semibold uppercase tracking-[0.42em] text-amber-200 sm:text-2xl"
+            >
+              Bondi Poker
+            </a>
+            <a
+              href="/#how-it-works"
+              className="hidden rounded-md border border-white/15 px-4 py-2 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200 transition hover:border-teal-300/70 hover:text-teal-100 sm:inline-flex"
+            >
+              Rules
+            </a>
+          </div>
+        </header>
+
+        <div className="relative z-10 mx-auto grid min-h-[calc(100vh-89px)] w-full max-w-7xl items-center gap-8 px-6 py-10 sm:px-8 lg:grid-cols-[0.88fr_1.12fr] lg:py-14">
+          <section className="max-w-xl">
+            <p className="font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.34em] text-amber-200">
               Play Lobby
             </p>
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              Enter Fast, Or Join By Code
+            <h1 className="mt-4 font-[var(--font-serif)] text-5xl font-semibold leading-[0.94] text-white sm:text-6xl">
+              Enter fast, or join by code.
             </h1>
-            <p className="mt-3 text-sm text-zinc-300 sm:text-base">
-              Quick Play seats you at the best available table. Joining a friend by table code is
-              still available.
+            <p className="mt-6 max-w-lg text-base leading-7 text-zinc-300 sm:text-lg">
+              Quick Play seats you at the best available table. Table codes keep friend games one
+              step away.
             </p>
 
-            <form onSubmit={(event) => void handleQuickPlay(event)} className="mt-8 space-y-4">
-              <label htmlFor="player-name" className="block text-sm font-medium text-zinc-100">
-                Player Name
-              </label>
-              <input
-                id="player-name"
-                data-testid="join-name-input"
-                value={name}
-                onChange={(event) => {
-                  setName(event.target.value);
-                  if (error) {
-                    setError('');
-                  }
-                }}
-                autoComplete="nickname"
-                maxLength={24}
-                placeholder="e.g. Alex"
-                className="w-full rounded-xl border border-amber-200/35 bg-zinc-900/75 px-4 py-3 text-base text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-amber-200 focus:ring-2 focus:ring-amber-300/35"
-              />
+            <div className="mt-8 grid gap-3 sm:grid-cols-3">
+              {[
+                { label: 'Quick seat', value: 'Best table', icon: Users },
+                { label: 'Private code', value: '6 chars', icon: KeyRound },
+                { label: 'Recent', value: `${recentTables.length} saved`, icon: Clock3 },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div
+                    key={item.label}
+                    className="rounded-lg border border-white/15 bg-white/[0.035] px-4 py-4"
+                  >
+                    <Icon aria-hidden="true" className="h-5 w-5 text-teal-300" strokeWidth={1.7} />
+                    <div className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                      {item.label}
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-zinc-100">{item.value}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
 
-              <button
-                type="submit"
-                data-testid="join-button"
-                disabled={loading}
-                className="inline-flex w-full items-center justify-center rounded-xl border border-amber-200/65 bg-amber-400/20 px-5 py-3 text-sm font-semibold text-amber-50 transition hover:bg-amber-400/30 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {loadingMode === 'quick_play' ? 'Finding Table...' : 'Quick Play'}
-              </button>
+          <section className="w-full">
+            <form
+              onSubmit={(event) => void handleQuickPlay(event)}
+              className="rounded-lg border border-amber-300/35 bg-amber-300/[0.055] p-4 sm:p-5"
+            >
+              <label htmlFor="player-name" className="block text-sm font-semibold text-zinc-100">
+                Player name
+              </label>
+              <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
+                <input
+                  id="player-name"
+                  data-testid="join-name-input"
+                  value={name}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    if (error) {
+                      setError('');
+                    }
+                  }}
+                  autoComplete="nickname"
+                  maxLength={24}
+                  placeholder="e.g. Alex"
+                  className="min-h-12 w-full rounded-md border border-white/15 bg-black/[0.34] px-4 py-3 text-base text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-teal-300 focus:ring-2 focus:ring-teal-300/25"
+                />
+
+                <button
+                  type="submit"
+                  data-testid="join-button"
+                  disabled={loading}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md border border-teal-200/70 bg-teal-400/[0.42] px-5 py-3 text-sm font-semibold text-white shadow-[0_0_24px_rgba(20,184,166,0.18)] transition hover:bg-teal-300/[0.52] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loadingMode === 'quick_play' ? 'Finding Table...' : 'Quick Play'}
+                  <ArrowRight aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
+                </button>
+              </div>
             </form>
 
             <form
               onSubmit={(event) => void handleJoinByCode(event)}
-              className="mt-6 rounded-2xl border border-zinc-200/15 bg-zinc-900/45 p-4 sm:p-5"
+              className="mt-4 rounded-lg border border-white/15 bg-white/[0.035] p-4 sm:p-5"
             >
-              <label htmlFor="join-code" className="block text-sm font-medium text-zinc-100">
-                Join By Code
+              <label htmlFor="join-code" className="block text-sm font-semibold text-zinc-100">
+                Join by code
               </label>
               <div className="mt-3 flex flex-col gap-3 sm:flex-row">
                 <input
@@ -286,22 +334,26 @@ const PlayLobbyPage: NextPage = () => {
                   }}
                   maxLength={6}
                   placeholder="ABC234"
-                  className="w-full rounded-xl border border-zinc-300/30 bg-zinc-950/70 px-4 py-3 text-base uppercase tracking-[0.1em] text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-zinc-200/60 focus:ring-2 focus:ring-zinc-300/35"
+                  className="min-h-12 w-full rounded-md border border-white/15 bg-black/[0.34] px-4 py-3 text-base uppercase tracking-[0.1em] text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-amber-300 focus:ring-2 focus:ring-amber-300/25"
                 />
                 <button
                   type="submit"
                   disabled={loading}
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-zinc-300/45 bg-zinc-800/55 px-5 py-3 text-sm font-semibold text-zinc-100 transition hover:bg-zinc-700/60 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-md border border-amber-300/60 bg-transparent px-5 py-3 text-sm font-semibold text-amber-100 transition hover:border-teal-200 hover:text-teal-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
+                  <KeyRound aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
                   {loadingMode === 'join_code' ? 'Joining...' : 'Join Code'}
                 </button>
               </div>
             </form>
 
-            <div className="mt-6">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-300">
-                Recent Tables
-              </h2>
+            <div className="mt-5 rounded-lg border border-white/10 bg-black/[0.2] p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.24em] text-amber-200">
+                  Recent Tables
+                </h2>
+                <Spade aria-hidden="true" className="h-4 w-4 text-teal-300" strokeWidth={1.7} />
+              </div>
               {recentTables.length > 0 ? (
                 <div className="mt-3 grid gap-2">
                   {recentTables.slice(0, 4).map((table) => {
@@ -314,10 +366,10 @@ const PlayLobbyPage: NextPage = () => {
                         onClick={() => {
                           void handleJoinRecent(table);
                         }}
-                        className="inline-flex items-center justify-between rounded-xl border border-zinc-300/25 bg-zinc-900/45 px-4 py-3 text-left text-sm text-zinc-100 transition hover:bg-zinc-800/60 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex min-h-12 items-center justify-between rounded-md border border-white/15 bg-white/[0.035] px-4 py-3 text-left text-sm text-zinc-100 transition hover:border-teal-300/45 hover:bg-teal-400/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <span className="truncate pr-3">{table.name || `Table ${table.code}`}</span>
-                        <span className="font-semibold tracking-[0.08em] text-zinc-200">
+                        <span className="font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">
                           {buttonLoading ? 'Joining...' : table.code}
                         </span>
                       </button>
@@ -325,12 +377,12 @@ const PlayLobbyPage: NextPage = () => {
                   })}
                 </div>
               ) : (
-                <p className="mt-3 text-sm text-zinc-400">No recent tables yet.</p>
+                <p className="mt-3 text-sm leading-6 text-zinc-400">No recent tables yet.</p>
               )}
             </div>
 
             {error ? (
-              <p className="mt-5 rounded-xl border border-rose-400/45 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+              <p className="mt-5 rounded-md border border-rose-300/45 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
                 {error}
               </p>
             ) : null}
