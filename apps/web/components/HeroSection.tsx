@@ -130,24 +130,24 @@ function CardImage({ card, className = '' }: { card: CardFace; className?: strin
     <img
       src={card.src}
       alt={card.alt}
-      className={`aspect-[5/7] w-12 rounded-md border border-zinc-950/25 bg-stone-100 object-cover shadow-[0_9px_18px_rgba(0,0,0,0.45)] sm:w-14 lg:w-16 ${className}`}
+      className={`aspect-[5/7] w-9 rounded-md border border-zinc-950/25 bg-stone-100 object-cover shadow-[0_9px_18px_rgba(0,0,0,0.45)] sm:w-10 lg:w-12 xl:w-14 ${className}`}
     />
   );
 }
 
 function DiscardCard({ card }: { card: CardFace }) {
   return (
-    <div className="flex items-center gap-4">
-      <div className="hidden h-px min-w-10 flex-1 bg-gradient-to-r from-teal-300/70 to-transparent sm:block" />
+    <div className="flex items-center gap-3">
+      <div className="hidden h-px min-w-8 flex-1 bg-gradient-to-r from-teal-300/70 to-transparent sm:block" />
       <div
         role="img"
         aria-label={`Discarded ${card.alt}`}
         title={`Discarded ${card.code}`}
-        className="flex aspect-[5/7] w-12 items-center justify-center rounded-md border border-amber-300/75 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.14),transparent_48%),linear-gradient(135deg,rgba(24,24,27,0.98),rgba(3,7,10,0.98))] shadow-[0_9px_18px_rgba(0,0,0,0.45),inset_0_0_0_4px_rgba(251,191,36,0.12)] sm:w-14 lg:w-16"
+        className="flex aspect-[5/7] w-9 items-center justify-center rounded-md border border-amber-300/75 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.14),transparent_48%),linear-gradient(135deg,rgba(24,24,27,0.98),rgba(3,7,10,0.98))] shadow-[0_9px_18px_rgba(0,0,0,0.45),inset_0_0_0_4px_rgba(251,191,36,0.12)] sm:w-10 lg:w-12 xl:w-14"
       >
-        <Spade aria-hidden="true" className="h-6 w-6 text-amber-200" strokeWidth={1.6} />
+        <Spade aria-hidden="true" className="h-4 w-4 text-amber-200 sm:h-5 sm:w-5" strokeWidth={1.6} />
       </div>
-      <div className="whitespace-nowrap font-[var(--font-display)] text-[0.66rem] font-semibold uppercase tracking-[0.16em] text-amber-200">
+      <div className="whitespace-nowrap font-[var(--font-display)] text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-amber-200 sm:text-[0.62rem] lg:text-[0.66rem]">
         Discard 1
       </div>
     </div>
@@ -168,18 +168,18 @@ function SectionTitle({ children }: { children: string }) {
 
 function FlowDiagram() {
   return (
-    <div className="relative mx-auto w-full max-w-[850px] py-2 lg:py-0">
-      <div className="pointer-events-none absolute inset-x-0 top-28 hidden h-[430px] rounded-[999px] border border-amber-500/28 bg-teal-950/25 shadow-[inset_0_0_90px_rgba(20,184,166,0.12)] lg:block" />
-      <div className="pointer-events-none absolute inset-x-10 top-32 hidden h-[405px] rounded-[999px] border border-amber-500/16 lg:block" />
+    <div className="relative mx-auto w-full max-w-[760px] py-1 lg:py-0">
+      <div className="pointer-events-none absolute inset-x-0 top-24 hidden h-[360px] rounded-[999px] border border-amber-500/28 bg-teal-950/25 shadow-[inset_0_0_80px_rgba(20,184,166,0.12)] lg:block xl:h-[390px]" />
+      <div className="pointer-events-none absolute inset-x-10 top-28 hidden h-[335px] rounded-[999px] border border-amber-500/16 lg:block xl:h-[365px]" />
 
-      <div className="relative space-y-5 sm:space-y-6">
+      <div className="relative space-y-4 sm:space-y-5">
         <div>
-          <div className="flex items-center justify-center gap-3 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">
-            <span className="hidden h-px w-14 bg-amber-300/45 sm:block" />
+          <div className="flex items-center justify-center gap-3 font-[var(--font-display)] text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-amber-200 sm:text-xs sm:tracking-[0.2em]">
+            <span className="hidden h-px w-12 bg-amber-300/45 sm:block" />
             Start: 5 hole cards
-            <span className="hidden h-px w-14 bg-amber-300/45 sm:block" />
+            <span className="hidden h-px w-12 bg-amber-300/45 sm:block" />
           </div>
-          <div className="mt-4 flex flex-wrap justify-center gap-2 sm:gap-3">
+          <div className="mt-3 flex flex-wrap justify-center gap-1.5 sm:gap-2 lg:gap-2.5">
             {STARTING_HAND.map((card) => (
               <CardImage key={card.alt} card={card} />
             ))}
@@ -189,30 +189,32 @@ function FlowDiagram() {
         {FLOW_ROWS.map((row) => (
           <div
             key={row.label}
-            className="relative grid gap-3 sm:grid-cols-[126px_minmax(190px,1fr)] sm:items-center lg:grid-cols-[132px_minmax(230px,1fr)_minmax(220px,0.9fr)]"
+            className="relative grid grid-cols-[82px_minmax(0,1fr)] items-center gap-x-3 gap-y-2 sm:grid-cols-[106px_minmax(190px,1fr)] lg:grid-cols-[118px_minmax(210px,1fr)_minmax(190px,0.88fr)]"
           >
-            <div className="flex items-center gap-3 font-[var(--font-display)] text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-amber-200">
-              <CircleDot aria-hidden="true" className="h-4 w-4 text-teal-300" />
+            <div className="flex items-center gap-2 font-[var(--font-display)] text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-amber-200 sm:gap-3 sm:text-[0.68rem] lg:text-[0.72rem] lg:tracking-[0.2em]">
+              <CircleDot aria-hidden="true" className="h-3 w-3 text-teal-300 sm:h-4 sm:w-4" />
               {row.label}
             </div>
 
-            <div className="flex min-w-0 flex-wrap gap-2 sm:gap-3">
+            <div className="flex min-w-0 flex-wrap gap-1.5 sm:gap-2 lg:gap-2.5">
               {row.holeCards.map((card) => (
                 <CardImage key={`${row.label}-${card.alt}`} card={card} />
               ))}
             </div>
 
             {row.discarded ? (
-              <DiscardCard card={row.discarded} />
+              <div className="col-start-2 lg:col-start-auto">
+                <DiscardCard card={row.discarded} />
+              </div>
             ) : (
-              <div className="font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.18em] text-amber-200 sm:col-start-2 lg:col-start-auto">
+              <div className="col-start-2 font-[var(--font-display)] text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-amber-200 sm:text-xs sm:tracking-[0.18em] lg:col-start-auto">
                 {row.holeLabel}
               </div>
             )}
           </div>
         ))}
 
-        <div className="text-center text-sm font-semibold leading-5 text-teal-200">
+        <div className="text-center text-xs font-semibold leading-5 text-teal-200 sm:text-sm">
           Best 5-card hand from 2 hole cards + 5 board cards wins.
         </div>
       </div>
@@ -513,18 +515,18 @@ export default function HeroSection() {
           </div>
         </header>
 
-        <div className="relative z-10 mx-auto grid max-w-[100rem] items-center gap-12 px-6 py-16 sm:px-8 sm:py-20 lg:min-h-[760px] lg:grid-cols-[0.78fr_1.22fr] lg:gap-12 xl:px-10">
-          <div className="max-w-2xl">
-            <h1 className="font-[var(--font-serif)] text-6xl font-semibold leading-[0.9] text-white sm:text-7xl lg:text-[6.4rem] xl:text-[7rem]">
+        <div className="relative z-10 mx-auto grid max-w-[92rem] items-center gap-10 px-6 py-12 sm:px-8 sm:py-14 lg:min-h-[650px] lg:grid-cols-[0.82fr_1.18fr] lg:gap-10 xl:px-10">
+          <div className="max-w-xl">
+            <h1 className="font-[var(--font-serif)] text-5xl font-semibold leading-[0.92] text-white sm:text-6xl lg:text-[5.2rem] xl:text-[5.7rem]">
               A new kind of online Hold&apos;em.
             </h1>
 
-            <p className="mt-9 max-w-xl text-lg leading-8 text-zinc-300 sm:text-xl">
+            <p className="mt-7 max-w-lg text-base leading-7 text-zinc-300 sm:text-lg lg:text-xl lg:leading-8">
               Real-time multiplayer poker with a twist: start with 5 hole cards, discard one after
               the flop, turn, and river, and reach showdown with just 2 hole cards.
             </p>
 
-            <div className="mt-9 flex flex-col gap-4 sm:flex-row">
+            <div className="mt-7 flex flex-col gap-4 sm:flex-row lg:mt-9">
               <button
                 type="button"
                 aria-expanded={earlyAccessOpen}
