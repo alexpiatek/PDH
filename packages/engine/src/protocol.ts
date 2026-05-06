@@ -29,6 +29,8 @@ export type ClientMessage = ClientMessageBase &
     | { type: 'action'; action: ClientActionType; amount?: number }
     | { type: 'discard'; index: number }
     | { type: 'nextHand' }
+    | { type: 'rebuy'; amount?: number }
+    | { type: 'sitOut' }
     | { type: 'requestState' }
   );
 
@@ -96,6 +98,8 @@ export function isClientMessage(value: unknown): value is ClientMessage {
     case 'discard':
       return Number.isInteger(value.index);
     case 'nextHand':
+    case 'rebuy':
+    case 'sitOut':
     case 'requestState':
       return true;
     default:

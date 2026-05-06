@@ -23,7 +23,7 @@ const REPLAY_MAX_EVENTS = 500;
 const REPLAY_DEFAULT_LIMIT = 50;
 const REPLAY_MAX_LIMIT = 500;
 
-type ReplayEventKind = 'action' | 'discard' | 'nextHand';
+type ReplayEventKind = 'action' | 'discard' | 'nextHand' | 'rebuy' | 'sitOut';
 type ReplayOutcome = 'accepted' | 'rejected';
 
 interface ReplayEvent {
@@ -572,6 +572,7 @@ function matchJoin(ctx, logger, nk, dispatcher, tick, state, presences) {
       tableId: table.state.id,
     });
   }
+  table.beginNextHandIfReady();
   state.table = table.state;
   broadcastState(dispatcher, state);
   return { state };
@@ -672,7 +673,23 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
                 discardIndex: undefined,
                 actionSeq: typeof data.seq === 'number' ? data.seq : null,
               }
-            : null;
+            : data.type === 'rebuy'
+              ? {
+                  kind: 'rebuy' as const,
+                  action: undefined,
+                  amount: data.amount,
+                  discardIndex: undefined,
+                  actionSeq: typeof data.seq === 'number' ? data.seq : null,
+                }
+              : data.type === 'sitOut'
+                ? {
+                    kind: 'sitOut' as const,
+                    action: undefined,
+                    amount: undefined,
+                    discardIndex: undefined,
+                    actionSeq: typeof data.seq === 'number' ? data.seq : null,
+                  }
+                : null;
     const before = handSnapshot(table);
 
     try {
@@ -697,6 +714,7 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
             throw new Error('Reconnect identity mismatch');
           }
           table.setSittingOut(presence.userId, false);
+          table.beginNextHandIfReady();
           sendToPresence(dispatcher, presence, {
             type: 'welcome',
             playerId: presence.userId,
@@ -723,6 +741,18 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
         case 'nextHand': {
           ensureCanAdvanceHand(table, presence.userId);
           table.advanceToNextHand();
+          shouldBroadcast = true;
+          break;
+        }
+        case 'rebuy': {
+          ensurePlayerSeated(table, presence.userId);
+          table.rebuy(presence.userId, data.amount ?? 10000);
+          shouldBroadcast = true;
+          break;
+        }
+        case 'sitOut': {
+          ensurePlayerSeated(table, presence.userId);
+          table.sitOut(presence.userId);
           shouldBroadcast = true;
           break;
         }
@@ -779,7 +809,6 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
         default:
           throw new Error('Unknown message');
       }
-      table.beginNextHandIfReady();
 
       if (mutatingMeta) {
         const after = handSnapshot(table);

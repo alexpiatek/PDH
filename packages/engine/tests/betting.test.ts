@@ -194,4 +194,70 @@ describe('betting rules', () => {
     expect(() => table.beginNextHandIfReady()).not.toThrow();
     expect(table.state.hand).toBeNull();
   });
+
+  it('does not silently reset a busted stack between hands', () => {
+    const table = new PokerTable('t', { smallBlind: 100, bigBlind: 200 });
+    table.seatPlayer(0, { id: 'winner', name: 'Winner', stack: 1000 });
+    table.seatPlayer(1, { id: 'loser', name: 'Loser', stack: 1000 });
+    table.startHand(rng);
+
+    const hand = table.state.hand!;
+    hand.board = [C('A', 'S'), C('K', 'S'), C('Q', 'S'), C('J', 'S'), C('2', 'D')];
+    const winner = hand.players.find((p) => p.id === 'winner')!;
+    const loser = hand.players.find((p) => p.id === 'loser')!;
+    winner.holeCards = [C('T', 'S'), C('9', 'D')];
+    loser.holeCards = [C('3', 'C'), C('4', 'D')];
+    winner.stack = 0;
+    loser.stack = 0;
+    winner.totalCommitted = 1000;
+    loser.totalCommitted = 1000;
+    winner.status = 'allIn';
+    loser.status = 'allIn';
+    table.state.seats[winner.seat]!.stack = 0;
+    table.state.seats[loser.seat]!.stack = 0;
+
+    (table as any).finishHand();
+
+    expect(table.state.seats[0]?.stack).toBe(2000);
+    expect(table.state.seats[1]?.stack).toBe(0);
+    expect(table.state.seats[1]?.status).toBe('busted');
+    expect(table.state.seats[1]?.sittingOut).toBe(true);
+    expect(hand.log.some((entry) => entry.message === 'Loser is out of chips')).toBe(true);
+
+    table.advanceToNextHand();
+
+    expect(table.state.seats[1]?.stack).toBe(0);
+    expect(table.state.hand).toBeNull();
+  });
+
+  it('rebuy is explicit and returns a busted player to the next hand', () => {
+    const table = new PokerTable('t', { smallBlind: 100, bigBlind: 200 });
+    table.seatPlayer(0, { id: 'p0', name: 'P0', stack: 2000 });
+    table.seatPlayer(1, { id: 'p1', name: 'P1', stack: 0, status: 'busted', sittingOut: true });
+
+    table.rebuy('p1');
+
+    expect(table.state.seats[1]?.stack).toBe(10000);
+    expect(table.state.seats[1]?.status).toBe('active');
+    expect(table.state.seats[1]?.sittingOut).toBe(false);
+    expect(table.state.log.some((entry) => entry.message === 'P1 rebought for 10000')).toBe(true);
+
+    table.advanceToNextHand();
+
+    expect(table.state.hand?.players.map((player) => player.id).sort()).toEqual(['p0', 'p1']);
+  });
+
+  it('excludes sitting-out seats from deals and blinds', () => {
+    const table = new PokerTable('t', { smallBlind: 100, bigBlind: 200 });
+    table.seatPlayer(0, { id: 'p0', name: 'P0', stack: 5000 });
+    table.seatPlayer(1, { id: 'p1', name: 'P1', stack: 5000 });
+    table.seatPlayer(2, { id: 'p2', name: 'P2', stack: 5000 });
+    table.setSittingOut('p1', true);
+
+    table.startHand(rng);
+
+    const hand = table.state.hand!;
+    expect(hand.players.map((player) => player.id).sort()).toEqual(['p0', 'p2']);
+    expect(hand.log.some((entry) => entry.message.includes('P1 posts'))).toBe(false);
+  });
 });

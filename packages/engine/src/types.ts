@@ -9,7 +9,8 @@ export interface Card {
 export type Street = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
 export type Phase = 'betting' | 'discard' | 'showdown' | 'complete';
 
-export type PlayerStatus = 'active' | 'folded' | 'allIn' | 'out';
+export type PlayerStatus = 'active' | 'folded' | 'allIn' | 'out' | 'busted' | 'sitting_out';
+export type SeatStatus = 'active' | 'sitting_out' | 'busted';
 
 export interface Seat {
   seat: number;
@@ -17,6 +18,9 @@ export interface Seat {
   name: string;
   stack: number;
   sittingOut?: boolean;
+  status?: SeatStatus;
+  buyInTotal?: number;
+  rebuyCount?: number;
 }
 
 export interface PlayerInHand {

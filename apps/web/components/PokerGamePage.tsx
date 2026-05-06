@@ -655,7 +655,13 @@ export const PokerGamePage = ({
     return seq;
   };
   const withMutatingSeq = (msg: ClientMessage): ClientMessage => {
-    if (msg.type !== 'action' && msg.type !== 'discard' && msg.type !== 'nextHand') {
+    if (
+      msg.type !== 'action' &&
+      msg.type !== 'discard' &&
+      msg.type !== 'nextHand' &&
+      msg.type !== 'rebuy' &&
+      msg.type !== 'sitOut'
+    ) {
       return msg;
     }
     if (typeof msg.seq === 'number' && Number.isInteger(msg.seq) && msg.seq > 0) {
@@ -951,6 +957,10 @@ export const PokerGamePage = ({
   };
 
   const hand: HandState | null = state?.hand ?? null;
+  const localSeat = useMemo(() => {
+    if (!playerId || !Array.isArray(state?.seats)) return null;
+    return (state.seats.find((s: any) => s && s.id === playerId) as any) ?? null;
+  }, [state?.seats, playerId]);
   const you = useMemo(() => {
     if (!hand || !playerId) return null;
     return hand.players.find((p: PlayerInHand) => p.id === playerId);
@@ -966,6 +976,31 @@ export const PokerGamePage = ({
     if (!playerId) return false;
     return Boolean(state?.seats?.some((s: any) => s && s.id === playerId));
   }, [state, playerId]);
+  const localSeatStack =
+    typeof localSeat?.stack === 'number'
+      ? localSeat.stack
+      : you?.stack !== undefined
+        ? you.stack
+        : 0;
+  const localSeatStatus =
+    typeof localSeat?.status === 'string'
+      ? localSeat.status
+      : localSeat?.sittingOut
+        ? 'sitting_out'
+        : 'active';
+  const localPlayerName = you?.name ?? localSeat?.name ?? name;
+  const localNeedsRebuy = Boolean(
+    seated &&
+    localSeat &&
+    localSeatStack <= 0 &&
+    (localSeatStatus === 'busted' ||
+      localSeatStatus === 'sitting_out' ||
+      !hand ||
+      hand.phase === 'showdown')
+  );
+  const localReadyBetweenHands = Boolean(
+    seated && localSeat && !hand && localSeatStack > 0 && localSeatStatus === 'active'
+  );
   useEffect(() => {
     if (!seated) {
       setShowUtilitiesPanel(false);
@@ -1012,8 +1047,13 @@ export const PokerGamePage = ({
   );
   const youInfoDimmed = Boolean(
     you &&
-    (you.status === 'folded' || you.status === 'out' || (hand?.phase === 'betting' && !isMyTurn))
+    (you.status === 'folded' ||
+      you.status === 'out' ||
+      you.status === 'busted' ||
+      you.status === 'sitting_out' ||
+      (hand?.phase === 'betting' && !isMyTurn))
   );
+  const youBusted = Boolean(you && (you.status === 'busted' || you.status === 'sitting_out'));
   const discardPending = Boolean(
     hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id)
   );
@@ -1032,7 +1072,12 @@ export const PokerGamePage = ({
     }
     const confirmed = new Set<string>();
     for (const player of hand.players) {
-      if (player.status === 'folded' || player.status === 'out') {
+      if (
+        player.status === 'folded' ||
+        player.status === 'out' ||
+        player.status === 'busted' ||
+        player.status === 'sitting_out'
+      ) {
         continue;
       }
       if (!hand.discardPending.includes(player.id)) {
@@ -1042,7 +1087,14 @@ export const PokerGamePage = ({
     return confirmed;
   }, [hand]);
   const hasContestedShowdown = Boolean(
-    hand && hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out').length > 1
+    hand &&
+    hand.players.filter(
+      (p) =>
+        p.status !== 'folded' &&
+        p.status !== 'out' &&
+        p.status !== 'busted' &&
+        p.status !== 'sitting_out'
+    ).length > 1
   );
   const raiseCapReached = Boolean(hand && hand.raisesThisStreet >= 2);
   const actionSecondsLeft = useMemo(() => {
@@ -1078,7 +1130,11 @@ export const PokerGamePage = ({
     for (let idx = lines.length - 1; idx >= 0; idx -= 1) {
       const message = lines[idx]?.message;
       if (!message) continue;
-      if (/(folded|checked|called|raised|bet|all-in|discarded|won)/i.test(message)) {
+      if (
+        /(posts|folded|checked|called|raised|bet|all-in|discarded|wins|rebought|out of chips|sits out)/i.test(
+          message
+        )
+      ) {
         return message;
       }
     }
@@ -1157,9 +1213,12 @@ export const PokerGamePage = ({
     if (hand.phase !== 'showdown') {
       return;
     }
+    if (localNeedsRebuy) {
+      return;
+    }
     const timeoutId = window.setTimeout(() => send({ type: 'nextHand' }), 6000);
     return () => window.clearTimeout(timeoutId);
-  }, [hand?.phase, hand?.handId]);
+  }, [hand?.phase, hand?.handId, localNeedsRebuy]);
 
   useEffect(() => {
     if (!discardPending) {
@@ -1355,6 +1414,24 @@ export const PokerGamePage = ({
       amount: amount ?? null,
     });
     send({ type: 'action', action, amount });
+  };
+
+  const rebuy = () => {
+    logClientEvent('table_rebuy_click', {
+      handId: hand?.handId ?? null,
+      stack: localSeatStack,
+      status: localSeatStatus,
+    });
+    send({ type: 'rebuy', amount: 10000 });
+  };
+
+  const sitOut = () => {
+    logClientEvent('table_sit_out_click', {
+      handId: hand?.handId ?? null,
+      stack: localSeatStack,
+      status: localSeatStatus,
+    });
+    send({ type: 'sitOut' });
   };
 
   const discard = (idx: number) => {
@@ -1623,14 +1700,21 @@ export const PokerGamePage = ({
     if (hand.buttonSeat < 0) {
       return new Map<number, { label: string; tone: 'dealer' | 'blind' }[]>();
     }
+    const inHandSeats = new Set(hand.players.map((player) => player.seat));
     const nextOccupiedSeat = (start: number) => {
       for (let i = 1; i <= max; i += 1) {
         const idx = (start + i) % max;
-        if (seats[idx]) return idx;
+        if (seats[idx] && inHandSeats.has(idx)) return idx;
       }
       return null;
     };
-    const active = hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
+    const active = hand.players.filter(
+      (p) =>
+        p.status !== 'folded' &&
+        p.status !== 'out' &&
+        p.status !== 'busted' &&
+        p.status !== 'sitting_out'
+    );
     const isHeadsUp = active.length === 2;
     const dealerSeat = hand.buttonSeat;
     let sbSeat: number | null = null;
@@ -1686,7 +1770,11 @@ export const PokerGamePage = ({
   });
   const isMobile = viewportWidth <= 900;
   const isPhone = viewportWidth <= 640;
-  const hasBottomActionTray = Boolean(you && (isBettingPhase || isDiscardPhase || isRevealPhase));
+  const hasBottomActionTray = Boolean(
+    localNeedsRebuy ||
+    localReadyBetweenHands ||
+    (you && (isBettingPhase || isDiscardPhase || isRevealPhase))
+  );
   const centeredSectionMinHeight = isMobile ? 'calc(100dvh - 160px)' : 'calc(100vh - 220px)';
   const heroInfoBottomOffset = isPhone
     ? hasBottomActionTray
@@ -1823,6 +1911,110 @@ export const PokerGamePage = ({
       : 'rgba(226,232,240,0.72)';
   const utilityEnabledCount =
     Number(soundEnabled) + Number(showActivityFeed) + Number(showTableChat);
+  const rebuyTray = localNeedsRebuy ? (
+    <div
+      style={{
+        borderRadius: 8,
+        border: '1px solid rgba(248,113,113,0.48)',
+        background: TABLE_THEME.panelStrong,
+        padding: isPhone ? '10px 12px' : '12px 14px',
+        boxShadow: '0 14px 28px rgba(127,29,29,0.2)',
+        display: 'flex',
+        flexDirection: isPhone ? 'column' : 'row',
+        justifyContent: 'space-between',
+        alignItems: isPhone ? 'stretch' : 'center',
+        gap: 10,
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div
+          data-testid="rebuy-status"
+          style={{
+            fontSize: isPhone ? 13 : 14,
+            fontWeight: 800,
+            color: '#fee2e2',
+          }}
+        >
+          You are out of chips
+        </div>
+        <div
+          style={{
+            marginTop: 2,
+            fontSize: 12,
+            color: TABLE_THEME.muted,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {localPlayerName} can rebuy before the next hand.
+        </div>
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: isPhone ? '1fr 1fr' : 'auto auto',
+          gap: 8,
+        }}
+      >
+        <button
+          type="button"
+          onClick={rebuy}
+          style={turnActionStyle(true, {
+            border: 'rgba(94,234,212,0.78)',
+            background: 'rgba(20,184,166,0.28)',
+            color: '#ccfbf1',
+            glow: 'rgba(20,184,166,0.3)',
+          })}
+        >
+          Rebuy 10,000
+        </button>
+        <button
+          type="button"
+          onClick={sitOut}
+          style={turnActionStyle(true, {
+            border: 'rgba(148,163,184,0.65)',
+            background: 'rgba(255,255,255,0.045)',
+            color: '#e2e8f0',
+            glow: 'rgba(148,163,184,0.18)',
+          })}
+        >
+          Sit Out
+        </button>
+      </div>
+    </div>
+  ) : null;
+  const nextHandTray = localReadyBetweenHands ? (
+    <div
+      style={{
+        borderRadius: 8,
+        border: `1px solid ${TABLE_THEME.border}`,
+        background: TABLE_THEME.panelStrong,
+        padding: isPhone ? '10px 12px' : '12px 14px',
+        display: 'flex',
+        flexDirection: isPhone ? 'column' : 'row',
+        justifyContent: 'space-between',
+        alignItems: isPhone ? 'stretch' : 'center',
+        gap: 10,
+      }}
+    >
+      <div style={{ fontSize: isPhone ? 13 : 14, fontWeight: 800, color: TABLE_THEME.text }}>
+        Ready for next hand
+      </div>
+      <button
+        type="button"
+        onClick={() => send({ type: 'nextHand' })}
+        style={turnActionStyle(true, {
+          border: 'rgba(94,234,212,0.78)',
+          background: 'rgba(20,184,166,0.28)',
+          color: '#ccfbf1',
+          glow: 'rgba(20,184,166,0.3)',
+        })}
+      >
+        Next Hand
+      </button>
+    </div>
+  ) : null;
 
   useEffect(() => {
     if (!seated || !hand || hand.phase !== 'betting') {
@@ -2798,11 +2990,16 @@ export const PokerGamePage = ({
                 const isTurn = Boolean(
                   hand && hand.phase === 'betting' && hand.actionOnSeat === p.seat
                 );
-                const playerInactive = p.status === 'folded' || p.status === 'out';
+                const playerBusted = p.status === 'busted' || p.status === 'sitting_out';
+                const playerInactive = p.status === 'folded' || p.status === 'out' || playerBusted;
                 const infoDimmed =
                   playerInactive || Boolean(hand && hand.phase === 'betting' && !isTurn);
                 const showDiscardState =
-                  hand?.phase === 'discard' && p.status !== 'folded' && p.status !== 'out';
+                  hand?.phase === 'discard' &&
+                  p.status !== 'folded' &&
+                  p.status !== 'out' &&
+                  p.status !== 'busted' &&
+                  p.status !== 'sitting_out';
                 const hasDiscardedThisStreet =
                   showDiscardState && discardConfirmedPlayers.has(p.id);
                 const avatarStyle = {
@@ -2909,7 +3106,19 @@ export const PokerGamePage = ({
                                 </span>
                               </div>
                             )}
-                            {showDiscardState ? (
+                            {playerBusted ? (
+                              <div
+                                style={{
+                                  marginTop: 4,
+                                  fontSize: 10,
+                                  letterSpacing: 0.2,
+                                  color: '#fecaca',
+                                  textTransform: 'uppercase',
+                                }}
+                              >
+                                out of chips
+                              </div>
+                            ) : showDiscardState ? (
                               <div
                                 style={{
                                   marginTop: 4,
@@ -2955,6 +3164,8 @@ export const PokerGamePage = ({
                               hasContestedShowdown &&
                               p.status !== 'folded' &&
                               p.status !== 'out' &&
+                              p.status !== 'busted' &&
+                              p.status !== 'sitting_out' &&
                               p.holeCards.length >= 2;
                             const card = p.holeCards[cardIdx];
                             return (
@@ -3130,6 +3341,19 @@ export const PokerGamePage = ({
                             {you.stack}
                           </span>
                         </div>
+                        {youBusted ? (
+                          <div
+                            style={{
+                              marginTop: 4,
+                              fontSize: 10,
+                              letterSpacing: 0.2,
+                              color: '#fecaca',
+                              textTransform: 'uppercase',
+                            }}
+                          >
+                            out of chips
+                          </div>
+                        ) : null}
                         {isMyTurn ? (
                           <div
                             style={{
@@ -3228,7 +3452,7 @@ export const PokerGamePage = ({
               )}
             </div>
           </div>
-          {you && (
+          {(you || localNeedsRebuy) && (
             <div
               style={{
                 position: isMobile ? 'fixed' : 'static',
@@ -3250,6 +3474,7 @@ export const PokerGamePage = ({
                 alignItems: 'stretch',
               }}
             >
+              {rebuyTray}
               {isDiscardPhase ? (
                 <div
                   style={{
@@ -3619,42 +3844,61 @@ export const PokerGamePage = ({
           )}
         </div>
       ) : seated ? (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: centeredSectionMinHeight,
-            paddingTop: 'clamp(0px, 2vh, 1cm)',
-            paddingBottom: 'clamp(0px, 6vh, 2cm)',
-          }}
-        >
+        <>
           <div
             style={{
               display: 'flex',
-              flexDirection: 'column',
+              justifyContent: 'center',
               alignItems: 'center',
-              transform: isMobile ? 'none' : 'translateY(-7cm)',
+              minHeight: centeredSectionMinHeight,
+              paddingTop: 'clamp(0px, 2vh, 1cm)',
+              paddingBottom: 'clamp(0px, 6vh, 2cm)',
             }}
           >
             <div
               style={{
-                fontFamily: TABLE_THEME.fontSans,
-                fontSize: 16,
-                fontWeight: 700,
-                opacity: 0.85,
-                marginTop: '0.6cm',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                transform: isMobile ? 'none' : 'translateY(-7cm)',
               }}
             >
-              Waiting for next hand
-              <span style={{ display: 'inline-flex', marginLeft: 4 }}>
-                <span style={ellipsisDotStyle(0)}>.</span>
-                <span style={ellipsisDotStyle(200)}>.</span>
-                <span style={ellipsisDotStyle(400)}>.</span>
-              </span>
+              <div
+                style={{
+                  fontFamily: TABLE_THEME.fontSans,
+                  fontSize: 16,
+                  fontWeight: 700,
+                  opacity: 0.85,
+                  marginTop: '0.6cm',
+                }}
+              >
+                Waiting for next hand
+                <span style={{ display: 'inline-flex', marginLeft: 4 }}>
+                  <span style={ellipsisDotStyle(0)}>.</span>
+                  <span style={ellipsisDotStyle(200)}>.</span>
+                  <span style={ellipsisDotStyle(400)}>.</span>
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+          {rebuyTray || nextHandTray ? (
+            <div
+              style={{
+                position: isMobile ? 'fixed' : 'static',
+                left: isMobile ? (isPhone ? 8 : 16) : undefined,
+                right: isMobile ? (isPhone ? 8 : 16) : undefined,
+                bottom: isMobile
+                  ? `calc(${isPhone ? 8 : 12}px + env(safe-area-inset-bottom))`
+                  : undefined,
+                zIndex: isMobile ? 35 : 'auto',
+                width: isMobile ? 'auto' : 'min(620px, 100%)',
+                margin: isMobile ? 0 : '0 auto',
+              }}
+            >
+              {rebuyTray ?? nextHandTray}
+            </div>
+          ) : null}
+        </>
       ) : null}
       <style>{`
         *,

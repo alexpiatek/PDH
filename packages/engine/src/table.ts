@@ -34,17 +34,6 @@ function logPush(log: HandLogEntry[] | undefined, message: string) {
   }
 }
 
-function nextOccupiedSeat(seats: (Seat | null)[], start: number): Seat | null {
-  if (seats.every((s) => s === null)) return null;
-  const max = seats.length;
-  for (let i = 1; i <= max; i += 1) {
-    const idx = (start + i) % max;
-    const seat = seats[idx];
-    if (seat) return seat;
-  }
-  return null;
-}
-
 function seatOrderFrom(seats: (Seat | null)[], start: number): Seat[] {
   const result: Seat[] = [];
   for (let i = 1; i <= seats.length; i += 1) {
@@ -55,8 +44,28 @@ function seatOrderFrom(seats: (Seat | null)[], start: number): Seat[] {
   return result;
 }
 
+function isReadySeat(seat: Seat | null | undefined): seat is Seat {
+  return Boolean(
+    seat &&
+    seat.stack > 0 &&
+    !seat.sittingOut &&
+    seat.status !== 'sitting_out' &&
+    seat.status !== 'busted'
+  );
+}
+
+function nextReadySeat(seats: Seat[], start: number): Seat | null {
+  const ordered = [...seats].sort((a, b) => a.seat - b.seat);
+  return ordered.find((seat) => seat.seat > start) ?? ordered[0] ?? null;
+}
+
+function handSeatOrder(table: TableState, hand: HandState, start: number): Seat[] {
+  const seatsInHand = new Set(hand.players.map((p) => p.seat));
+  return seatOrderFrom(table.seats, start).filter((seat) => seatsInHand.has(seat.seat));
+}
+
 function activePlayers(hand: HandState): PlayerInHand[] {
-  return hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
+  return hand.players.filter((p) => !['folded', 'out', 'busted', 'sitting_out'].includes(p.status));
 }
 
 function bettingLocked(hand: HandState): boolean {
@@ -93,7 +102,13 @@ function resetStreetState(hand: HandState, nextStreet: Street, table: TableState
   for (const p of hand.players) {
     p.betThisStreet = 0;
     p.hasActed = p.status !== 'active' ? true : false;
-    if (p.status === 'folded' || p.status === 'out' || p.status === 'allIn') {
+    if (
+      p.status === 'folded' ||
+      p.status === 'out' ||
+      p.status === 'allIn' ||
+      p.status === 'busted' ||
+      p.status === 'sitting_out'
+    ) {
       p.hasActed = true;
     }
   }
@@ -102,7 +117,7 @@ function resetStreetState(hand: HandState, nextStreet: Street, table: TableState
 }
 
 function seatAfterButton(table: TableState, hand: HandState): number {
-  const order = seatOrderFrom(table.seats, hand.buttonSeat);
+  const order = handSeatOrder(table, hand, hand.buttonSeat);
   const first = order.find((s) => s && playerBySeat(hand, s.seat).status === 'active');
   if (!first) return hand.buttonSeat;
   return first.seat;
@@ -128,14 +143,63 @@ export class PokerTable {
   seatPlayer(seat: number, player: Omit<Seat, 'seat'>) {
     if (seat < 0 || seat >= this.state.seats.length) throw new Error('Seat out of range');
     if (this.state.seats[seat]) throw new Error('Seat occupied');
-    this.state.seats[seat] = { seat, ...player };
+    const initialStack = Math.max(0, player.stack);
+    this.state.seats[seat] = {
+      seat,
+      ...player,
+      stack: initialStack,
+      status: initialStack > 0 ? (player.status ?? 'active') : 'busted',
+      sittingOut: player.sittingOut ?? initialStack <= 0,
+      buyInTotal: player.buyInTotal ?? initialStack,
+      rebuyCount: player.rebuyCount ?? 0,
+    };
     logPush(this.state.log, `${player.name} sat in seat ${seat}`);
   }
 
   setSittingOut(playerId: string, sittingOut: boolean) {
     const seat = this.state.seats.find((s) => s?.id === playerId);
     if (!seat) return;
-    seat.sittingOut = sittingOut;
+    if (sittingOut) {
+      seat.sittingOut = true;
+      seat.status = seat.stack > 0 ? 'sitting_out' : 'busted';
+      return;
+    }
+    if (seat.stack <= 0) {
+      seat.sittingOut = true;
+      seat.status = 'busted';
+      return;
+    }
+    seat.sittingOut = false;
+    seat.status = 'active';
+  }
+
+  rebuy(playerId: string, amount = 10000) {
+    const seat = this.state.seats.find((s) => s?.id === playerId);
+    if (!seat) throw new Error('Player not seated');
+    if (this.state.hand && this.state.hand.phase !== 'showdown') {
+      throw new Error('Rebuy is only available between hands');
+    }
+    if (seat.stack > 0 && seat.status !== 'busted') {
+      throw new Error('Rebuy is only available when out of chips');
+    }
+    const rebuyAmount = Math.max(1, Math.floor(amount));
+    seat.stack = rebuyAmount;
+    seat.status = 'active';
+    seat.sittingOut = false;
+    seat.buyInTotal = (seat.buyInTotal ?? 0) + rebuyAmount;
+    seat.rebuyCount = (seat.rebuyCount ?? 0) + 1;
+    logPush(this.state.log, `${seat.name} rebought for ${rebuyAmount}`);
+  }
+
+  sitOut(playerId: string) {
+    const seat = this.state.seats.find((s) => s?.id === playerId);
+    if (!seat) throw new Error('Player not seated');
+    if (this.state.hand && this.state.hand.phase !== 'showdown') {
+      throw new Error('Sit out is only available between hands');
+    }
+    seat.sittingOut = true;
+    seat.status = 'sitting_out';
+    logPush(this.state.log, `${seat.name} sits out`);
   }
 
   removePlayer(seat: number) {
@@ -148,12 +212,12 @@ export class PokerTable {
 
   startHand(rng: () => number = Math.random) {
     if (this.state.hand) throw new Error('Hand already in progress');
-    const seatsIn = this.state.seats.filter((s) => s && !s.sittingOut && s.stack > 0) as Seat[];
+    const seatsIn = this.state.seats.filter(isReadySeat);
     if (seatsIn.length < 2) throw new Error('Need at least two players to start');
     const button =
       this.state.buttonSeat === -1
         ? seatsIn[0].seat
-        : (nextOccupiedSeat(this.state.seats, this.state.buttonSeat)?.seat ?? seatsIn[0].seat);
+        : (nextReadySeat(seatsIn, this.state.buttonSeat)?.seat ?? seatsIn[0].seat);
     const deck = shuffle(buildDeck(), rng);
     const players: PlayerInHand[] = seatsIn.map((s) => ({
       seat: s.seat,
@@ -200,7 +264,9 @@ export class PokerTable {
     this.postBlinds(hand);
     hand.actionOnSeat = this.firstToActPreflop(hand);
     hand.actionDeadline =
-      this.state.config.actionTimeoutMs === null ? null : nowTs() + this.state.config.actionTimeoutMs;
+      this.state.config.actionTimeoutMs === null
+        ? null
+        : nowTs() + this.state.config.actionTimeoutMs;
     this.state.hand = hand;
     this.state.buttonSeat = button;
     logPush(hand.log, 'Hand started');
@@ -233,7 +299,7 @@ export class PokerTable {
     player.hasActed = true;
     logPush(hand.log, `${player.name} folded`);
 
-    const remaining = hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
+    const remaining = activePlayers(hand);
     if (remaining.length === 1) {
       this.finishHand();
       return;
@@ -258,7 +324,7 @@ export class PokerTable {
       return hand.buttonSeat; // heads up: button (SB) acts first
     }
     const bbSeat = this.bigBlindSeat(hand);
-    const order = seatOrderFrom(this.state.seats, bbSeat);
+    const order = handSeatOrder(this.state, hand, bbSeat);
     const next = order.find((s) => s && playerBySeat(hand, s.seat).status === 'active');
     return next ? next.seat : hand.buttonSeat;
   }
@@ -267,14 +333,14 @@ export class PokerTable {
     if (activePlayers(hand).length === 2) {
       return hand.buttonSeat;
     }
-    const sb = nextOccupiedSeat(this.state.seats, hand.buttonSeat);
+    const sb = handSeatOrder(this.state, hand, hand.buttonSeat)[0] ?? null;
     if (!sb) throw new Error('No small blind seat');
     return sb.seat;
   }
 
   bigBlindSeat(hand: HandState): number {
     const sb = this.smallBlindSeat(hand);
-    const bb = nextOccupiedSeat(this.state.seats, sb);
+    const bb = handSeatOrder(this.state, hand, sb)[0] ?? null;
     if (!bb) throw new Error('No big blind seat');
     return bb.seat;
   }
@@ -284,12 +350,14 @@ export class PokerTable {
     const bbSeat = this.bigBlindSeat(hand);
     const sbPlayer = playerBySeat(hand, sbSeat);
     const bbPlayer = playerBySeat(hand, bbSeat);
-    this.commitBet(hand, sbPlayer, Math.min(this.state.config.smallBlind, sbPlayer.stack));
-    logPush(hand.log, `${sbPlayer.name} posted small blind ${this.state.config.smallBlind}`);
-    this.commitBet(hand, bbPlayer, Math.min(this.state.config.bigBlind, bbPlayer.stack));
+    const sbPosted = Math.min(this.state.config.smallBlind, sbPlayer.stack);
+    this.commitBet(hand, sbPlayer, sbPosted);
+    logPush(hand.log, `${sbPlayer.name} posts small blind ${sbPosted}`);
+    const bbPosted = Math.min(this.state.config.bigBlind, bbPlayer.stack);
+    this.commitBet(hand, bbPlayer, bbPosted);
     hand.currentBet = Math.min(this.state.config.bigBlind, bbPlayer.betThisStreet);
     hand.minRaise = this.state.config.bigBlind;
-    logPush(hand.log, `${bbPlayer.name} posted big blind ${this.state.config.bigBlind}`);
+    logPush(hand.log, `${bbPlayer.name} posts big blind ${bbPosted}`);
     hand.lastAggressorSeat = bbSeat;
   }
 
@@ -383,7 +451,7 @@ export class PokerTable {
         throw new Error('Unknown action');
     }
 
-    const remaining = hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
+    const remaining = activePlayers(hand);
     if (remaining.length === 1) {
       this.finishHand();
       return;
@@ -464,7 +532,7 @@ export class PokerTable {
   }
 
   private nextToAct(hand: HandState): number {
-    const order = seatOrderFrom(this.state.seats, hand.actionOnSeat);
+    const order = handSeatOrder(this.state, hand, hand.actionOnSeat);
     for (const s of order) {
       if (!s) continue;
       const p = playerBySeat(hand, s.seat);
@@ -652,6 +720,9 @@ export class PokerTable {
     hand.actionDeadline = null;
     hand.showdownWinners = [];
     const totalPot = hand.players.reduce((sum, p) => sum + p.totalCommitted, 0);
+    const stackBeforeById = new Map(
+      hand.players.map((p) => [p.id, this.state.seats[p.seat]?.stack ?? p.stack])
+    );
     const cardLabel = (card: Card) => `${card.rank}${card.suit}`;
     const playerCardSnapshot = hand.players
       .map((p) => {
@@ -670,7 +741,7 @@ export class PokerTable {
     logPush(hand.auditLog, `Showdown stacks: ${stackSnapshot}`);
     logPush(hand.auditLog, `Showdown hole cards: ${playerCardSnapshot}`);
     // If only one active player, award pot
-    const contenders = hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
+    const contenders = activePlayers(hand);
     if (contenders.length === 1) {
       const winner = contenders[0];
       const seat = this.state.seats[winner.seat];
@@ -679,6 +750,8 @@ export class PokerTable {
       logPush(hand.log, `${winner.name} wins ${totalPot} (${handLabel})`);
       logPush(hand.auditLog, `Winner: ${winner.name} (${handLabel})`);
       hand.showdownWinners = [{ playerId: winner.id, amount: totalPot, handLabel }];
+      this.syncStacksAndLogMovement(hand, stackBeforeById);
+      this.markBustedSeats(hand);
       return;
     }
     this.buildSidePots(hand);
@@ -695,6 +768,39 @@ export class PokerTable {
       logPush(hand.auditLog, `Winner: ${seat?.name ?? res.playerId} (${winnerLabel}) ${bestFive}`);
     }
     hand.showdownWinners = results;
+    this.syncStacksAndLogMovement(hand, stackBeforeById);
+    this.markBustedSeats(hand);
+  }
+
+  private syncStacksAndLogMovement(hand: HandState, stackBeforeById: Map<string, number>) {
+    for (const player of hand.players) {
+      const seat = this.state.seats[player.seat];
+      if (!seat) continue;
+      const before = stackBeforeById.get(player.id) ?? player.stack;
+      player.stack = seat.stack;
+      if (before !== seat.stack) {
+        logPush(hand.log, `${player.name}: ${before} -> ${seat.stack}`);
+      }
+    }
+  }
+
+  private markBustedSeats(hand: HandState) {
+    for (const player of hand.players) {
+      const seat = this.state.seats[player.seat];
+      if (!seat || seat.stack > 0) {
+        if (seat && !seat.sittingOut && seat.status !== 'sitting_out') {
+          seat.status = 'active';
+        }
+        continue;
+      }
+      seat.stack = 0;
+      seat.status = 'busted';
+      seat.sittingOut = true;
+      player.stack = 0;
+      player.status = 'busted';
+      player.hasActed = true;
+      logPush(hand.log, `${player.name} is out of chips`);
+    }
   }
 
   private buildSidePots(hand: HandState) {
@@ -702,9 +808,7 @@ export class PokerTable {
       .filter((p) => p.totalCommitted > 0)
       .map((p) => ({ id: p.id, seat: p.seat, amount: p.totalCommitted }))
       .sort((a, b) => a.amount - b.amount);
-    const live = new Set(
-      hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out').map((p) => p.id)
-    );
+    const live = new Set(activePlayers(hand).map((p) => p.id));
     const pots: Pot[] = [];
     let prevLevel = 0;
     const levels = [...new Set(contributions.map((c) => c.amount))].sort((a, b) => a - b);
@@ -722,7 +826,7 @@ export class PokerTable {
   }
 
   private scoreShowdown(hand: HandState): ShowdownWinner[] {
-    const contenders = hand.players.filter((p) => p.status !== 'folded' && p.status !== 'out');
+    const contenders = activePlayers(hand);
     const evaluations = contenders.map((p) => ({
       player: p,
       eval: evaluateSeven([...hand.board, ...p.holeCards]),
@@ -778,13 +882,13 @@ export class PokerTable {
   }
 
   private orderWinnersByButton(players: PlayerInHand[], buttonSeat: number): PlayerInHand[] {
-    const seatOrder = seatOrderFrom(this.state.seats, buttonSeat).map((s) => s?.seat);
+    const seatOrder = handSeatOrder(this.state, this.state.hand!, buttonSeat).map((s) => s.seat);
     return players.sort((a, b) => seatOrder.indexOf(a.seat) - seatOrder.indexOf(b.seat));
   }
 
   beginNextHandIfReady() {
     if (this.state.hand) return;
-    const ready = this.state.seats.filter((s) => s && s.stack > 0 && !s.sittingOut) as Seat[];
+    const ready = this.state.seats.filter(isReadySeat);
     if (ready.length >= 2) {
       this.startHand();
     }
@@ -811,19 +915,13 @@ export class PokerTable {
     }
     this.state.auditHands = auditHands;
     this.state.hand = null;
-    for (const seat of this.state.seats) {
-      if (seat && seat.stack === 0) {
-        seat.stack = 10000;
-      }
-    }
     this.beginNextHandIfReady();
   }
 
   getPublicState(forPlayerId?: string) {
     const hand = this.state.hand;
     const contestedShowdown =
-      Boolean(hand && hand.phase === 'showdown') &&
-      (hand?.players.filter((p) => p.status !== 'folded' && p.status !== 'out').length ?? 0) > 1;
+      Boolean(hand && hand.phase === 'showdown') && (hand ? activePlayers(hand).length : 0) > 1;
     return {
       id: this.state.id,
       seats: this.state.seats,

@@ -99,7 +99,9 @@ function broadcast() {
 }
 
 function seatedReadyCount() {
-  return table.state.seats.filter((s) => s && s.stack > 0 && !s.sittingOut).length;
+  return table.state.seats.filter(
+    (s) => s && s.stack > 0 && !s.sittingOut && s.status !== 'busted' && s.status !== 'sitting_out'
+  ).length;
 }
 
 function clearStartCountdown() {
@@ -169,6 +171,7 @@ function handleMessage(ws: WebSocket, raw: ClientMessage) {
       }
       case 'reconnect': {
         table.setSittingOut(raw.playerId, false);
+        table.beginNextHandIfReady();
         clients.set(ws, { playerId: raw.playerId });
         send(ws, { type: 'welcome', playerId: raw.playerId, tableId: table.state.id });
         broadcast();
@@ -192,6 +195,18 @@ function handleMessage(ws: WebSocket, raw: ClientMessage) {
       case 'nextHand': {
         if (!ctx) throw new Error('Join first');
         table.advanceToNextHand();
+        broadcast();
+        break;
+      }
+      case 'rebuy': {
+        if (!ctx) throw new Error('Join first');
+        table.rebuy(ctx.playerId, raw.amount ?? 10000);
+        broadcast();
+        break;
+      }
+      case 'sitOut': {
+        if (!ctx) throw new Error('Join first');
+        table.sitOut(ctx.playerId);
         broadcast();
         break;
       }

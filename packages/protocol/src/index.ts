@@ -74,6 +74,17 @@ const nextHandClientMessageSchema = versionedMessage({
   seq: seqSchema.optional(),
 });
 
+const rebuyClientMessageSchema = versionedMessage({
+  type: z.literal('rebuy'),
+  amount: z.number().finite().positive().optional(),
+  seq: seqSchema.optional(),
+});
+
+const sitOutClientMessageSchema = versionedMessage({
+  type: z.literal('sitOut'),
+  seq: seqSchema.optional(),
+});
+
 const reactionClientMessageSchema = versionedMessage({
   type: z.literal('reaction'),
   emoji: tableReactionSchema,
@@ -94,6 +105,8 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   actionClientMessageSchema,
   discardClientMessageSchema,
   nextHandClientMessageSchema,
+  rebuyClientMessageSchema,
+  sitOutClientMessageSchema,
   reactionClientMessageSchema,
   chatClientMessageSchema,
   requestStateClientMessageSchema,
@@ -103,7 +116,7 @@ export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
 export type MutatingClientMessage = Extract<
   ClientMessage,
-  { type: 'action' | 'discard' | 'nextHand' }
+  { type: 'action' | 'discard' | 'nextHand' | 'rebuy' | 'sitOut' }
 >;
 
 const publicStateSchema = z
@@ -205,5 +218,11 @@ export function isServerMessage(value: unknown): value is ServerMessage {
 }
 
 export function isMutatingClientMessage(message: ClientMessage): message is MutatingClientMessage {
-  return message.type === 'action' || message.type === 'discard' || message.type === 'nextHand';
+  return (
+    message.type === 'action' ||
+    message.type === 'discard' ||
+    message.type === 'nextHand' ||
+    message.type === 'rebuy' ||
+    message.type === 'sitOut'
+  );
 }
