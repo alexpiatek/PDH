@@ -1010,7 +1010,10 @@ export const PokerGamePage = ({
   const isMyTurn = Boolean(
     hand && you && hand.phase === 'betting' && hand.actionOnSeat === you.seat
   );
-  const youInfoDimmed = Boolean(hand && hand.phase === 'betting' && !isMyTurn);
+  const youInfoDimmed = Boolean(
+    you &&
+    (you.status === 'folded' || you.status === 'out' || (hand?.phase === 'betting' && !isMyTurn))
+  );
   const discardPending = Boolean(
     hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id)
   );
@@ -1063,50 +1066,12 @@ export const PokerGamePage = ({
   const isBettingPhase = hand?.phase === 'betting';
   const isDiscardPhase = hand?.phase === 'discard';
   const isRevealPhase = hand?.phase === 'showdown';
-  const tablePhaseLabel = useMemo(() => {
-    if (!hand) return 'Waiting';
-    if (isBettingPhase) return `Betting · ${currentStreetLabel}`;
-    if (isDiscardPhase) return `Discard · ${currentStreetLabel}`;
-    if (isRevealPhase) return 'Reveal';
-    return currentStreetLabel;
-  }, [hand, isBettingPhase, isDiscardPhase, isRevealPhase, currentStreetLabel]);
-  const topBarStatus = useMemo(() => {
-    if (!hand) return status;
-    if (isBettingPhase) {
-      if (isMyTurn) {
-        return `Your turn${tableTimerSeconds !== null ? ` • ${tableTimerSeconds}s` : ''}`;
-      }
-      return `${actionOnPlayer?.name ?? 'Player'} to act${tableTimerSeconds !== null ? ` • ${tableTimerSeconds}s` : ''}`;
-    }
-    if (isDiscardPhase) {
-      if (discardPending && !discardSubmitted) {
-        return `Select discard${tableTimerSeconds !== null ? ` • ${tableTimerSeconds}s` : ''}`;
-      }
-      return `Waiting on discards${tableTimerSeconds !== null ? ` • ${tableTimerSeconds}s` : ''}`;
-    }
-    if (isRevealPhase) {
-      return 'Showdown';
-    }
-    return status;
-  }, [
-    hand,
-    status,
-    isBettingPhase,
-    isDiscardPhase,
-    isRevealPhase,
-    isMyTurn,
-    tableTimerSeconds,
-    actionOnPlayer,
-    discardPending,
-    discardSubmitted,
-  ]);
   const tableLabel = useMemo(() => {
-    const fallback = 'Bondi Poker';
     const sourceId =
       (resolvedForcedMatchId && resolvedForcedMatchId.trim()) ||
       (typeof state?.matchId === 'string' ? state.matchId : '');
-    if (!sourceId) return fallback;
-    return `Bondi ${sourceId.slice(0, 6)}`;
+    if (!sourceId) return `Table ${NAKAMA_TABLE_ID}`;
+    return `Table ${sourceId.slice(0, 6)}`;
   }, [resolvedForcedMatchId, state?.matchId]);
   const latestActionLine = useMemo(() => {
     const lines: Array<{ message?: string }> = state?.log ?? [];
@@ -1472,15 +1437,15 @@ export const PokerGamePage = ({
   };
 
   const renderActionBadge = (action?: ActionBadge) => {
-    if (!action) return null;
+    if (!action || isPhone) return null;
     const tone = ACTION_TONE_STYLES[action.tone];
     return (
       <div
         style={{
           position: 'absolute',
-          top: '50%',
-          left: '100%',
-          transform: 'translate(calc(8px - 0.3cm), calc(-50% - 1cm))',
+          top: '100%',
+          left: '50%',
+          transform: 'translate(-50%, 6px)',
           padding: '4px 8px',
           borderRadius: 8,
           background: tone.background,
@@ -1530,6 +1495,79 @@ export const PokerGamePage = ({
     );
   };
 
+  const renderTurnTimer = (isActive: boolean) => {
+    if (!isActive || tableTimerSeconds === null) {
+      return null;
+    }
+    const progress = Math.max(0, Math.min(1, tableTimerSeconds / 30));
+    return (
+      <div
+        aria-label={`${tableTimerSeconds} seconds to act`}
+        style={{
+          position: 'absolute',
+          top: -12,
+          left: -12,
+          width: 30,
+          height: 30,
+          borderRadius: '50%',
+          background: `conic-gradient(${timerTone} ${Math.round(progress * 360)}deg, rgba(148,163,184,0.22) 0deg)`,
+          boxShadow: '0 0 18px rgba(20,184,166,0.32)',
+          display: 'grid',
+          placeItems: 'center',
+          pointerEvents: 'none',
+        }}
+      >
+        <span
+          style={{
+            width: 23,
+            height: 23,
+            borderRadius: '50%',
+            background: 'rgba(2,7,9,0.92)',
+            color: timerTone,
+            display: 'grid',
+            placeItems: 'center',
+            fontSize: 10,
+            fontWeight: 800,
+            lineHeight: 1,
+          }}
+        >
+          {tableTimerSeconds}
+        </span>
+      </div>
+    );
+  };
+
+  const renderBetPill = (amount: number | undefined, style?: React.CSSProperties) => {
+    if (!amount || amount <= 0) {
+      return null;
+    }
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          zIndex: 4,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 5,
+          padding: '4px 8px',
+          borderRadius: 999,
+          border: '1px solid rgba(251,191,36,0.62)',
+          background: 'rgba(31,41,55,0.86)',
+          color: '#fef3c7',
+          fontSize: 11,
+          fontWeight: 800,
+          boxShadow: '0 9px 20px rgba(0,0,0,0.36)',
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+          ...style,
+        }}
+      >
+        <StackChipsIcon size={13} />
+        {amount}
+      </div>
+    );
+  };
+
   const communityCards = hand?.board ?? [];
   const cardKey = (card: Card) => `${card.rank}${card.suit}`;
   const potAmount = useMemo(() => {
@@ -1550,7 +1588,7 @@ export const PokerGamePage = ({
     const topWinner = hand.showdownWinners[0];
     const winnerSeat = hand.players.find((p) => p.id === topWinner.playerId);
     const label = topWinner.handLabel ? ` with ${formatHandLabel(topWinner.handLabel)}` : '';
-    return `${winnerSeat?.name ?? topWinner.playerId} won ${topWinner.amount}${label}`;
+    return `${winnerSeat?.name ?? topWinner.playerId} wins ${topWinner.amount}${label}`;
   }, [hand?.showdownWinners, hand?.players]);
 
   const seatingPositions = [
@@ -1561,6 +1599,15 @@ export const PokerGamePage = ({
     { left: '8%', top: '52%' },
     { left: '80%', top: '78%' },
     { left: '20%', top: '78%' },
+  ];
+  const seatBetOffsets: React.CSSProperties[] = [
+    { left: '50%', top: -30, transform: 'translate(-50%, -100%)' },
+    { left: '58%', top: 'calc(100% + 6px)', transform: 'translate(-50%, 0)' },
+    { left: '42%', top: 'calc(100% + 6px)', transform: 'translate(-50%, 0)' },
+    { left: -8, top: '50%', transform: 'translate(-100%, -50%)' },
+    { left: 'calc(100% + 8px)', top: '50%', transform: 'translate(0, -50%)' },
+    { left: '44%', top: -30, transform: 'translate(-50%, -100%)' },
+    { left: '56%', top: -30, transform: 'translate(-50%, -100%)' },
   ];
   const orderedPlayers = hand
     ? [...(you ? [you] : []), ...hand.players.filter((p) => p.id !== playerId)]
@@ -1639,27 +1686,27 @@ export const PokerGamePage = ({
   });
   const isMobile = viewportWidth <= 900;
   const isPhone = viewportWidth <= 640;
-  const centeredSectionMinHeight = isMobile ? 'calc(100vh - 220px)' : 'calc(100vh - 260px)';
+  const hasBottomActionTray = Boolean(you && (isBettingPhase || isDiscardPhase || isRevealPhase));
+  const centeredSectionMinHeight = isMobile ? 'calc(100dvh - 160px)' : 'calc(100vh - 220px)';
   const heroInfoBottomOffset = isPhone
-    ? isBettingPhase
-      ? 214
-      : 150
+    ? hasBottomActionTray
+      ? 132
+      : 112
     : isMobile
-      ? isBettingPhase
-        ? 178
-        : 148
-      : 142;
+      ? hasBottomActionTray
+        ? 126
+        : 100
+      : 128;
   const heroCardsBottomOffset = isPhone
-    ? isBettingPhase
-      ? 96
-      : 36
+    ? hasBottomActionTray
+      ? 30
+      : 24
     : isMobile
-      ? isBettingPhase
-        ? 64
-        : 28
-      : 21;
-  const actionBarReserve =
-    you && isBettingPhase ? (showRaiseDrawer ? (isPhone ? 280 : 220) : isPhone ? 210 : 150) : 0;
+      ? hasBottomActionTray
+        ? 28
+        : 22
+      : 20;
+  const actionBarReserve = !isMobile && you && isBettingPhase ? (showRaiseDrawer ? 220 : 150) : 0;
   const tableOuterWidth = `min(${BASE_TABLE_WIDTH}px, calc(100vw - ${isPhone ? 16 : 36}px))`;
   const tableOuterBorder = isPhone ? 6 : isMobile ? 8 : 10;
   const actionButtonBaseStyle: React.CSSProperties = {
@@ -1707,12 +1754,6 @@ export const PokerGamePage = ({
   );
   const raiseActionLabel = hand && hand.currentBet === 0 ? 'Bet' : 'Raise';
   const checkOrCallLabel = toCall === 0 ? 'Check' : `Call ${toCall}`;
-  const bettingHintLine =
-    hand && hand.phase === 'betting'
-      ? isPhone
-        ? `Call ${toCall} • Min ${minRaiseTo ?? '--'} • Pot ${potAmount}`
-        : `To call: ${toCall} • Min raise: ${minRaiseTo ?? '--'} • Pot: ${potAmount}`
-      : '';
   const raiseDisabledHint = (() => {
     if (!hand || hand.phase !== 'betting') return 'Betting controls unlock during betting rounds.';
     if (!isMyTurn) return 'Wait for your turn.';
@@ -1722,9 +1763,16 @@ export const PokerGamePage = ({
     if (clampedRaiseTo > maxRaiseTo) return `Max raise is ${maxRaiseTo} (all-in).`;
     return 'Raise available.';
   })();
-  const turnStatusLabel = isMyTurn
-    ? `Your turn${tableTimerSeconds !== null ? ` • ${tableTimerSeconds}s` : ''}`
-    : `${actionOnPlayer?.name ?? 'Player'} acting${tableTimerSeconds !== null ? ` • ${tableTimerSeconds}s` : ''}`;
+  const actionTrayTimerSuffix = tableTimerSeconds !== null ? ` \u00b7 ${tableTimerSeconds}s` : '';
+  const trayTurnStatusLabel = isMyTurn
+    ? `Your turn${actionTrayTimerSuffix}`
+    : `Waiting for ${actionOnPlayer?.name ?? 'player'}${actionTrayTimerSuffix}`;
+  const actionTrayStakeLine =
+    hand && hand.phase === 'betting'
+      ? toCall > 0
+        ? `To call ${toCall} \u00b7 Pot ${potAmount}`
+        : `Check available \u00b7 Pot ${potAmount}`
+      : '';
   const discardLimit = 1;
   const selectedDiscardCount = selectedDiscardIndex === null ? 0 : 1;
   const canConfirmDiscard = discardPending && selectedDiscardIndex !== null && !discardSubmitted;
@@ -1856,33 +1904,77 @@ export const PokerGamePage = ({
     setShowRaiseDrawer(false);
   };
 
+  const hiddenBettingActionButtons = (
+    <>
+      <button
+        data-testid="action-fold"
+        type="button"
+        disabled
+        aria-hidden="true"
+        style={{ display: 'none' }}
+      />
+      <button
+        data-testid="action-check"
+        type="button"
+        disabled
+        aria-hidden="true"
+        style={{ display: 'none' }}
+      />
+      <button
+        data-testid="action-call"
+        type="button"
+        disabled
+        aria-hidden="true"
+        style={{ display: 'none' }}
+      />
+      <button
+        data-testid="action-raise"
+        type="button"
+        disabled
+        aria-hidden="true"
+        style={{ display: 'none' }}
+      />
+      <button
+        data-testid="action-allin"
+        type="button"
+        disabled
+        aria-hidden="true"
+        style={{ display: 'none' }}
+      />
+    </>
+  );
+
   return (
     <div
       style={{
         fontFamily: TABLE_THEME.fontSans,
         color: TABLE_THEME.text,
-        minHeight: '100vh',
+        minHeight: '100dvh',
+        height: seated ? '100dvh' : undefined,
+        display: 'flex',
+        flexDirection: 'column',
         overflowX: 'hidden',
+        overflowY: seated && !showUtilitiesPanel ? 'hidden' : 'auto',
         background: TABLE_THEME.pageBackground,
         backgroundPosition: 'center, center, center, center',
         backgroundRepeat: 'no-repeat, no-repeat, no-repeat, no-repeat',
         backgroundSize: 'auto, auto, auto, cover',
         padding: isPhone
-          ? `12px 10px calc(${20 + actionBarReserve}px + env(safe-area-inset-bottom))`
-          : `18px 18px calc(${30 + actionBarReserve}px + env(safe-area-inset-bottom))`,
+          ? '8px 8px calc(8px + env(safe-area-inset-bottom))'
+          : `14px 16px calc(${18 + actionBarReserve}px + env(safe-area-inset-bottom))`,
       }}
     >
       <div
         style={{
           width: 'min(100%, 980px)',
           margin: '0 auto',
-          marginBottom: isMobile ? 10 : 12,
-          padding: isPhone ? '9px 10px' : '11px 14px',
-          borderRadius: 8,
-          border: `1px solid ${TABLE_THEME.borderStrong}`,
-          background: TABLE_THEME.panel,
-          boxShadow: '0 18px 48px rgba(0,0,0,0.28)',
-          backdropFilter: 'blur(14px)',
+          marginBottom: isMobile ? 6 : 8,
+          padding: isPhone ? '4px 2px 6px' : '4px 2px 8px',
+          borderRadius: 0,
+          border: 'none',
+          background: 'transparent',
+          boxShadow: 'none',
+          backdropFilter: 'none',
         }}
       >
         <div
@@ -1897,11 +1989,11 @@ export const PokerGamePage = ({
             <div
               style={{
                 fontFamily: TABLE_THEME.fontDisplay,
-                fontSize: isPhone ? 10 : 11,
+                fontSize: isPhone ? 11 : 12,
                 fontWeight: 700,
                 color: TABLE_THEME.amber,
                 textTransform: 'uppercase',
-                letterSpacing: '0.28em',
+                letterSpacing: '0.18em',
                 whiteSpace: 'nowrap',
               }}
             >
@@ -1909,19 +2001,18 @@ export const PokerGamePage = ({
             </div>
             <div
               style={{
-                marginTop: 3,
-                fontSize: isPhone ? 14 : 15,
-                fontWeight: 700,
-                color: TABLE_THEME.text,
+                marginTop: isPhone ? 4 : 0,
+                fontSize: isPhone ? 12 : 13,
+                fontWeight: 600,
+                color: TABLE_THEME.muted,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
               }}
             >
               {tableLabel}
-            </div>
-            <div style={{ marginTop: 1, fontSize: 11, color: TABLE_THEME.muted }}>
-              {tablePhaseLabel}
+              {hand ? ` \u00b7 ${currentStreetLabel}` : ''}
+              {!isPhone && hand ? ` \u00b7 Pot ${potAmount}` : ''}
             </div>
             <span data-testid="street-indicator" style={{ display: 'none' }}>
               {hand ? `${hand.street} / ${hand.phase}` : 'waiting / idle'}
@@ -1930,33 +2021,14 @@ export const PokerGamePage = ({
           <div
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, position: 'relative' }}
           >
-            {seated ? (
-              <span
-                style={{
-                  maxWidth: isPhone ? 150 : 260,
-                  borderRadius: 999,
-                  border: `1px solid ${TABLE_THEME.tealBorder}`,
-                  background: TABLE_THEME.tealSoft,
-                  color: '#ccfbf1',
-                  padding: '3px 10px',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {topBarStatus}
-              </span>
-            ) : null}
             {seated || showExitButton ? (
               <button
                 type="button"
                 onClick={() => setShowTopMenu((previous) => !previous)}
                 aria-label="Table menu"
                 style={{
-                  minHeight: 36,
-                  minWidth: 36,
+                  minHeight: isPhone ? 32 : 34,
+                  minWidth: isPhone ? 32 : 34,
                   borderRadius: 8,
                   border: `1px solid ${TABLE_THEME.border}`,
                   background: TABLE_THEME.panelSoft,
@@ -2538,7 +2610,16 @@ export const PokerGamePage = ({
         </div>
       )}
       {hand ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div
+          style={{
+            display: 'flex',
+            flex: seated ? '1 1 auto' : undefined,
+            minHeight: 0,
+            flexDirection: 'column',
+            justifyContent: isMobile ? 'flex-start' : 'center',
+            gap: isMobile ? 8 : 12,
+          }}
+        >
           <div
             ref={tableRef}
             style={{
@@ -2547,9 +2628,9 @@ export const PokerGamePage = ({
               maxWidth: BASE_TABLE_WIDTH,
               aspectRatio: `${BASE_TABLE_WIDTH} / ${BASE_TABLE_HEIGHT}`,
               height: 'auto',
-              minHeight: isPhone ? (isBettingPhase ? 305 : 270) : 300,
+              minHeight: isPhone ? (hasBottomActionTray ? 326 : 292) : isMobile ? 336 : 330,
               margin: '0 auto',
-              marginTop: isMobile ? 8 : '1cm',
+              marginTop: isMobile ? 2 : 14,
               borderRadius: isPhone ? 120 : 999,
               background:
                 'radial-gradient(circle at 50% 44%, rgba(20,184,166,0.24) 0%, rgba(13,74,57,0.95) 48%, rgba(6,43,32,0.98) 100%)',
@@ -2575,6 +2656,10 @@ export const PokerGamePage = ({
                   top: '40%',
                   left: '50%',
                   transform: 'translate(-50%, -50%) translateY(calc(-19px - 2.1cm))',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 5,
                 }}
               >
                 <div
@@ -2593,6 +2678,21 @@ export const PokerGamePage = ({
                   }}
                 >
                   Pot {potAmount}
+                </div>
+                <div
+                  style={{
+                    borderRadius: 999,
+                    border: `1px solid ${TABLE_THEME.border}`,
+                    background: 'rgba(2,7,9,0.56)',
+                    color: TABLE_THEME.muted,
+                    padding: '3px 9px',
+                    textAlign: 'center',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {currentStreetLabel}
                 </div>
               </div>
               <div
@@ -2625,6 +2725,31 @@ export const PokerGamePage = ({
                   </div>
                 ))}
               </div>
+              {latestActionLine && !isRevealPhase ? (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '40%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%) translateY(calc(-19px - 0.85cm))',
+                    maxWidth: 300,
+                    borderRadius: 999,
+                    border: `1px solid ${TABLE_THEME.border}`,
+                    background: 'rgba(2,7,9,0.78)',
+                    color: '#e2e8f0',
+                    padding: '5px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    textAlign: 'center',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    boxShadow: '0 10px 24px rgba(0,0,0,0.28)',
+                  }}
+                >
+                  {latestActionLine}
+                </div>
+              ) : null}
               {isShowdown && showdownSummary && (
                 <div
                   style={{
@@ -2673,7 +2798,9 @@ export const PokerGamePage = ({
                 const isTurn = Boolean(
                   hand && hand.phase === 'betting' && hand.actionOnSeat === p.seat
                 );
-                const infoDimmed = Boolean(hand && hand.phase === 'betting' && !isTurn);
+                const playerInactive = p.status === 'folded' || p.status === 'out';
+                const infoDimmed =
+                  playerInactive || Boolean(hand && hand.phase === 'betting' && !isTurn);
                 const showDiscardState =
                   hand?.phase === 'discard' && p.status !== 'folded' && p.status !== 'out';
                 const hasDiscardedThisStreet =
@@ -2716,7 +2843,7 @@ export const PokerGamePage = ({
                                 right: -8,
                                 display: 'flex',
                                 gap: 4,
-                                transform: 'translate(-0.4cm, -0.5cm)',
+                                transform: 'none',
                               }}
                             >
                               {roleChips.map((chip, chipIdx) => (
@@ -2735,22 +2862,23 @@ export const PokerGamePage = ({
                               borderRadius: 10,
                               background: infoDimmed ? 'rgba(3,8,11,0.58)' : 'rgba(3,8,11,0.82)',
                               border: isTurn
-                                ? `1px solid ${TABLE_THEME.tealBorder}`
+                                ? `2px solid ${TABLE_THEME.teal}`
                                 : winner
                                   ? '2px solid #22c55e'
                                   : `1px solid ${TABLE_THEME.border}`,
                               boxShadow: isTurn
-                                ? '0 0 0 2px rgba(20,184,166,0.24), 0 0 24px rgba(20,184,166,0.28)'
+                                ? '0 0 0 3px rgba(20,184,166,0.22), 0 0 30px rgba(20,184,166,0.42)'
                                 : winner
                                   ? '0 0 0 2px rgba(34, 197, 94, 0.2)'
                                   : undefined,
-                              opacity: infoDimmed ? 0.7 : 1,
+                              opacity: playerInactive ? 0.5 : infoDimmed ? 0.78 : 1,
                               textAlign: 'center',
                               display: 'flex',
                               flexDirection: 'column',
                               alignItems: 'center',
                             }}
                           >
+                            {renderTurnTimer(isTurn)}
                             <div
                               style={{
                                 position: 'absolute',
@@ -2804,12 +2932,12 @@ export const PokerGamePage = ({
                                   animation: 'turn-pulse 1.2s ease-in-out infinite',
                                 }}
                               >
-                                acting now
+                                to act
                               </div>
                             ) : null}
                           </div>
                           {renderReactionBadge(p.id)}
-                          {renderActionBadge(actionByPlayerId.get(p.id))}
+                          {renderBetPill(p.betThisStreet, seatBetOffsets[idx])}
                         </div>
                         <div
                           style={{
@@ -2934,7 +3062,7 @@ export const PokerGamePage = ({
                             right: -8,
                             display: 'flex',
                             gap: 4,
-                            transform: 'translate(-0.4cm, -0.5cm)',
+                            transform: 'none',
                           }}
                         >
                           {(roleChipsBySeat.get(you.seat) ?? []).map((chip, chipIdx) => (
@@ -2952,12 +3080,12 @@ export const PokerGamePage = ({
                           borderRadius: 10,
                           background: youInfoDimmed ? 'rgba(3,8,11,0.58)' : 'rgba(3,8,11,0.82)',
                           border: isMyTurn
-                            ? `1px solid ${TABLE_THEME.tealBorder}`
+                            ? `2px solid ${TABLE_THEME.teal}`
                             : winnersById.has(you.id)
                               ? '2px solid #22c55e'
                               : `1px solid ${TABLE_THEME.border}`,
                           boxShadow: isMyTurn
-                            ? '0 0 0 2px rgba(20,184,166,0.24), 0 0 26px rgba(20,184,166,0.28)'
+                            ? '0 0 0 3px rgba(20,184,166,0.22), 0 0 32px rgba(20,184,166,0.44)'
                             : winnersById.has(you.id)
                               ? '0 0 0 2px rgba(34, 197, 94, 0.2)'
                               : undefined,
@@ -2969,6 +3097,7 @@ export const PokerGamePage = ({
                           alignItems: 'center',
                         }}
                       >
+                        {renderTurnTimer(isMyTurn)}
                         {youAvatarStyle && (
                           <div
                             style={{
@@ -3012,12 +3141,16 @@ export const PokerGamePage = ({
                               animation: 'turn-pulse 1.2s ease-in-out infinite',
                             }}
                           >
-                            act now
+                            your turn
                           </div>
                         ) : null}
                       </div>
                       {renderReactionBadge(you.id)}
-                      {renderActionBadge(actionByPlayerId.get(you.id))}
+                      {renderBetPill(you.betThisStreet, {
+                        left: '50%',
+                        top: -30,
+                        transform: 'translate(-50%, -100%)',
+                      })}
                     </div>
                   </div>
                   <div
@@ -3073,7 +3206,7 @@ export const PokerGamePage = ({
                             >
                               <CardView
                                 card={c}
-                                size={isPhone ? 'medium' : 'large'}
+                                size="large"
                                 outline={
                                   discardFlashIndex === idx
                                     ? 'red'
@@ -3098,8 +3231,15 @@ export const PokerGamePage = ({
           {you && (
             <div
               style={{
-                width: 'min(980px, 100%)',
-                margin: '0 auto',
+                position: isMobile ? 'fixed' : 'static',
+                left: isMobile ? (isPhone ? 8 : 16) : undefined,
+                right: isMobile ? (isPhone ? 8 : 16) : undefined,
+                bottom: isMobile
+                  ? `calc(${isPhone ? 8 : 12}px + env(safe-area-inset-bottom))`
+                  : undefined,
+                zIndex: isMobile ? 35 : 'auto',
+                width: isMobile ? 'auto' : 'min(620px, 100%)',
+                margin: isMobile ? 0 : '0 auto',
                 background: 'transparent',
                 border: 'none',
                 borderRadius: 0,
@@ -3175,23 +3315,18 @@ export const PokerGamePage = ({
                 <div
                   style={{
                     width: '100%',
-                    position: isMobile ? 'sticky' : 'static',
-                    bottom: isPhone
-                      ? 'calc(8px + env(safe-area-inset-bottom))'
-                      : 'calc(12px + env(safe-area-inset-bottom))',
-                    zIndex: isMobile ? 30 : 'auto',
                     borderRadius: 8,
                     border: isMyTurn
                       ? `1px solid ${TABLE_THEME.tealBorder}`
                       : `1px solid ${TABLE_THEME.border}`,
                     background: TABLE_THEME.panelStrong,
-                    padding: isPhone ? '10px 12px' : '12px 14px',
+                    padding: isMyTurn ? (isPhone ? '10px 12px' : '12px 14px') : '9px 12px',
                     boxShadow: isMyTurn
                       ? '0 0 0 1px rgba(20,184,166,0.2), 0 14px 28px rgba(20,184,166,0.16)'
                       : '0 10px 20px rgba(0,0,0,0.22)',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 8,
+                    gap: isMyTurn ? 8 : 4,
                   }}
                 >
                   <div
@@ -3217,250 +3352,254 @@ export const PokerGamePage = ({
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {turnStatusLabel}
+                      {trayTurnStatusLabel}
                     </span>
                   </div>
-                  <div style={{ fontSize: 12, color: 'rgba(244,244,245,0.9)' }}>
-                    {bettingHintLine}
-                  </div>
-                  {latestActionLine && !isPhone ? (
-                    <div style={{ fontSize: 11, color: 'rgba(148,163,184,0.9)' }}>
-                      Last action: {latestActionLine}
+                  {isMyTurn ? (
+                    <div style={{ fontSize: 12, color: 'rgba(244,244,245,0.9)' }}>
+                      {actionTrayStakeLine}
                     </div>
                   ) : null}
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                      gap: 8,
-                      alignItems: 'stretch',
-                      width: '100%',
-                    }}
-                  >
-                    <button
-                      data-testid="action-fold"
-                      type="button"
-                      disabled={!canFold}
-                      onClick={() => act('fold')}
-                      style={turnActionStyle(canFold, {
-                        border: 'rgba(248,113,113,0.86)',
-                        background: 'rgba(127,29,29,0.58)',
-                        color: '#fee2e2',
-                        glow: 'rgba(248,113,113,0.35)',
-                      })}
-                    >
-                      Fold
-                    </button>
-                    <button
-                      data-testid={toCall === 0 ? 'action-check' : 'action-call'}
-                      type="button"
-                      disabled={!canCheckOrCall}
-                      onClick={() => {
-                        if (toCall === 0) {
-                          act('check');
-                          return;
-                        }
-                        act('call');
-                      }}
-                      style={turnActionStyle(canCheckOrCall, {
-                        border: 'rgba(94,234,212,0.78)',
-                        background: 'rgba(20,184,166,0.28)',
-                        color: '#e0f2fe',
-                        glow: 'rgba(20,184,166,0.3)',
-                      })}
-                    >
-                      {checkOrCallLabel}
-                    </button>
-                    <button
-                      data-testid={toCall === 0 ? 'action-call' : 'action-check'}
-                      type="button"
-                      disabled
-                      aria-hidden="true"
-                      style={{ display: 'none' }}
-                    />
-                    <button
-                      type="button"
-                      disabled={!canOpenRaiseDrawer}
-                      onClick={toggleRaiseDrawer}
-                      style={turnActionStyle(canOpenRaiseDrawer, {
-                        border: 'rgba(148,163,184,0.82)',
-                        background: 'rgba(255,255,255,0.06)',
-                        color: '#e2e8f0',
-                        glow: 'rgba(148,163,184,0.26)',
-                      })}
-                    >
-                      {showRaiseDrawer ? 'Close Raise' : 'Raise'}
-                    </button>
-                  </div>
-                  {showRaiseDrawer ? (
-                    <div
-                      style={{
-                        marginTop: 2,
-                        borderRadius: 8,
-                        border: `1px solid ${TABLE_THEME.border}`,
-                        background: 'rgba(0,0,0,0.3)',
-                        padding: isPhone ? '10px' : '12px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 10,
-                      }}
-                    >
-                      <div style={{ fontSize: 12, color: '#e2e8f0' }}>
-                        Raise to <strong>{clampedRaiseTo}</strong>
-                      </div>
-                      <input
-                        type="range"
-                        min={minRaiseTo ?? undefined}
-                        max={maxRaiseTo ?? undefined}
-                        value={clampedRaiseTo}
-                        step={1}
-                        disabled={!canOpenRaiseDrawer || minRaiseTo === null || maxRaiseTo === null}
-                        onChange={(event) => {
-                          const next = Number.parseInt(event.target.value, 10);
-                          setBetAmount(Number.isFinite(next) ? next : 0);
-                        }}
-                        style={{ width: '100%' }}
-                      />
+                  {isMyTurn ? (
+                    <>
                       <div
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-                          gap: 6,
+                          gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                          gap: 8,
+                          alignItems: 'stretch',
+                          width: '100%',
                         }}
                       >
-                        {quickRaiseOptions.map((option) => (
-                          <button
-                            key={`${option.label}-${option.value}`}
-                            type="button"
-                            onClick={() => {
-                              setBetAmount(option.value);
-                              setConfirmAllIn(false);
+                        <button
+                          data-testid="action-fold"
+                          type="button"
+                          disabled={!canFold}
+                          onClick={() => act('fold')}
+                          style={turnActionStyle(canFold, {
+                            border: 'rgba(248,113,113,0.86)',
+                            background: 'rgba(127,29,29,0.58)',
+                            color: '#fee2e2',
+                            glow: 'rgba(248,113,113,0.35)',
+                          })}
+                        >
+                          Fold
+                        </button>
+                        <button
+                          data-testid={toCall === 0 ? 'action-check' : 'action-call'}
+                          type="button"
+                          disabled={!canCheckOrCall}
+                          onClick={() => {
+                            if (toCall === 0) {
+                              act('check');
+                              return;
+                            }
+                            act('call');
+                          }}
+                          style={turnActionStyle(canCheckOrCall, {
+                            border: 'rgba(94,234,212,0.78)',
+                            background: 'rgba(20,184,166,0.28)',
+                            color: '#e0f2fe',
+                            glow: 'rgba(20,184,166,0.3)',
+                          })}
+                        >
+                          {checkOrCallLabel}
+                        </button>
+                        <button
+                          data-testid={toCall === 0 ? 'action-call' : 'action-check'}
+                          type="button"
+                          disabled
+                          aria-hidden="true"
+                          style={{ display: 'none' }}
+                        />
+                        <button
+                          type="button"
+                          disabled={!canOpenRaiseDrawer}
+                          onClick={toggleRaiseDrawer}
+                          style={turnActionStyle(canOpenRaiseDrawer, {
+                            border: 'rgba(148,163,184,0.82)',
+                            background: 'rgba(255,255,255,0.06)',
+                            color: '#e2e8f0',
+                            glow: 'rgba(148,163,184,0.26)',
+                          })}
+                        >
+                          {showRaiseDrawer ? `Close ${raiseActionLabel}` : raiseActionLabel}
+                        </button>
+                      </div>
+                      {showRaiseDrawer ? (
+                        <div
+                          style={{
+                            marginTop: 2,
+                            borderRadius: 8,
+                            border: `1px solid ${TABLE_THEME.border}`,
+                            background: 'rgba(0,0,0,0.3)',
+                            padding: isPhone ? '10px' : '12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 10,
+                          }}
+                        >
+                          <div style={{ fontSize: 12, color: '#e2e8f0' }}>
+                            {hand?.currentBet === 0 ? 'Bet amount' : 'Raise to'}{' '}
+                            <strong>{clampedRaiseTo}</strong>
+                          </div>
+                          <input
+                            type="range"
+                            min={minRaiseTo ?? undefined}
+                            max={maxRaiseTo ?? undefined}
+                            value={clampedRaiseTo}
+                            step={1}
+                            disabled={
+                              !canOpenRaiseDrawer || minRaiseTo === null || maxRaiseTo === null
+                            }
+                            onChange={(event) => {
+                              const next = Number.parseInt(event.target.value, 10);
+                              setBetAmount(Number.isFinite(next) ? next : 0);
                             }}
+                            style={{ width: '100%' }}
+                          />
+                          <div
                             style={{
-                              borderRadius: 6,
-                              border: `1px solid ${TABLE_THEME.border}`,
-                              background: option.requiresConfirm
-                                ? 'rgba(127,29,29,0.46)'
-                                : TABLE_THEME.panelSoft,
-                              color: option.requiresConfirm ? '#fee2e2' : TABLE_THEME.text,
-                              padding: '7px 6px',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              cursor: 'pointer',
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                              gap: 6,
                             }}
                           >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: isPhone ? '1fr' : '1fr auto',
-                          gap: 8,
-                        }}
-                      >
-                        <input
-                          type="number"
-                          value={betAmount}
-                          min={minRaiseTo ?? undefined}
-                          max={maxRaiseTo ?? undefined}
-                          step={1}
-                          disabled={!canOpenRaiseDrawer}
-                          onChange={(event) => {
-                            const next = Number.parseInt(event.target.value, 10);
-                            setBetAmount(Number.isFinite(next) ? next : 0);
-                          }}
-                          style={{
-                            minHeight: 42,
-                            borderRadius: 6,
-                            border: `1px solid ${TABLE_THEME.border}`,
-                            background: 'rgba(0,0,0,0.32)',
-                            color: TABLE_THEME.text,
-                            padding: '8px 10px',
-                            fontSize: 13,
-                            outline: 'none',
-                          }}
-                        />
+                            {quickRaiseOptions.map((option) => (
+                              <button
+                                key={`${option.label}-${option.value}`}
+                                type="button"
+                                onClick={() => {
+                                  setBetAmount(option.value);
+                                  setConfirmAllIn(false);
+                                }}
+                                style={{
+                                  borderRadius: 6,
+                                  border: `1px solid ${TABLE_THEME.border}`,
+                                  background: option.requiresConfirm
+                                    ? 'rgba(127,29,29,0.46)'
+                                    : TABLE_THEME.panelSoft,
+                                  color: option.requiresConfirm ? '#fee2e2' : TABLE_THEME.text,
+                                  padding: '7px 6px',
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: isPhone ? '1fr' : '1fr auto',
+                              gap: 8,
+                            }}
+                          >
+                            <input
+                              type="number"
+                              value={betAmount}
+                              min={minRaiseTo ?? undefined}
+                              max={maxRaiseTo ?? undefined}
+                              step={1}
+                              disabled={!canOpenRaiseDrawer}
+                              onChange={(event) => {
+                                const next = Number.parseInt(event.target.value, 10);
+                                setBetAmount(Number.isFinite(next) ? next : 0);
+                              }}
+                              style={{
+                                minHeight: 42,
+                                borderRadius: 6,
+                                border: `1px solid ${TABLE_THEME.border}`,
+                                background: 'rgba(0,0,0,0.32)',
+                                color: TABLE_THEME.text,
+                                padding: '8px 10px',
+                                fontSize: 13,
+                                outline: 'none',
+                              }}
+                            />
+                            <button
+                              data-testid="action-raise"
+                              type="button"
+                              disabled={!canRaise}
+                              onClick={submitRaiseAction}
+                              style={turnActionStyle(canRaise, {
+                                border:
+                                  maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
+                                    ? 'rgba(248,113,113,0.9)'
+                                    : 'rgba(94,234,212,0.78)',
+                                background:
+                                  maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
+                                    ? 'rgba(127,29,29,0.58)'
+                                    : 'rgba(20,184,166,0.28)',
+                                color:
+                                  maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
+                                    ? '#fee2e2'
+                                    : '#ccfbf1',
+                                glow:
+                                  maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
+                                    ? 'rgba(248,113,113,0.35)'
+                                    : 'rgba(20,184,166,0.3)',
+                              })}
+                            >
+                              {maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo && !confirmAllIn
+                                ? `Confirm all-in ${clampedRaiseTo}`
+                                : `${raiseActionLabel} ${clampedRaiseTo}`}
+                            </button>
+                          </div>
+                          <div style={{ fontSize: 11, color: 'rgba(203,213,225,0.9)' }}>
+                            {raiseDisabledHint}
+                          </div>
+                        </div>
+                      ) : null}
+                      {!showRaiseDrawer ? (
                         <button
                           data-testid="action-raise"
                           type="button"
-                          disabled={!canRaise}
-                          onClick={submitRaiseAction}
-                          style={turnActionStyle(canRaise, {
-                            border:
-                              maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
-                                ? 'rgba(248,113,113,0.9)'
-                                : 'rgba(94,234,212,0.78)',
-                            background:
-                              maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
-                                ? 'rgba(127,29,29,0.58)'
-                                : 'rgba(20,184,166,0.28)',
-                            color:
-                              maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
-                                ? '#fee2e2'
-                                : '#ccfbf1',
-                            glow:
-                              maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
-                                ? 'rgba(248,113,113,0.35)'
-                                : 'rgba(20,184,166,0.3)',
-                          })}
-                        >
-                          {maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo && !confirmAllIn
-                            ? `Confirm all-in ${clampedRaiseTo}`
-                            : `${raiseActionLabel} ${clampedRaiseTo}`}
-                        </button>
-                      </div>
-                      <div style={{ fontSize: 11, color: 'rgba(203,213,225,0.9)' }}>
-                        {raiseDisabledHint}
-                      </div>
-                    </div>
-                  ) : null}
-                  {!showRaiseDrawer ? (
-                    <button
-                      data-testid="action-raise"
-                      type="button"
-                      disabled
-                      aria-hidden="true"
-                      style={{ display: 'none' }}
-                    />
-                  ) : null}
-                  <button
-                    data-testid="action-allin"
-                    type="button"
-                    disabled
-                    aria-hidden="true"
-                    style={{ display: 'none' }}
-                  />
+                          disabled
+                          aria-hidden="true"
+                          style={{ display: 'none' }}
+                        />
+                      ) : null}
+                      <button
+                        data-testid="action-allin"
+                        type="button"
+                        disabled
+                        aria-hidden="true"
+                        style={{ display: 'none' }}
+                      />
+                    </>
+                  ) : (
+                    hiddenBettingActionButtons
+                  )}
                 </div>
               ) : null}
               {isRevealPhase ? (
                 <div
                   style={{
                     borderRadius: 8,
-                    border: '1px solid rgba(34,197,94,0.6)',
-                    background: 'rgba(20,83,45,0.36)',
-                    padding: isPhone ? '10px 12px' : '12px 14px',
+                    border: `1px solid ${TABLE_THEME.tealBorder}`,
+                    background: TABLE_THEME.panelStrong,
+                    padding: isPhone ? '9px 10px' : '10px 12px',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     gap: 10,
                   }}
                 >
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.12em',
-                        color: '#bbf7d0',
-                      }}
-                    >
-                      Reveal
-                    </div>
-                    <div style={{ marginTop: 2, fontSize: 13, color: '#dcfce7' }}>
-                      {showdownSummary ?? 'Showdown in progress'}
-                    </div>
+                  <div
+                    style={{
+                      minWidth: 0,
+                      fontSize: isPhone ? 13 : 14,
+                      fontWeight: 800,
+                      color: '#dcfce7',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {showdownSummary ?? 'Showdown in progress'}
                   </div>
                   <button
                     type="button"
@@ -3645,7 +3784,7 @@ const CardView = ({
     small: { width: 28, height: 40, fontSize: 14, corner: 9, center: 16, pad: 2 },
     medium: { width: 44, height: 62, fontSize: 18, corner: 11, center: 22, pad: 3 },
     large: { width: 66, height: 92, fontSize: 24, corner: 12, center: 28, pad: 3 },
-    xlarge: { width: 72, height: 102, fontSize: 29, corner: 18, center: 36, pad: 4 },
+    xlarge: { width: 84, height: 118, fontSize: 32, corner: 19, center: 39, pad: 5 },
   };
   const sizing = sizeMap[size];
   const rankLabel = cardRankLabel(card.rank);
