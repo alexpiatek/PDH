@@ -23,8 +23,8 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
 }
 
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
+function isNonNegativeInt(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) >= 0;
 }
 
 function isPositiveInt(value: unknown): value is number {
@@ -47,7 +47,13 @@ export function withProtocolVersion<T extends { v?: number }>(message: T): T & {
 }
 
 export function isMutatingClientMessage(message: ClientMessage): message is MutatingClientMessage {
-  return message.type === 'action' || message.type === 'discard' || message.type === 'nextHand';
+  return (
+    message.type === 'action' ||
+    message.type === 'discard' ||
+    message.type === 'nextHand' ||
+    message.type === 'rebuy' ||
+    message.type === 'sitOut'
+  );
 }
 
 export function isClientMessage(value: unknown): value is ClientMessage {
@@ -59,8 +65,7 @@ export function isClientMessage(value: unknown): value is ClientMessage {
       return (
         typeof value.name === 'string' &&
         value.name.trim().length > 0 &&
-        isFiniteNumber(value.buyIn) &&
-        value.buyIn > 0 &&
+        isPositiveInt(value.buyIn) &&
         (value.seat === undefined || (Number.isInteger(value.seat) && Number(value.seat) >= 0))
       );
     case 'reconnect':
@@ -68,16 +73,21 @@ export function isClientMessage(value: unknown): value is ClientMessage {
     case 'action':
       return (
         ['fold', 'check', 'call', 'bet', 'raise', 'allIn'].includes(String(value.action)) &&
-        (value.amount === undefined || isFiniteNumber(value.amount)) &&
+        (value.amount === undefined || isNonNegativeInt(value.amount)) &&
         hasValidOptionalSequence(value)
       );
     case 'discard':
       return (
-        Number.isInteger(value.index) &&
-        Number(value.index) >= 0 &&
-        hasValidOptionalSequence(value)
+        Number.isInteger(value.index) && Number(value.index) >= 0 && hasValidOptionalSequence(value)
       );
     case 'nextHand':
+      return hasValidOptionalSequence(value);
+    case 'rebuy':
+      return (
+        (value.amount === undefined || isPositiveInt(value.amount)) &&
+        hasValidOptionalSequence(value)
+      );
+    case 'sitOut':
       return hasValidOptionalSequence(value);
     case 'reaction':
       return (

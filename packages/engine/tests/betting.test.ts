@@ -1,9 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { PokerTable } from '../src/table';
 import { Card } from '../src/types';
+import { settleBettingStreetWithCalls } from './testUtils';
 
 const rng = () => 0.1;
 const C = (rank: Card['rank'], suit: Card['suit']): Card => ({ rank, suit });
+
+function bettingStateSnapshot(table: PokerTable, playerId: string) {
+  const hand = table.state.hand!;
+  const player = hand.players.find((p) => p.id === playerId)!;
+  const seat = table.state.seats[player.seat]!;
+  return {
+    seatStack: seat.stack,
+    playerStack: player.stack,
+    betThisStreet: player.betThisStreet,
+    totalCommitted: player.totalCommitted,
+    currentBet: hand.currentBet,
+    minRaise: hand.minRaise,
+    raisesThisStreet: hand.raisesThisStreet,
+    pots: hand.pots.map((pot) => ({ amount: pot.amount, eligible: [...pot.eligible] })),
+  };
+}
 
 describe('betting rules', () => {
   it('posts blinds at hand start', () => {
@@ -91,6 +108,114 @@ describe('betting rules', () => {
     expect(() => table.applyAction('p0', { type: 'bet', amount: 400 })).toThrow(
       'Cannot bet, must raise'
     );
+  });
+
+  it('rejects negative all-in amounts without changing stacks or commitments', () => {
+    const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
+    table.seatPlayer(0, { id: 'p0', name: 'UTG', stack: 5000 });
+    table.seatPlayer(1, { id: 'p1', name: 'SB', stack: 5000 });
+    table.seatPlayer(2, { id: 'p2', name: 'BB', stack: 5000 });
+    table.startHand(rng);
+    const hand = table.state.hand!;
+    const actor = hand.players.find((p) => p.seat === hand.actionOnSeat)!;
+    const seat = table.state.seats[actor.seat]!;
+    const before = {
+      seatStack: seat.stack,
+      playerStack: actor.stack,
+      betThisStreet: actor.betThisStreet,
+      totalCommitted: actor.totalCommitted,
+      currentBet: hand.currentBet,
+    };
+
+    expect(() => table.applyAction(actor.id, { type: 'allIn', amount: -1 })).toThrow(
+      'Invalid action amount'
+    );
+
+    expect(seat.stack).toBe(before.seatStack);
+    expect(actor.stack).toBe(before.playerStack);
+    expect(actor.betThisStreet).toBe(before.betThisStreet);
+    expect(actor.totalCommitted).toBe(before.totalCommitted);
+    expect(hand.currentBet).toBe(before.currentBet);
+  });
+
+  it('rejects fractional raise amounts without changing chip or betting state', () => {
+    const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
+    table.seatPlayer(0, { id: 'p0', name: 'UTG', stack: 5000 });
+    table.seatPlayer(1, { id: 'p1', name: 'SB', stack: 5000 });
+    table.seatPlayer(2, { id: 'p2', name: 'BB', stack: 5000 });
+    table.startHand(rng);
+    const actor = table.state.hand!.players.find((p) => p.seat === table.state.hand!.actionOnSeat)!;
+    const before = bettingStateSnapshot(table, actor.id);
+
+    expect(() => table.applyAction(actor.id, { type: 'raise', amount: 1600.5 })).toThrow(
+      'Invalid action amount'
+    );
+
+    expect(bettingStateSnapshot(table, actor.id)).toEqual(before);
+  });
+
+  it('rejects fractional all-in amounts without changing chip or betting state', () => {
+    const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
+    table.seatPlayer(0, { id: 'p0', name: 'UTG', stack: 5000 });
+    table.seatPlayer(1, { id: 'p1', name: 'SB', stack: 5000 });
+    table.seatPlayer(2, { id: 'p2', name: 'BB', stack: 5000 });
+    table.startHand(rng);
+    const actor = table.state.hand!.players.find((p) => p.seat === table.state.hand!.actionOnSeat)!;
+    const before = bettingStateSnapshot(table, actor.id);
+
+    expect(() => table.applyAction(actor.id, { type: 'allIn', amount: 1600.5 })).toThrow(
+      'Invalid action amount'
+    );
+
+    expect(bettingStateSnapshot(table, actor.id)).toEqual(before);
+  });
+
+  it('rejects fractional bet amounts without changing chip or betting state', () => {
+    const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
+    table.seatPlayer(0, { id: 'p0', name: 'Button', stack: 5000 });
+    table.seatPlayer(1, { id: 'p1', name: 'SB', stack: 5000 });
+    table.seatPlayer(2, { id: 'p2', name: 'BB', stack: 5000 });
+    table.startHand(rng);
+    settleBettingStreetWithCalls(table);
+    const actor = table.state.hand!.players.find((p) => p.seat === table.state.hand!.actionOnSeat)!;
+    const before = bettingStateSnapshot(table, actor.id);
+
+    expect(() => table.applyAction(actor.id, { type: 'bet', amount: 1600.5 })).toThrow(
+      'Invalid action amount'
+    );
+
+    expect(bettingStateSnapshot(table, actor.id)).toEqual(before);
+  });
+
+  it('rejects fractional seat stacks and rebuys', () => {
+    const table = new PokerTable('t', { smallBlind: 100, bigBlind: 200 });
+
+    expect(() => table.seatPlayer(0, { id: 'p0', name: 'P0', stack: 1000.5 })).toThrow(
+      'Invalid stack amount'
+    );
+
+    table.seatPlayer(0, { id: 'p0', name: 'P0', stack: 2000 });
+    table.seatPlayer(1, { id: 'p1', name: 'P1', stack: 0, status: 'busted', sittingOut: true });
+
+    expect(() => table.rebuy('p1', 1000.5)).toThrow('Invalid rebuy amount');
+    expect(table.state.seats[1]?.stack).toBe(0);
+    expect(table.state.seats[1]?.status).toBe('busted');
+  });
+
+  it('clamps huge all-in amounts to the acting player stack', () => {
+    const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
+    table.seatPlayer(0, { id: 'p0', name: 'UTG', stack: 5000 });
+    table.seatPlayer(1, { id: 'p1', name: 'SB', stack: 5000 });
+    table.seatPlayer(2, { id: 'p2', name: 'BB', stack: 5000 });
+    table.startHand(rng);
+    const hand = table.state.hand!;
+    const actor = hand.players.find((p) => p.seat === hand.actionOnSeat)!;
+
+    table.applyAction(actor.id, { type: 'allIn', amount: Number.MAX_SAFE_INTEGER });
+
+    expect(actor.stack).toBe(0);
+    expect(actor.totalCommitted).toBe(5000);
+    expect(table.state.seats[actor.seat]?.stack).toBe(0);
   });
 
   it('builds side pots correctly for staggered all-ins', () => {

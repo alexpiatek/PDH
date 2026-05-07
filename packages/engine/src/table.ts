@@ -68,6 +68,23 @@ function activePlayers(hand: HandState): PlayerInHand[] {
   return hand.players.filter((p) => !['folded', 'out', 'busted', 'sitting_out'].includes(p.status));
 }
 
+function validChipAmount(amount: unknown, message: string, allowZero: boolean): number {
+  if (
+    typeof amount !== 'number' ||
+    !Number.isFinite(amount) ||
+    !Number.isInteger(amount) ||
+    amount < 0 ||
+    (!allowZero && amount === 0)
+  ) {
+    throw new Error(message);
+  }
+  return amount;
+}
+
+function validActionAmount(amount: unknown): number {
+  return validChipAmount(amount, 'Invalid action amount', true);
+}
+
 function bettingLocked(hand: HandState): boolean {
   const active = activePlayers(hand);
   return active.length > 0 && active.every((p) => p.status === 'allIn' || p.stack === 0);
@@ -143,14 +160,18 @@ export class PokerTable {
   seatPlayer(seat: number, player: Omit<Seat, 'seat'>) {
     if (seat < 0 || seat >= this.state.seats.length) throw new Error('Seat out of range');
     if (this.state.seats[seat]) throw new Error('Seat occupied');
-    const initialStack = Math.max(0, player.stack);
+    const initialStack = validChipAmount(player.stack, 'Invalid stack amount', true);
+    const buyInTotal =
+      player.buyInTotal === undefined
+        ? initialStack
+        : validChipAmount(player.buyInTotal, 'Invalid buy-in total', true);
     this.state.seats[seat] = {
       seat,
       ...player,
       stack: initialStack,
       status: initialStack > 0 ? (player.status ?? 'active') : 'busted',
       sittingOut: player.sittingOut ?? initialStack <= 0,
-      buyInTotal: player.buyInTotal ?? initialStack,
+      buyInTotal,
       rebuyCount: player.rebuyCount ?? 0,
     };
     logPush(this.state.log, `${player.name} sat in seat ${seat}`);
@@ -182,7 +203,7 @@ export class PokerTable {
     if (seat.stack > 0 && seat.status !== 'busted') {
       throw new Error('Rebuy is only available when out of chips');
     }
-    const rebuyAmount = Math.max(1, Math.floor(amount));
+    const rebuyAmount = validChipAmount(amount, 'Invalid rebuy amount', false);
     seat.stack = rebuyAmount;
     seat.status = 'active';
     seat.sittingOut = false;
@@ -362,6 +383,9 @@ export class PokerTable {
   }
 
   commitBet(hand: HandState, player: PlayerInHand, amount: number) {
+    if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount < 0) {
+      throw new Error('Invalid bet amount');
+    }
     const pay = Math.min(amount, player.stack);
     player.stack -= pay;
     player.betThisStreet += pay;
@@ -412,21 +436,29 @@ export class PokerTable {
       }
       case 'bet': {
         if (hand.currentBet !== 0) throw new Error('Cannot bet, must raise');
-        if (action.amount < this.state.config.bigBlind) throw new Error('Bet below minimum');
-        this.placeRaise(hand, player, action.amount, 'bet');
+        const amount = validActionAmount(action.amount);
+        if (amount < this.state.config.bigBlind) throw new Error('Bet below minimum');
+        this.placeRaise(hand, player, amount, 'bet');
         break;
       }
       case 'raise': {
-        if (action.amount <= hand.currentBet) throw new Error('Raise must exceed current bet');
-        const raiseBy = action.amount - hand.currentBet;
-        if (raiseBy < hand.minRaise && action.amount < player.betThisStreet + player.stack) {
+        const amount = validActionAmount(action.amount);
+        if (amount <= hand.currentBet) throw new Error('Raise must exceed current bet');
+        const raiseBy = amount - hand.currentBet;
+        if (raiseBy < hand.minRaise && amount < player.betThisStreet + player.stack) {
           throw new Error('Raise below minimum');
         }
-        this.placeRaise(hand, player, action.amount, 'raise');
+        this.placeRaise(hand, player, amount, 'raise');
         break;
       }
       case 'allIn': {
-        const target = action.amount ?? player.betThisStreet + player.stack;
+        const target =
+          action.amount === undefined
+            ? player.betThisStreet + player.stack
+            : validActionAmount(action.amount);
+        if (target < player.betThisStreet || (toCall > 0 && target <= player.betThisStreet)) {
+          throw new Error('Invalid action amount');
+        }
         const desired = Math.min(target, player.betThisStreet + player.stack);
         if (desired <= hand.currentBet && toCall === 0) {
           // shove for zero change is a check
@@ -494,7 +526,8 @@ export class PokerTable {
     newTotalBet: number,
     actionLabel: 'raise' | 'bet' | 'allIn' = 'raise'
   ) {
-    const actualTotal = Math.min(newTotalBet, player.betThisStreet + player.stack);
+    const targetTotal = validActionAmount(newTotalBet);
+    const actualTotal = Math.min(targetTotal, player.betThisStreet + player.stack);
     const raiseBy = actualTotal - hand.currentBet;
     const fullRaise = raiseBy >= hand.minRaise;
     if (hand.raisesThisStreet >= 2) {
@@ -742,6 +775,7 @@ export class PokerTable {
     logPush(hand.auditLog, `Showdown hole cards: ${playerCardSnapshot}`);
     // If only one active player, award pot
     const contenders = activePlayers(hand);
+    hand.showdownRevealIds = contenders.length > 1 ? contenders.map((p) => p.id) : [];
     if (contenders.length === 1) {
       const winner = contenders[0];
       const seat = this.state.seats[winner.seat];
@@ -920,22 +954,26 @@ export class PokerTable {
 
   getPublicState(forPlayerId?: string) {
     const hand = this.state.hand;
-    const contestedShowdown =
-      Boolean(hand && hand.phase === 'showdown') && (hand ? activePlayers(hand).length : 0) > 1;
+    const showdownRevealIds =
+      hand && hand.phase === 'showdown'
+        ? new Set(
+            hand.showdownRevealIds ??
+              (activePlayers(hand).length > 1 ? activePlayers(hand).map((p) => p.id) : [])
+          )
+        : new Set<string>();
     return {
       id: this.state.id,
       seats: this.state.seats,
       buttonSeat: this.state.buttonSeat,
       hand: hand
         ? (() => {
-            const { auditLog, ...handPublic } = hand;
+            const { auditLog, showdownRevealIds: _showdownRevealIds, ...handPublic } = hand;
             return {
               ...handPublic,
               players: hand.players.map((p) => ({
                 ...p,
                 holeCards:
-                  (hand.phase === 'showdown' && contestedShowdown) ||
-                  (forPlayerId && p.id === forPlayerId)
+                  showdownRevealIds.has(p.id) || (forPlayerId && p.id === forPlayerId)
                     ? p.holeCards
                     : p.holeCards.map(() => ({ rank: 'X', suit: 'X' }) as unknown as Card),
               })),

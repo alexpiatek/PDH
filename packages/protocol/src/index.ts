@@ -48,7 +48,7 @@ const joinClientMessageSchema = versionedMessage({
   type: z.literal('join'),
   name: z.string().trim().min(1),
   seat: z.number().int().min(0).optional(),
-  buyIn: z.number().finite().positive(),
+  buyIn: z.number().int().positive(),
 });
 
 const reconnectClientMessageSchema = versionedMessage({
@@ -59,7 +59,7 @@ const reconnectClientMessageSchema = versionedMessage({
 const actionClientMessageSchema = versionedMessage({
   type: z.literal('action'),
   action: clientActionSchema,
-  amount: z.number().finite().optional(),
+  amount: z.number().int().nonnegative().optional(),
   seq: seqSchema.optional(),
 });
 
@@ -76,7 +76,7 @@ const nextHandClientMessageSchema = versionedMessage({
 
 const rebuyClientMessageSchema = versionedMessage({
   type: z.literal('rebuy'),
-  amount: z.number().finite().positive().optional(),
+  amount: z.number().int().positive().optional(),
   seq: seqSchema.optional(),
 });
 

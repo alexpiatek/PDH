@@ -145,6 +145,11 @@ describe('poker lobby RPCs', () => {
     expect(stored.maxPlayers).toBe(6);
     expect(stored.isPrivate).toBe(true);
     expect(typeof stored.createdAt).toBe('string');
+    expect(nk.matchCreate).toHaveBeenCalledWith(LOBBY_GAMEPLAY_MATCH_MODULE, {
+      tableId: parsed.code,
+      maxPlayers: 6,
+      buyIn: 10000,
+    });
   });
 
   it('normalizes join code input before resolving match id', () => {
@@ -262,6 +267,11 @@ describe('poker lobby RPCs', () => {
     const stored = storage.get(parsed.code) as any;
     expect(stored.quickPlay.buyIn).toBe(25000);
     expect(stored.quickPlay.skillTier).toBe('regular');
+    expect(nk.matchCreate).toHaveBeenCalledWith(LOBBY_GAMEPLAY_MATCH_MODULE, {
+      tableId: parsed.code,
+      maxPlayers: 5,
+      buyIn: 25000,
+    });
   });
 
   it('quick play converges to canonical table after concurrent create race', () => {

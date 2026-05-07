@@ -77,6 +77,168 @@ function setupThreePlayerMatch() {
 }
 
 describe('pdhMatchHandler', () => {
+  it('rejects fractional authoritative match configuration', () => {
+    const nk = makeNakamaMock();
+
+    expect(() =>
+      pdhMatchHandler.matchInit({}, logger, nk, {
+        tableId: 'bad-buyin',
+        buyIn: 5000.5,
+        maxPlayers: 6,
+      })
+    ).toThrow('Table buy-in must be an integer');
+
+    expect(() =>
+      pdhMatchHandler.matchInit({}, logger, nk, {
+        tableId: 'bad-max',
+        buyIn: 5000,
+        maxPlayers: 6.5,
+      })
+    ).toThrow('Max players must be an integer');
+  });
+
+  it('uses the match buy-in instead of malicious join payload amounts', () => {
+    const nk = makeNakamaMock();
+    const broadcastMessage = vi.fn();
+    const dispatcher = { broadcastMessage };
+    const init = pdhMatchHandler.matchInit({}, logger, nk, {
+      tableId: 'stakes',
+      buyIn: 5000,
+      maxPlayers: 6,
+    });
+    const state = init.state as any;
+    const presence = { userId: 'u1', sessionId: 's1' };
+
+    pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 1, state, [presence]);
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 2, state, [
+      {
+        opCode: 1,
+        sender: presence,
+        data: encode({ type: 'join', name: 'u1', buyIn: 999_999_999 }),
+      },
+    ]);
+
+    expect(errorMessagesFrom(broadcastMessage)).toEqual([]);
+    expect(state.table.seats[0]?.id).toBe('u1');
+    expect(state.table.seats[0]?.stack).toBe(5000);
+    expect(state.table.seats[0]?.buyInTotal).toBe(5000);
+  });
+
+  it('uses the match buy-in instead of malicious rebuy payload amounts', () => {
+    const nk = makeNakamaMock();
+    const broadcastMessage = vi.fn();
+    const dispatcher = { broadcastMessage };
+    const init = pdhMatchHandler.matchInit({}, logger, nk, {
+      tableId: 'rebuy-stakes',
+      buyIn: 5000,
+      maxPlayers: 6,
+    });
+    const state = init.state as any;
+    const presence = { userId: 'u1', sessionId: 's1' };
+
+    pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 1, state, [presence]);
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 2, state, [
+      { opCode: 1, sender: presence, data: encode({ type: 'join', name: 'u1', buyIn: 5000 }) },
+    ]);
+    state.table.seats[0].stack = 0;
+    state.table.seats[0].status = 'busted';
+    state.table.seats[0].sittingOut = true;
+    state.table.hand = null;
+
+    broadcastMessage.mockClear();
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+      {
+        opCode: 1,
+        sender: presence,
+        data: encode({ type: 'rebuy', amount: 999_999_999, seq: 1 }),
+      },
+    ]);
+
+    expect(errorMessagesFrom(broadcastMessage)).toEqual([]);
+    expect(state.table.seats[0]?.stack).toBe(5000);
+    expect(state.table.seats[0]?.buyInTotal).toBe(10000);
+  });
+
+  it('rejects negative action payloads without mutating the hand', () => {
+    const { nk, dispatcher, state, presenceById, broadcastMessage } = setupThreePlayerMatch();
+    const hand = state.table.hand;
+    const actor = hand.players.find((p: any) => p.seat === hand.actionOnSeat);
+    const sender = presenceById.get(actor.id);
+    const handBefore = JSON.stringify(state.table.hand);
+
+    broadcastMessage.mockClear();
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+      {
+        opCode: 1,
+        sender,
+        data: encode({ type: 'action', action: 'allIn', amount: -1, seq: 1 }),
+      },
+    ]);
+
+    expect(errorMessagesFrom(broadcastMessage)).toContain('Invalid payload');
+    expect(JSON.stringify(state.table.hand)).toBe(handBefore);
+  });
+
+  it('clamps huge action amounts to the acting stack', () => {
+    const { nk, dispatcher, state, presenceById, broadcastMessage } = setupThreePlayerMatch();
+    const hand = state.table.hand;
+    const actor = hand.players.find((p: any) => p.seat === hand.actionOnSeat);
+    const sender = presenceById.get(actor.id);
+    const available = actor.stack + actor.betThisStreet;
+
+    broadcastMessage.mockClear();
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+      {
+        opCode: 1,
+        sender,
+        data: encode({
+          type: 'action',
+          action: 'allIn',
+          amount: Number.MAX_SAFE_INTEGER,
+          seq: 1,
+        }),
+      },
+    ]);
+
+    const updatedActor = state.table.hand.players.find((p: any) => p.id === actor.id);
+    expect(errorMessagesFrom(broadcastMessage)).toEqual([]);
+    expect(updatedActor.stack).toBe(0);
+    expect(updatedActor.totalCommitted).toBe(available);
+    expect(state.table.seats[updatedActor.seat]?.stack).toBe(0);
+  });
+
+  it('enforces maxPlayers inside the gameplay match when join payloads race lobby checks', () => {
+    const nk = makeNakamaMock();
+    const broadcastMessage = vi.fn();
+    const dispatcher = { broadcastMessage };
+    const init = pdhMatchHandler.matchInit({}, logger, nk, {
+      tableId: 'heads-up',
+      buyIn: 5000,
+      maxPlayers: 2,
+    });
+    const state = init.state as any;
+    const presences = [
+      { userId: 'u1', sessionId: 's1' },
+      { userId: 'u2', sessionId: 's2' },
+      { userId: 'u3', sessionId: 's3' },
+    ];
+
+    pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 1, state, presences);
+    for (const presence of presences) {
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 2, state, [
+        {
+          opCode: 1,
+          sender: presence,
+          data: encode({ type: 'join', name: presence.userId, buyIn: 5000 }),
+        },
+      ]);
+    }
+
+    expect(errorMessagesFrom(broadcastMessage)).toContain('No open seats');
+    expect(state.table.seats).toHaveLength(2);
+    expect(state.table.seats.filter(Boolean).map((seat: any) => seat.id)).toEqual(['u1', 'u2']);
+  });
+
   it('advances queued betting phase in match loop ticks', () => {
     const nk = makeNakamaMock();
     const broadcastMessage = vi.fn();
@@ -320,9 +482,9 @@ describe('pdhMatchHandler', () => {
 
     const actor = state.table.hand.players.find((p: any) => p.id === actorId);
     expect(actor.status).toBe('folded');
-    expect(state.table.hand.log.some((entry: any) => entry.message.includes('auto-folded (timeout)'))).toBe(
-      true
-    );
+    expect(
+      state.table.hand.log.some((entry: any) => entry.message.includes('auto-folded (timeout)'))
+    ).toBe(true);
   });
 
   it('signals and terminates a match via admin RPC/signal path', () => {
@@ -353,7 +515,15 @@ describe('pdhMatchHandler', () => {
     );
 
     expect(state.terminateRequested).toBe(true);
-    const loopResult = pdhMatchHandler.matchLoop({}, logger, nk as any, dispatcher as any, 11, state, []);
+    const loopResult = pdhMatchHandler.matchLoop(
+      {},
+      logger,
+      nk as any,
+      dispatcher as any,
+      11,
+      state,
+      []
+    );
     expect(loopResult).toBeNull();
   });
 });

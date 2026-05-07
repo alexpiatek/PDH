@@ -19,6 +19,7 @@ const lastChatAtByPlayer = new Map<string, number>();
 const START_COUNTDOWN_MS = 8000;
 const REACTION_COOLDOWN_MS = 2500;
 const CHAT_COOLDOWN_MS = 800;
+const DEFAULT_LEGACY_BUY_IN = 10000;
 let startCountdownTimer: NodeJS.Timeout | null = null;
 let startCountdownUntil: number | null = null;
 
@@ -125,12 +126,12 @@ function scheduleStartCountdown() {
   }, START_COUNTDOWN_MS);
 }
 
-function seatPlayer(name: string, buyIn: number, desiredSeat?: number) {
+function seatPlayer(name: string, desiredSeat?: number) {
   const playerId = randomUUID();
   const seatIndex =
     desiredSeat !== undefined ? desiredSeat : table.state.seats.findIndex((s) => s === null);
   if (seatIndex === -1) throw new Error('No open seats');
-  table.seatPlayer(seatIndex, { id: playerId, name, stack: buyIn });
+  table.seatPlayer(seatIndex, { id: playerId, name, stack: DEFAULT_LEGACY_BUY_IN });
   if (!table.state.hand) {
     if (seatedReadyCount() >= 2) {
       scheduleStartCountdown();
@@ -163,16 +164,18 @@ function handleMessage(ws: WebSocket, raw: ClientMessage) {
         if (isNameTaken(trimmedName)) {
           throw new Error('Name already taken. Please enter a different name.');
         }
-        const { playerId, seatIndex } = seatPlayer(trimmedName, raw.buyIn, raw.seat);
+        const { playerId, seatIndex } = seatPlayer(trimmedName, raw.seat);
         clients.set(ws, { playerId });
         send(ws, { type: 'welcome', playerId, tableId: table.state.id });
         broadcast();
         break;
       }
       case 'reconnect': {
+        if (!ctx || ctx.playerId !== raw.playerId) {
+          throw new Error('Reconnect unavailable on legacy server');
+        }
         table.setSittingOut(raw.playerId, false);
         table.beginNextHandIfReady();
-        clients.set(ws, { playerId: raw.playerId });
         send(ws, { type: 'welcome', playerId: raw.playerId, tableId: table.state.id });
         broadcast();
         break;
@@ -200,7 +203,7 @@ function handleMessage(ws: WebSocket, raw: ClientMessage) {
       }
       case 'rebuy': {
         if (!ctx) throw new Error('Join first');
-        table.rebuy(ctx.playerId, raw.amount ?? 10000);
+        table.rebuy(ctx.playerId, DEFAULT_LEGACY_BUY_IN);
         broadcast();
         break;
       }

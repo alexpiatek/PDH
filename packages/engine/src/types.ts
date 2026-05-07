@@ -64,6 +64,7 @@ export interface HandState {
   discardPending: string[];
   discardDeadline: number | null;
   showdownWinners: ShowdownWinner[];
+  showdownRevealIds?: string[];
   log: HandLogEntry[];
   auditLog?: HandLogEntry[];
 }

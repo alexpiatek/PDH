@@ -579,7 +579,11 @@ function createQuickPlayTable(
   const code = createUniqueTableCode(nk);
   const createdAt = new Date().toISOString();
   const name = 'Quick Play';
-  const matchId = nk.matchCreate(LOBBY_GAMEPLAY_MATCH_MODULE, { tableId: code });
+  const matchId = nk.matchCreate(LOBBY_GAMEPLAY_MATCH_MODULE, {
+    tableId: code,
+    maxPlayers,
+    buyIn: quickPlay.buyIn,
+  });
 
   writeTableByCode(nk, code, {
     matchId,
@@ -706,6 +710,8 @@ export function rpcCreateTable(
   const createdAt = new Date().toISOString();
   const matchId = nk.matchCreate(LOBBY_GAMEPLAY_MATCH_MODULE, {
     tableId: code,
+    maxPlayers: input.maxPlayers,
+    buyIn: DEFAULT_QUICK_PLAY_BUY_IN,
   });
 
   writeTableByCode(runtimeNakama, code, {

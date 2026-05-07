@@ -22,6 +22,12 @@ export const PDH_RPC_TERMINATE_MATCH = 'pdh_admin_terminate_match';
 const REPLAY_MAX_EVENTS = 500;
 const REPLAY_DEFAULT_LIMIT = 50;
 const REPLAY_MAX_LIMIT = 500;
+const DEFAULT_TABLE_BUY_IN = 10000;
+const MIN_TABLE_BUY_IN = 1;
+const MAX_TABLE_BUY_IN = 1_000_000;
+const DEFAULT_MAX_PLAYERS = 9;
+const MIN_MAX_PLAYERS = 2;
+const MAX_MAX_PLAYERS = 9;
 
 type ReplayEventKind = 'action' | 'discard' | 'nextHand' | 'rebuy' | 'sitOut';
 type ReplayOutcome = 'accepted' | 'rejected';
@@ -57,6 +63,8 @@ const replayByMatch = new Map<string, ReplayEvent[]>();
 interface MatchState {
   matchId: string;
   table: TableState;
+  tableBuyIn: number;
+  maxPlayers: number;
   presences: Record<string, nkruntime.Presence>;
   lastSeqByPlayer: Record<string, number>;
   lastReactionAtByPlayer: Record<string, number>;
@@ -123,6 +131,45 @@ function safeErrorMessage(error: unknown): string {
     }
   }
   return String(error ?? 'error').slice(0, 300);
+}
+
+function parseIntegerParam(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+  label: string
+): number {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
+    throw new Error(`${label} must be an integer`);
+  }
+  if (value < min || value > max) {
+    throw new Error(`${label} must be between ${min} and ${max}`);
+  }
+  return value;
+}
+
+function parseMatchBuyIn(params: Record<string, unknown> | undefined): number {
+  return parseIntegerParam(
+    params?.buyIn ?? params?.tableBuyIn ?? params?.quickPlayBuyIn,
+    DEFAULT_TABLE_BUY_IN,
+    MIN_TABLE_BUY_IN,
+    MAX_TABLE_BUY_IN,
+    'Table buy-in'
+  );
+}
+
+function parseMatchMaxPlayers(params: Record<string, unknown> | undefined): number {
+  return parseIntegerParam(
+    params?.maxPlayers,
+    DEFAULT_MAX_PLAYERS,
+    MIN_MAX_PLAYERS,
+    MAX_MAX_PLAYERS,
+    'Max players'
+  );
 }
 
 function compactFields(fields: Record<string, unknown>) {
@@ -518,10 +565,15 @@ export function rpcTerminatePdhMatch(
 function matchInit(ctx, logger, nk, params) {
   const tableId = (params?.tableId as string | undefined) ?? DEFAULT_TABLE_ID;
   const matchId = readMatchId(ctx) ?? `pdh:${tableId}`;
-  const table = new PokerTable(tableId);
+  const matchParams = (params ?? {}) as Record<string, unknown>;
+  const tableBuyIn = parseMatchBuyIn(matchParams);
+  const maxPlayers = parseMatchMaxPlayers(matchParams);
+  const table = new PokerTable(tableId, undefined, maxPlayers);
   const state: MatchState = {
     matchId,
     table: table.state,
+    tableBuyIn,
+    maxPlayers,
     presences: {},
     lastSeqByPlayer: {},
     lastReactionAtByPlayer: {},
@@ -535,6 +587,8 @@ function matchInit(ctx, logger, nk, params) {
   logStructured(logger, 'info', 'match.init', {
     matchId,
     tableId,
+    tableBuyIn,
+    maxPlayers,
     tickRate: 10,
   });
   return {
@@ -699,7 +753,7 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
 
       switch (data.type) {
         case 'join': {
-          seatPlayer(table, presence.userId, data.name, data.buyIn, data.seat);
+          seatPlayer(table, presence.userId, data.name, state.tableBuyIn, data.seat);
           table.setSittingOut(presence.userId, false);
           sendToPresence(dispatcher, presence, {
             type: 'welcome',
@@ -746,7 +800,7 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
         }
         case 'rebuy': {
           ensurePlayerSeated(table, presence.userId);
-          table.rebuy(presence.userId, data.amount ?? 10000);
+          table.rebuy(presence.userId, state.tableBuyIn);
           shouldBroadcast = true;
           break;
         }
