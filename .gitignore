@@ -10,3 +10,5 @@ pnpm-lock.yaml
 *.tsbuildinfo
 playwright-report
 test-results
+.dev-server.pid
+.codex-logs/
