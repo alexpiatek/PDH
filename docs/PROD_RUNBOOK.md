@@ -114,8 +114,8 @@ NEXT_PUBLIC_DISCORD_INVITE_URL=https://discord.gg/YOUR_INVITE_CODE
 EARLY_ACCESS_DISCORD_WEBHOOK_URL=<Discord webhook URL for signup notifications>
 EMAIL_ALERTS_ENABLED=true
 SMTP_HOST=smtp.gmail.com
-SMTP_PORT=465
-SMTP_SECURE=true
+SMTP_PORT=587
+SMTP_SECURE=false
 SMTP_USER=<your-alert-sender@gmail.com>
 SMTP_PASS=<your-google-app-password>
 ALERT_EMAIL_FROM="Bondi Poker <your-alert-sender@gmail.com>"
@@ -130,6 +130,7 @@ Early access alert setup:
 - To use Gmail SMTP, enable Google 2-Step Verification on the sender account.
 - Create a Google App Password for the sender account.
 - Use that app password as `SMTP_PASS`; do not use the normal Google account password.
+- Use `SMTP_PORT=587` with `SMTP_SECURE=false` if the production host blocks outbound SMTPS on `465`.
 - Keep alert env vars server-side only and never prefix them with `NEXT_PUBLIC_`.
 
 Build web:
