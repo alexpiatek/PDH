@@ -1107,6 +1107,13 @@ export const PokerGamePage = ({
   const localReadyBetweenHands = Boolean(
     seated && localSeat && !hand && !startGate && localSeatStack > 0 && localSeatStatus === 'active'
   );
+  const seatedPlayerCount = useMemo(() => {
+    if (!Array.isArray(state?.seats)) return 0;
+    return state.seats.filter((seat: any) => Boolean(seat && seat.stack > 0 && !seat.sittingOut))
+      .length;
+  }, [state?.seats]);
+  const waitingForPlayers = seated && !hand && seatedPlayerCount < 2;
+  const tableCode = typeof state?.id === 'string' ? state.id : '';
   useEffect(() => {
     if (!seated) {
       setShowUtilitiesPanel(false);
@@ -4252,13 +4259,31 @@ export const PokerGamePage = ({
                     marginTop: '0.6cm',
                   }}
                 >
-                  Waiting for next hand
+                  {waitingForPlayers ? 'Waiting for another player' : 'Waiting for next hand'}
                   <span style={{ display: 'inline-flex', marginLeft: 4 }}>
                     <span style={ellipsisDotStyle(0)}>.</span>
                     <span style={ellipsisDotStyle(200)}>.</span>
                     <span style={ellipsisDotStyle(400)}>.</span>
                   </span>
                 </div>
+                {waitingForPlayers && tableCode ? (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      fontFamily: TABLE_THEME.fontSans,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: 1.2,
+                      color: 'rgba(254,243,199,0.92)',
+                      border: '1px solid rgba(251,191,36,0.35)',
+                      borderRadius: 10,
+                      background: 'rgba(9,13,23,0.72)',
+                      padding: '7px 10px',
+                    }}
+                  >
+                    Table code {tableCode}
+                  </div>
+                ) : null}
               </div>
             )}
           </div>

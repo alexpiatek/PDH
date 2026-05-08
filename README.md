@@ -134,6 +134,12 @@ Shortcut alias:
 pnpm restart web serv
 ```
 
+Push + deploy shortcut:
+
+```bash
+pnpm git push:web
+```
+
 Remote git pull only:
 
 ```bash
