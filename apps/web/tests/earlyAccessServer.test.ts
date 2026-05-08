@@ -13,6 +13,7 @@ const signup: EarlyAccessSignupRecord = {
   utmSource: 'newsletter',
   utmMedium: 'email',
   utmCampaign: 'launch',
+  marketingConsent: true,
   createdAt: '2026-05-05T05:00:00.000Z',
 };
 

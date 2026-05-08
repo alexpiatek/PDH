@@ -4,6 +4,7 @@ import {
   normalizeEmail,
   notifyEarlyAccessSignup,
 } from '../../lib/earlyAccessServer';
+import { sendEarlyAccessEmailAlert } from '../../lib/emailAlerts';
 
 const SUCCESS_MESSAGE =
   'You\u2019re on the list. We\u2019ll send early access invites, test-night announcements, and launch updates.';
@@ -77,7 +78,10 @@ export default async function handler(
     });
 
     if (result.created && result.signup) {
-      await notifyEarlyAccessSignup(result.signup);
+      await Promise.allSettled([
+        notifyEarlyAccessSignup(result.signup),
+        sendEarlyAccessEmailAlert(result.signup),
+      ]);
     }
 
     res.setHeader('Cache-Control', 'no-store');

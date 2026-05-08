@@ -110,8 +110,27 @@ NEXT_PUBLIC_NAKAMA_CLIENT_KEY=<same as NAKAMA_SOCKET_SERVER_KEY>
 # Fallback accepted: NEXT_PUBLIC_NAKAMA_SERVER_KEY=<same as NAKAMA_SOCKET_SERVER_KEY>
 NEXT_PUBLIC_NAKAMA_MATCH_MODULE=pdh
 NEXT_PUBLIC_NAKAMA_TABLE_ID=main
+NEXT_PUBLIC_DISCORD_INVITE_URL=https://discord.gg/YOUR_INVITE_CODE
 EARLY_ACCESS_DISCORD_WEBHOOK_URL=<Discord webhook URL for signup notifications>
+EMAIL_ALERTS_ENABLED=true
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=<your-alert-sender@gmail.com>
+SMTP_PASS=<your-google-app-password>
+ALERT_EMAIL_FROM="Bondi Poker <your-alert-sender@gmail.com>"
+ALERT_EMAIL_TO=<your-personal-or-team-email@example.com>
 ```
+
+Early access alert setup:
+
+- Set `NEXT_PUBLIC_DISCORD_INVITE_URL` to a public Discord server invite URL for the landing-page CTA.
+- Do not use a private Discord webhook URL as the public invite link.
+- Rotate `EARLY_ACCESS_DISCORD_WEBHOOK_URL` if the previous Discord webhook URL was exposed.
+- To use Gmail SMTP, enable Google 2-Step Verification on the sender account.
+- Create a Google App Password for the sender account.
+- Use that app password as `SMTP_PASS`; do not use the normal Google account password.
+- Keep alert env vars server-side only and never prefix them with `NEXT_PUBLIC_`.
 
 Build web:
 

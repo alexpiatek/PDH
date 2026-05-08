@@ -90,6 +90,17 @@ Use these guides:
 - `deploy/PROD_CHECKLIST.md` (quick production readiness checklist)
 - `deploy/Caddyfile.example` (safe baseline Caddy config)
 
+Early access signup alerts are configured in `apps/web/.env.local`. Discord alerts use
+`EARLY_ACCESS_DISCORD_WEBHOOK_URL`; optional SMTP email alerts use `EMAIL_ALERTS_ENABLED`
+and the `SMTP_*` / `ALERT_EMAIL_*` server-side variables documented in
+`apps/web/.env.local.example`. For Gmail SMTP, enable Google 2-Step Verification, create
+a Google App Password, and use that app password as `SMTP_PASS`. Rotate the Discord
+webhook URL if the previous URL was exposed.
+
+The public landing-page Discord CTA uses `NEXT_PUBLIC_DISCORD_INVITE_URL`. Set it to a
+public server invite such as `https://discord.gg/YOUR_INVITE_CODE`; never use a private
+Discord webhook URL as the invite link.
+
 ## Test + Smoke
 
 ```bash

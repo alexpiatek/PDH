@@ -27,6 +27,7 @@ export interface EarlyAccessSignupRecord {
   utmSource: string | null;
   utmMedium: string | null;
   utmCampaign: string | null;
+  marketingConsent: boolean;
   createdAt: string;
 }
 
@@ -225,6 +226,7 @@ export async function createEarlyAccessSignup(
     utm_source: string | null;
     utm_medium: string | null;
     utm_campaign: string | null;
+    marketing_consent: boolean;
     created_at: string | Date;
   }>(
     `
@@ -242,7 +244,16 @@ export async function createEarlyAccessSignup(
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       ON CONFLICT (email) DO NOTHING
-      RETURNING email, name, source, referrer, utm_source, utm_medium, utm_campaign, created_at
+      RETURNING
+        email,
+        name,
+        source,
+        referrer,
+        utm_source,
+        utm_medium,
+        utm_campaign,
+        marketing_consent,
+        created_at
     `,
     [
       input.email,
@@ -270,6 +281,7 @@ export async function createEarlyAccessSignup(
           utmSource: row.utm_source,
           utmMedium: row.utm_medium,
           utmCampaign: row.utm_campaign,
+          marketingConsent: row.marketing_consent,
           createdAt:
             row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
         }

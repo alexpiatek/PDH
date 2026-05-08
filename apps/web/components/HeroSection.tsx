@@ -1,12 +1,24 @@
 import { type FormEvent, useState } from 'react';
 import { useRouter } from 'next/router';
-import { Brain, CircleDot, LockKeyhole, ShieldCheck, Spade, type LucideIcon } from 'lucide-react';
+import {
+  Brain,
+  CircleDot,
+  ExternalLink,
+  LockKeyhole,
+  Mail,
+  MessageCircle,
+  ShieldCheck,
+  Spade,
+  type LucideIcon,
+} from 'lucide-react';
 import { logClientEvent } from '../lib/clientTelemetry';
 
 const CARD_BASE = '/cards/modern-minimal';
 const EARLY_ACCESS_SUCCESS_MESSAGE =
   'You\u2019re on the list. We\u2019ll send early access invites, test-night announcements, and launch updates.';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DISCORD_INVITE_URL =
+  process.env.NEXT_PUBLIC_DISCORD_INVITE_URL?.trim() || 'https://discord.gg/YOUR_INVITE_CODE';
 
 type CardFace = {
   src: string;
@@ -145,7 +157,11 @@ function DiscardCard({ card }: { card: CardFace }) {
         title={`Discarded ${card.code}`}
         className="flex aspect-[5/7] w-9 items-center justify-center rounded-md border border-amber-300/75 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.14),transparent_48%),linear-gradient(135deg,rgba(24,24,27,0.98),rgba(3,7,10,0.98))] shadow-[0_9px_18px_rgba(0,0,0,0.45),inset_0_0_0_4px_rgba(251,191,36,0.12)] sm:w-10 lg:w-12 xl:w-14"
       >
-        <Spade aria-hidden="true" className="h-4 w-4 text-amber-200 sm:h-5 sm:w-5" strokeWidth={1.6} />
+        <Spade
+          aria-hidden="true"
+          className="h-4 w-4 text-amber-200 sm:h-5 sm:w-5"
+          strokeWidth={1.6}
+        />
       </div>
       <div className="whitespace-nowrap font-[var(--font-display)] text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-amber-200 sm:text-[0.62rem] lg:text-[0.66rem]">
         Discard 1
@@ -450,7 +466,7 @@ function EarlyAccessForm() {
           disabled={isSubmitting}
           className="inline-flex items-center justify-center rounded-md border border-teal-200/70 bg-teal-400/[0.45] px-7 py-4 text-base font-semibold text-white shadow-[0_0_24px_rgba(20,184,166,0.22)] transition hover:bg-teal-300/[0.55] disabled:cursor-not-allowed disabled:opacity-70"
         >
-          {isSubmitting ? 'Joining...' : 'Join early access'}
+          {isSubmitting ? 'Joining...' : 'Join email list'}
         </button>
 
         <p className="text-xs leading-5 text-zinc-400">
@@ -526,32 +542,61 @@ export default function HeroSection() {
               the flop, turn, and river, and reach showdown with just 2 hole cards.
             </p>
 
-            <div className="mt-7 flex flex-col gap-4 sm:flex-row lg:mt-9">
-              <button
-                type="button"
-                aria-expanded={earlyAccessOpen}
-                aria-controls="early-access-form"
-                onClick={() => {
-                  setEarlyAccessOpen(true);
-                  logClientEvent('landing_cta', {
-                    cta: 'hero_join_early_access',
-                    destination: '#early-access-form',
-                  });
-                }}
-                className="inline-flex items-center justify-center rounded-md border border-teal-200/70 bg-teal-400/[0.45] px-7 py-4 text-base font-semibold text-white shadow-[0_0_24px_rgba(20,184,166,0.22)] transition hover:bg-teal-300/[0.55]"
-              >
-                Sign up for updates
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void handlePlayNow();
-                }}
-                disabled={playNowLoading}
-                className="inline-flex items-center justify-center rounded-md border border-amber-300/70 bg-transparent px-7 py-4 text-base font-semibold text-amber-100 transition hover:border-teal-200 hover:text-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {playNowLoading ? 'Opening...' : 'Quick Play'}
-              </button>
+            <div className="mt-7 max-w-xl rounded-lg border border-white/[0.14] bg-zinc-950/[0.48] p-4 shadow-[0_22px_60px_rgba(0,0,0,0.24)] backdrop-blur sm:p-5 lg:mt-9">
+              <div className="flex items-start gap-4">
+                <span className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-teal-300/45 bg-teal-400/10 text-teal-200">
+                  <MessageCircle aria-hidden="true" className="h-5 w-5" strokeWidth={1.8} />
+                </span>
+                <div>
+                  <p className="text-base font-semibold leading-6 text-white">
+                    Join Discord for updates and live tables.
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-300">
+                    Get updates, find live games, coordinate with other players, and report bugs or
+                    give feedback.
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-4 rounded-md border border-amber-300/25 bg-amber-300/[0.07] px-3 py-2 text-xs leading-5 text-amber-100">
+                We&rsquo;re still early, so games may not always be active. Join Discord to
+                coordinate with other players and hear when live test sessions are happening.
+              </p>
+
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                <a
+                  href={DISCORD_INVITE_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => {
+                    logClientEvent('landing_cta', {
+                      cta: 'hero_join_discord',
+                      destination: 'discord_invite',
+                    });
+                  }}
+                  className="inline-flex min-h-14 flex-1 items-center justify-center gap-2 rounded-md border border-teal-200/80 bg-teal-400/[0.52] px-6 py-4 text-base font-semibold text-white shadow-[0_0_24px_rgba(20,184,166,0.24)] transition hover:bg-teal-300/[0.62]"
+                >
+                  <MessageCircle aria-hidden="true" className="h-5 w-5" strokeWidth={1.8} />
+                  Join Discord
+                  <ExternalLink aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
+                </a>
+                <button
+                  type="button"
+                  aria-expanded={earlyAccessOpen}
+                  aria-controls="early-access-form"
+                  onClick={() => {
+                    setEarlyAccessOpen((current) => !current);
+                    logClientEvent('landing_cta', {
+                      cta: 'hero_join_email_list',
+                      destination: '#early-access-form',
+                    });
+                  }}
+                  className="inline-flex min-h-14 items-center justify-center gap-2 rounded-md border border-amber-300/65 bg-transparent px-6 py-4 text-base font-semibold text-amber-100 transition hover:border-teal-200 hover:text-teal-100"
+                >
+                  <Mail aria-hidden="true" className="h-5 w-5" strokeWidth={1.8} />
+                  Get email updates
+                </button>
+              </div>
             </div>
 
             {earlyAccessOpen ? (
