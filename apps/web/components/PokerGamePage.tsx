@@ -215,6 +215,18 @@ const friendlyStatus = (message: string | null | undefined) => {
   };
 };
 
+const isMissingNakamaMatchError = (error: unknown) => {
+  if (error && typeof error === 'object') {
+    const maybeCode = (error as { code?: unknown }).code;
+    if (maybeCode === 4 || maybeCode === '4') {
+      return true;
+    }
+  }
+
+  const message = errorMessage(error).toLowerCase();
+  return message === 'code 4' || message.includes('not found');
+};
+
 const startupSanityError = () => {
   if (!USE_NAKAMA_BACKEND) return null;
   if (typeof window === 'undefined') return null;
@@ -1012,6 +1024,16 @@ export const PokerGamePage = ({
     if (USE_NAKAMA_BACKEND) {
       void connectNakama().catch((error) => {
         if (!disposed) {
+          if ((resolvedForcedMatchId || NAKAMA_MATCH_ID) && isMissingNakamaMatchError(error)) {
+            if (typeof window !== 'undefined') {
+              window.localStorage.removeItem(STORAGE_KEYS.matchId);
+              window.setTimeout(() => {
+                window.location.assign('/play');
+              }, 900);
+            }
+            setStatus('Table no longer exists. Returning to lobby...');
+            return;
+          }
           setStatus(`Connection failed: ${errorMessage(error)}`);
         }
       });
