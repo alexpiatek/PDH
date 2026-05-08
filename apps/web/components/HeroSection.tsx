@@ -5,12 +5,11 @@ import {
   CircleDot,
   ExternalLink,
   LockKeyhole,
-  Mail,
-  MessageCircle,
   ShieldCheck,
   Spade,
   type LucideIcon,
 } from 'lucide-react';
+import { BondiPokerLogo } from './BondiPokerLogo';
 import { logClientEvent } from '../lib/clientTelemetry';
 
 const CARD_BASE = '/cards/modern-minimal';
@@ -142,7 +141,7 @@ function CardImage({ card, className = '' }: { card: CardFace; className?: strin
     <img
       src={card.src}
       alt={card.alt}
-      className={`aspect-[5/7] w-9 rounded-md border border-zinc-950/25 bg-stone-100 object-cover shadow-[0_9px_18px_rgba(0,0,0,0.45)] sm:w-10 lg:w-12 xl:w-14 ${className}`}
+      className={`aspect-[5/7] w-9 rounded-md border border-zinc-950/25 bg-stone-100 object-cover shadow-[0_9px_18px_rgba(0,0,0,0.45)] sm:w-10 lg:w-10 xl:w-11 ${className}`}
     />
   );
 }
@@ -155,7 +154,7 @@ function DiscardCard({ card }: { card: CardFace }) {
         role="img"
         aria-label={`Discarded ${card.alt}`}
         title={`Discarded ${card.code}`}
-        className="flex aspect-[5/7] w-9 items-center justify-center rounded-md border border-amber-300/75 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.14),transparent_48%),linear-gradient(135deg,rgba(24,24,27,0.98),rgba(3,7,10,0.98))] shadow-[0_9px_18px_rgba(0,0,0,0.45),inset_0_0_0_4px_rgba(251,191,36,0.12)] sm:w-10 lg:w-12 xl:w-14"
+        className="flex aspect-[5/7] w-9 items-center justify-center rounded-md border border-amber-300/75 bg-[radial-gradient(circle_at_center,rgba(251,191,36,0.14),transparent_48%),linear-gradient(135deg,rgba(24,24,27,0.98),rgba(3,7,10,0.98))] shadow-[0_9px_18px_rgba(0,0,0,0.45),inset_0_0_0_4px_rgba(251,191,36,0.12)] sm:w-10 lg:w-10 xl:w-11"
       >
         <Spade
           aria-hidden="true"
@@ -184,11 +183,11 @@ function SectionTitle({ children }: { children: string }) {
 
 function FlowDiagram() {
   return (
-    <div className="relative mx-auto w-full max-w-[760px] py-1 lg:py-0">
-      <div className="pointer-events-none absolute inset-x-0 top-24 hidden h-[360px] rounded-[999px] border border-amber-500/28 bg-teal-950/25 shadow-[inset_0_0_80px_rgba(20,184,166,0.12)] lg:block xl:h-[390px]" />
-      <div className="pointer-events-none absolute inset-x-10 top-28 hidden h-[335px] rounded-[999px] border border-amber-500/16 lg:block xl:h-[365px]" />
+    <div className="relative mx-auto w-full max-w-[650px] py-1 lg:py-0">
+      <div className="pointer-events-none absolute inset-x-0 top-20 hidden h-[300px] rounded-[999px] border border-amber-500/28 bg-teal-950/25 shadow-[inset_0_0_80px_rgba(20,184,166,0.12)] lg:block xl:h-[320px]" />
+      <div className="pointer-events-none absolute inset-x-10 top-24 hidden h-[276px] rounded-[999px] border border-amber-500/16 lg:block xl:h-[296px]" />
 
-      <div className="relative space-y-4 sm:space-y-5">
+      <div className="relative space-y-3 sm:space-y-4">
         <div>
           <div className="flex items-center justify-center gap-3 font-[var(--font-display)] text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-amber-200 sm:text-xs sm:tracking-[0.2em]">
             <span className="hidden h-px w-12 bg-amber-300/45 sm:block" />
@@ -235,6 +234,20 @@ function FlowDiagram() {
         </div>
       </div>
     </div>
+  );
+}
+
+function DiscordLogo({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={className}
+      fill="currentColor"
+      focusable="false"
+    >
+      <path d="M20.3 4.4A19.7 19.7 0 0 0 15.4 3l-.2.4c-.2.4-.4.8-.5 1.2a18.4 18.4 0 0 0-5.4 0A9.7 9.7 0 0 0 8.6 3a19.7 19.7 0 0 0-4.9 1.4C.6 9 .1 13.4.5 17.7A19.8 19.8 0 0 0 6.5 21c.5-.6.9-1.3 1.2-2a12.9 12.9 0 0 1-1.9-.9l.5-.4a14.2 14.2 0 0 0 11.4 0l.5.4c-.6.4-1.2.7-1.9.9.4.7.8 1.4 1.2 2a19.8 19.8 0 0 0 6-3.3c.5-5-.8-9.4-3.2-13.3ZM8.2 15c-1.1 0-2-1-2-2.1s.9-2.1 2-2.1 2 1 2 2.1-.9 2.1-2 2.1Zm7.6 0c-1.1 0-2-1-2-2.1s.9-2.1 2-2.1 2 1 2 2.1-.9 2.1-2 2.1Z" />
+    </svg>
   );
 }
 
@@ -511,13 +524,8 @@ export default function HeroSection() {
         </div>
 
         <header className="relative z-10 border-b border-amber-300/55">
-          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-7 sm:px-8">
-            <a
-              href="/"
-              className="font-[var(--font-display)] text-xl font-semibold uppercase tracking-[0.42em] text-amber-200 sm:text-2xl"
-            >
-              Bondi Poker
-            </a>
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 sm:px-8 sm:py-5">
+            <BondiPokerLogo href="/" variant="nav" className="max-w-[68vw]" />
             <button
               type="button"
               onClick={() => {
@@ -531,39 +539,19 @@ export default function HeroSection() {
           </div>
         </header>
 
-        <div className="relative z-10 mx-auto grid max-w-[92rem] items-center gap-10 px-6 py-12 sm:px-8 sm:py-14 lg:min-h-[650px] lg:grid-cols-[0.82fr_1.18fr] lg:gap-10 xl:px-10">
+        <div className="relative z-10 mx-auto grid max-w-[92rem] items-center gap-8 px-6 py-8 sm:px-8 sm:py-10 lg:min-h-[560px] lg:grid-cols-[0.86fr_1.14fr] lg:gap-8 xl:px-10">
           <div className="max-w-xl">
-            <h1 className="font-[var(--font-serif)] text-5xl font-semibold leading-[0.92] text-white sm:text-6xl lg:text-[5.2rem] xl:text-[5.7rem]">
+            <h1 className="font-[var(--font-serif)] text-4xl font-semibold leading-[0.96] text-white sm:text-5xl lg:text-[4.2rem] xl:text-[4.55rem]">
               A new kind of online Hold&apos;em.
             </h1>
 
-            <p className="mt-7 max-w-lg text-base leading-7 text-zinc-300 sm:text-lg lg:text-xl lg:leading-8">
+            <p className="mt-6 max-w-lg text-base leading-7 text-zinc-300 sm:text-lg lg:text-xl lg:leading-8">
               Real-time multiplayer poker with a twist: start with 5 hole cards, discard one after
               the flop, turn, and river, and reach showdown with just 2 hole cards.
             </p>
 
-            <div className="mt-7 max-w-xl rounded-lg border border-white/[0.14] bg-zinc-950/[0.48] p-4 shadow-[0_22px_60px_rgba(0,0,0,0.24)] backdrop-blur sm:p-5 lg:mt-9">
-              <div className="flex items-start gap-4">
-                <span className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-teal-300/45 bg-teal-400/10 text-teal-200">
-                  <MessageCircle aria-hidden="true" className="h-5 w-5" strokeWidth={1.8} />
-                </span>
-                <div>
-                  <p className="text-base font-semibold leading-6 text-white">
-                    Join Discord for updates and live tables.
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-300">
-                    Get updates, find live games, coordinate with other players, and report bugs or
-                    give feedback.
-                  </p>
-                </div>
-              </div>
-
-              <p className="mt-4 rounded-md border border-amber-300/25 bg-amber-300/[0.07] px-3 py-2 text-xs leading-5 text-amber-100">
-                We&rsquo;re still early, so games may not always be active. Join Discord to
-                coordinate with other players and hear when live test sessions are happening.
-              </p>
-
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-6 max-w-xl lg:mt-7">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <a
                   href={DISCORD_INVITE_URL}
                   target="_blank"
@@ -574,29 +562,46 @@ export default function HeroSection() {
                       destination: 'discord_invite',
                     });
                   }}
-                  className="inline-flex min-h-14 flex-1 items-center justify-center gap-2 rounded-md border border-teal-200/80 bg-teal-400/[0.52] px-6 py-4 text-base font-semibold text-white shadow-[0_0_24px_rgba(20,184,166,0.24)] transition hover:bg-teal-300/[0.62]"
+                  className="inline-flex min-h-14 flex-1 items-center justify-center gap-2 rounded-md border border-teal-200/80 bg-teal-400/[0.58] px-7 py-4 text-base font-semibold text-white shadow-[0_0_28px_rgba(20,184,166,0.26)] transition hover:bg-teal-300/[0.66]"
                 >
-                  <MessageCircle aria-hidden="true" className="h-5 w-5" strokeWidth={1.8} />
+                  <DiscordLogo className="h-5 w-5" />
                   Join Discord
                   <ExternalLink aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
                 </a>
                 <button
                   type="button"
-                  aria-expanded={earlyAccessOpen}
-                  aria-controls="early-access-form"
                   onClick={() => {
-                    setEarlyAccessOpen((current) => !current);
-                    logClientEvent('landing_cta', {
-                      cta: 'hero_join_email_list',
-                      destination: '#early-access-form',
-                    });
+                    void handlePlayNow();
                   }}
-                  className="inline-flex min-h-14 items-center justify-center gap-2 rounded-md border border-amber-300/65 bg-transparent px-6 py-4 text-base font-semibold text-amber-100 transition hover:border-teal-200 hover:text-teal-100"
+                  disabled={playNowLoading}
+                  className="inline-flex min-h-14 items-center justify-center rounded-md border border-amber-300/70 bg-transparent px-7 py-4 font-[var(--font-display)] text-sm font-semibold uppercase tracking-[0.16em] text-amber-100 transition hover:border-teal-200 hover:text-teal-100 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-40"
                 >
-                  <Mail aria-hidden="true" className="h-5 w-5" strokeWidth={1.8} />
-                  Get email updates
+                  {playNowLoading ? 'Opening' : 'Quick Play'}
                 </button>
               </div>
+
+              <p className="mt-3 text-sm leading-6 text-zinc-300">
+                Find live games, coordinate test sessions, get updates, and report bugs in Discord.
+              </p>
+              <p className="mt-1 text-xs leading-5 text-amber-100/85">
+                Games are still early and may not always be active.
+              </p>
+
+              <button
+                type="button"
+                aria-expanded={earlyAccessOpen}
+                aria-controls="early-access-form"
+                onClick={() => {
+                  setEarlyAccessOpen((current) => !current);
+                  logClientEvent('landing_cta', {
+                    cta: 'hero_join_email_list',
+                    destination: '#early-access-form',
+                  });
+                }}
+                className="mt-3 text-sm font-medium text-zinc-400 underline decoration-zinc-600 underline-offset-4 transition hover:text-teal-100 hover:decoration-teal-300"
+              >
+                Prefer email updates?
+              </button>
             </div>
 
             {earlyAccessOpen ? (
@@ -664,9 +669,7 @@ export default function HeroSection() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_60%,rgba(20,184,166,0.07),transparent_32%),radial-gradient(circle_at_88%_70%,rgba(251,191,36,0.05),transparent_34%)]" />
         <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1fr_0.9fr]">
           <div>
-            <div className="font-[var(--font-display)] text-3xl font-semibold uppercase tracking-[0.42em] text-amber-200">
-              Bondi Poker
-            </div>
+            <BondiPokerLogo variant="nav" className="w-64 max-w-full sm:w-72" />
             <div className="mt-6 flex max-w-sm items-center gap-4">
               <span className="h-px flex-1 bg-amber-300/40" />
               <Spade aria-hidden="true" className="h-5 w-5 text-teal-300" />

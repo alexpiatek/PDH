@@ -18,6 +18,7 @@ import {
   recordTableJoin,
 } from '../lib/quickPlayProfile';
 import { getRecentTables, type RecentLobbyTable, upsertRecentTable } from '../lib/recentTables';
+import { BondiPokerLogo } from '../components/BondiPokerLogo';
 
 const resolveNetworkBackend = () => {
   const explicit = (process.env.NEXT_PUBLIC_NETWORK_BACKEND || '').trim().toLowerCase();
@@ -226,13 +227,8 @@ const PlayLobbyPage: NextPage = () => {
         </div>
 
         <header className="relative z-10 border-b border-amber-300/40 bg-[#03080b]/70 backdrop-blur">
-          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-6 sm:px-8">
-            <a
-              href="/"
-              className="font-[var(--font-display)] text-xl font-semibold uppercase tracking-[0.42em] text-amber-200 sm:text-2xl"
-            >
-              Bondi Poker
-            </a>
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 sm:px-8 sm:py-5">
+            <BondiPokerLogo href="/" variant="nav" className="max-w-[68vw]" />
             <a
               href="/#how-it-works"
               className="hidden rounded-md border border-white/15 px-4 py-2 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200 transition hover:border-teal-300/70 hover:text-teal-100 sm:inline-flex"

@@ -5,6 +5,7 @@ import type { Match, Session, Socket as NakamaSocket } from '@heroiclabs/nakama-
 import { Card, HandState, PlayerInHand } from '@pdh/engine';
 import { TABLE_CHAT_MAX_LENGTH, TABLE_REACTIONS } from '@pdh/protocol';
 import { ClientMessage, ServerMessage } from '../server-types';
+import { BondiPokerLogo } from './BondiPokerLogo';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
 
@@ -2178,19 +2179,10 @@ export const PokerGamePage = ({
           }}
         >
           <div style={{ minWidth: 0 }}>
-            <div
-              style={{
-                fontFamily: TABLE_THEME.fontDisplay,
-                fontSize: isPhone ? 11 : 12,
-                fontWeight: 700,
-                color: TABLE_THEME.amber,
-                textTransform: 'uppercase',
-                letterSpacing: '0.18em',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Bondi Poker
-            </div>
+            <BondiPokerLogo
+              variant="table"
+              className={isPhone ? 'max-w-[150px]' : 'max-w-[210px]'}
+            />
             <div
               style={{
                 marginTop: isPhone ? 4 : 0,
