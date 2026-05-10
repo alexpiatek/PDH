@@ -48,6 +48,7 @@ services:
       - '--session.encryption_key=${NAKAMA_SESSION_ENCRYPTION_KEY:?Set NAKAMA_SESSION_ENCRYPTION_KEY in .env}'
       - '--session.refresh_encryption_key=${NAKAMA_SESSION_REFRESH_ENCRYPTION_KEY:?Set NAKAMA_SESSION_REFRESH_ENCRYPTION_KEY in .env}'
       - '--runtime.http_key=${NAKAMA_RUNTIME_HTTP_KEY:?Set NAKAMA_RUNTIME_HTTP_KEY in .env}'
+      - '--runtime.env=PDH_ADMIN_RPC_SECRET=${PDH_ADMIN_RPC_SECRET:?Set PDH_ADMIN_RPC_SECRET in .env}'
       - '--console.signing_key=${NAKAMA_CONSOLE_SIGNING_KEY:?Set NAKAMA_CONSOLE_SIGNING_KEY in .env}'
       - '--console.username=${NAKAMA_CONSOLE_USERNAME:?Set NAKAMA_CONSOLE_USERNAME in .env}'
       - '--console.password=${NAKAMA_CONSOLE_PASSWORD:?Set NAKAMA_CONSOLE_PASSWORD in .env}'

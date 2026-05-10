@@ -19,6 +19,7 @@ export const DEFAULT_MATCH_MODULE = 'pdh';
 export const PDH_RPC_ENSURE_MATCH = 'pdh_ensure_match';
 export const PDH_RPC_GET_REPLAY = 'pdh_debug_get_replay';
 export const PDH_RPC_TERMINATE_MATCH = 'pdh_admin_terminate_match';
+export const PDH_ADMIN_RPC_SECRET_ENV_KEY = 'PDH_ADMIN_RPC_SECRET';
 const REPLAY_MAX_EVENTS = 500;
 const REPLAY_DEFAULT_LIMIT = 50;
 const REPLAY_MAX_LIMIT = 500;
@@ -91,11 +92,15 @@ interface GetReplayInput {
   matchId?: string;
   tableId?: string;
   limit?: number;
+  adminSecret?: string;
+  secret?: string;
 }
 
 interface TerminateMatchInput {
   matchId: string;
   reason?: string;
+  adminSecret?: string;
+  secret?: string;
 }
 
 type NakamaWithMatchSignal = nkruntime.Nakama & {
@@ -111,6 +116,42 @@ function readMatchId(ctx: unknown): string | null {
     return c.match_id;
   }
   return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
+
+function readAdminRpcSecret(ctx: unknown): string | null {
+  if (!isRecord(ctx) || !isRecord(ctx.env)) {
+    return null;
+  }
+  const secret = ctx.env[PDH_ADMIN_RPC_SECRET_ENV_KEY];
+  if (typeof secret !== 'string') {
+    return null;
+  }
+  const trimmed = secret.trim();
+  return trimmed ? trimmed : null;
+}
+
+function assertAdminRpcAuthorized(
+  ctx: unknown,
+  input: { adminSecret?: unknown; secret?: unknown } | undefined
+) {
+  const expected = readAdminRpcSecret(ctx);
+  if (!expected) {
+    throw new Error(`${PDH_ADMIN_RPC_SECRET_ENV_KEY} is required for admin RPC access`);
+  }
+
+  const provided =
+    typeof input?.adminSecret === 'string'
+      ? input.adminSecret
+      : typeof input?.secret === 'string'
+        ? input.secret
+        : '';
+  if (provided !== expected) {
+    throw new Error('Unauthorized admin RPC access');
+  }
 }
 
 function nowIso() {
@@ -493,6 +534,8 @@ export function rpcGetPdhReplay(
     }
   }
 
+  assertAdminRpcAuthorized(ctx, input);
+
   const requestedMatchId = (input?.matchId ?? '').trim();
   const tableId = normalizeTableId(input?.tableId);
   const resolvedMatchId =
@@ -535,6 +578,7 @@ export function rpcTerminatePdhMatch(
   if (!matchId) {
     throw new Error('matchId is required');
   }
+  assertAdminRpcAuthorized(ctx, input);
   const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
 
   const runtimeNakama = nk as NakamaWithMatchSignal;

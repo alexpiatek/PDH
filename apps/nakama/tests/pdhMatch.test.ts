@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  PDH_ADMIN_RPC_SECRET_ENV_KEY,
   ensurePdhMatch,
   pdhMatchHandler,
   rpcEnsurePdhMatch,
@@ -12,6 +13,8 @@ const logger = {
   warn: vi.fn(),
   error: vi.fn(),
 };
+const ADMIN_RPC_SECRET = 'test-admin-secret';
+const adminCtx = { env: { [PDH_ADMIN_RPC_SECRET_ENV_KEY]: ADMIN_RPC_SECRET } };
 
 function makeNakamaMock() {
   return {
@@ -460,10 +463,10 @@ describe('pdhMatchHandler', () => {
     expect(signalPayload.events[1].outcome).toBe('rejected');
 
     const replayRpc = rpcGetPdhReplay(
-      {},
+      adminCtx,
       logger as any,
       nk as any,
-      JSON.stringify({ matchId: state.matchId, limit: 1 })
+      JSON.stringify({ matchId: state.matchId, limit: 1, adminSecret: ADMIN_RPC_SECRET })
     );
     const replay = JSON.parse(replayRpc);
     expect(replay.matchId).toBe(state.matchId);
@@ -490,10 +493,14 @@ describe('pdhMatchHandler', () => {
   it('signals and terminates a match via admin RPC/signal path', () => {
     const nk = makeNakamaMock();
     const rpcPayload = rpcTerminatePdhMatch(
-      {},
+      adminCtx,
       logger as any,
       nk as any,
-      JSON.stringify({ matchId: 'match-123', reason: 'stuck table' })
+      JSON.stringify({
+        matchId: 'match-123',
+        reason: 'stuck table',
+        adminSecret: ADMIN_RPC_SECRET,
+      })
     );
     const parsed = JSON.parse(rpcPayload);
     expect(parsed.matchId).toBe('match-123');
@@ -525,5 +532,29 @@ describe('pdhMatchHandler', () => {
       []
     );
     expect(loopResult).toBeNull();
+  });
+
+  it('rejects debug/admin RPCs without the configured admin secret', () => {
+    const nk = makeNakamaMock();
+
+    expect(() =>
+      rpcGetPdhReplay(
+        adminCtx,
+        logger as any,
+        nk as any,
+        JSON.stringify({ matchId: 'match-123', limit: 1, adminSecret: 'wrong-secret' })
+      )
+    ).toThrow('Unauthorized admin RPC access');
+
+    expect(() =>
+      rpcTerminatePdhMatch(
+        {},
+        logger as any,
+        nk as any,
+        JSON.stringify({ matchId: 'match-123', adminSecret: ADMIN_RPC_SECRET })
+      )
+    ).toThrow(`${PDH_ADMIN_RPC_SECRET_ENV_KEY} is required for admin RPC access`);
+
+    expect(nk.matchSignal).not.toHaveBeenCalled();
   });
 });

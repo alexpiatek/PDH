@@ -93,19 +93,21 @@ Response contains `{ type: "replay", count, events }`.
 
 RPC id: `pdh_debug_get_replay`
 
-Example (trusted network; do not expose HTTP key publicly):
+Set a strong `PDH_ADMIN_RPC_SECRET` in Nakama `runtime.env`, then include it as
+`adminSecret` in trusted tooling requests. Do not expose the runtime HTTP key or
+admin secret publicly.
 
 ```bash
 curl -sS -X POST \
   "http://127.0.0.1:7350/v2/rpc/pdh_debug_get_replay?http_key=${NAKAMA_SOCKET_SERVER_KEY}" \
   -H "Content-Type: application/json" \
-  -d '{"tableId":"main","limit":50}'
+  -d "{\"tableId\":\"main\",\"limit\":50,\"adminSecret\":\"${PDH_ADMIN_RPC_SECRET}\"}"
 ```
 
 You can also pass `matchId` directly:
 
 ```json
-{ "matchId": "YOUR_MATCH_ID", "limit": 100 }
+{ "matchId": "YOUR_MATCH_ID", "limit": 100, "adminSecret": "YOUR_ADMIN_RPC_SECRET" }
 ```
 
 ## Triage Workflow
