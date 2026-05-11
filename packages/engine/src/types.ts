@@ -64,6 +64,7 @@ export interface HandState {
   discardPending: string[];
   discardDeadline: number | null;
   showdownWinners: ShowdownWinner[];
+  showdownPots: ShowdownPotResult[];
   showdownRevealIds?: string[];
   log: HandLogEntry[];
   auditLog?: HandLogEntry[];
@@ -124,4 +125,22 @@ export interface ShowdownWinner {
   handStrength?: number;
   bestFive?: Card[];
   handLabel?: string;
+  potIds?: string[];
+  potLabels?: string[];
+}
+
+export interface ShowdownPotWinner {
+  playerId: string;
+  amount: number;
+  handStrength?: number;
+  bestFive?: Card[];
+  handLabel?: string;
+}
+
+export interface ShowdownPotResult {
+  potId: string;
+  label: string;
+  amount: number;
+  eligible: string[];
+  winners: ShowdownPotWinner[];
 }

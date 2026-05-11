@@ -11,6 +11,7 @@ import {
   PlayerStatus,
   Pot,
   Seat,
+  ShowdownPotResult,
   ShowdownWinner,
   Street,
   StartGateState,
@@ -366,6 +367,7 @@ export class PokerTable {
       discardPending: [],
       discardDeadline: null,
       showdownWinners: [],
+      showdownPots: [],
       log: [],
       auditLog: [],
     };
@@ -846,6 +848,7 @@ export class PokerTable {
     hand.phase = 'showdown';
     hand.actionDeadline = null;
     hand.showdownWinners = [];
+    hand.showdownPots = [];
     const totalPot = hand.players.reduce((sum, p) => sum + p.totalCommitted, 0);
     const stackBeforeById = new Map(
       hand.players.map((p) => [p.id, this.state.seats[p.seat]?.stack ?? p.stack])
@@ -877,13 +880,30 @@ export class PokerTable {
       const handLabel = winner.status === 'folded' ? 'Win by Fold' : 'Uncontested';
       logPush(hand.log, `${winner.name} wins ${totalPot} (${handLabel})`);
       logPush(hand.auditLog, `Winner: ${winner.name} (${handLabel})`);
-      hand.showdownWinners = [{ playerId: winner.id, amount: totalPot, handLabel }];
+      hand.showdownWinners = [
+        {
+          playerId: winner.id,
+          amount: totalPot,
+          handLabel,
+          potIds: ['pot-0'],
+          potLabels: ['Main pot'],
+        },
+      ];
+      hand.showdownPots = [
+        {
+          potId: 'pot-0',
+          label: 'Main pot',
+          amount: totalPot,
+          eligible: [winner.id],
+          winners: [{ playerId: winner.id, amount: totalPot, handLabel }],
+        },
+      ];
       this.syncStacksAndLogMovement(hand, stackBeforeById);
       this.markBustedSeats(hand);
       return;
     }
     this.buildSidePots(hand);
-    const results = this.scoreShowdown(hand);
+    const { winners: results, pots: potResults } = this.scoreShowdown(hand);
     const cardShortLabel = (card: Card) => `${card.rank}${card.suit.toLowerCase()}`;
     for (const res of results) {
       const seat = this.state.seats.find((s) => s?.id === res.playerId);
@@ -896,6 +916,7 @@ export class PokerTable {
       logPush(hand.auditLog, `Winner: ${seat?.name ?? res.playerId} (${winnerLabel}) ${bestFive}`);
     }
     hand.showdownWinners = results;
+    hand.showdownPots = potResults;
     this.syncStacksAndLogMovement(hand, stackBeforeById);
     this.markBustedSeats(hand);
   }
@@ -953,7 +974,10 @@ export class PokerTable {
     hand.pots = pots;
   }
 
-  private scoreShowdown(hand: HandState): ShowdownWinner[] {
+  private scoreShowdown(hand: HandState): {
+    winners: ShowdownWinner[];
+    pots: ShowdownPotResult[];
+  } {
     const contenders = activePlayers(hand);
     const evaluations = contenders.map((p) => ({
       player: p,
@@ -961,10 +985,12 @@ export class PokerTable {
     }));
     const evalById = new Map(evaluations.map((e) => [e.player.id, e.eval]));
     const award = new Map<string, ShowdownWinner>();
-    for (const pot of hand.pots) {
+    const potResults: ShowdownPotResult[] = [];
+    for (let potIndex = 0; potIndex < hand.pots.length; potIndex += 1) {
+      const pot = hand.pots[potIndex];
       const eligible = evaluations.filter((e) => pot.eligible.includes(e.player.id));
       if (eligible.length === 0) continue;
-      let best = Math.max(...eligible.map((e) => e.eval.score));
+      const best = Math.max(...eligible.map((e) => e.eval.score));
       const winners = eligible.filter((e) => e.eval.score === best);
       const share = Math.floor(pot.amount / winners.length);
       const remainder = pot.amount % winners.length;
@@ -972,41 +998,47 @@ export class PokerTable {
         winners.map((w) => w.player),
         hand.buttonSeat
       );
-      winners.forEach((w) => {
-        const existing = award.get(w.player.id);
+      const potId = `pot-${potIndex}`;
+      const label = potIndex === 0 ? 'Main pot' : `Side pot ${potIndex}`;
+      const remainderWinnerId = remainder > 0 ? orderedWinners[0]?.id : undefined;
+      const potWinners = winners.map((w) => {
         const evalResult = evalById.get(w.player.id);
         const handLabel = evalResult ? HAND_CATEGORY_LABELS[evalResult.category] : undefined;
+        return {
+          playerId: w.player.id,
+          amount: share + (w.player.id === remainderWinnerId ? remainder : 0),
+          bestFive: evalResult?.bestFive,
+          handStrength: evalResult?.score,
+          handLabel,
+        };
+      });
+      potResults.push({
+        potId,
+        label,
+        amount: pot.amount,
+        eligible: [...pot.eligible],
+        winners: potWinners,
+      });
+      potWinners.forEach((potWinner) => {
+        const existing = award.get(potWinner.playerId);
         if (existing) {
-          existing.amount += share;
+          existing.amount += potWinner.amount;
+          existing.potIds = [...(existing.potIds ?? []), potId];
+          existing.potLabels = [...(existing.potLabels ?? []), label];
         } else {
-          award.set(w.player.id, {
-            playerId: w.player.id,
-            amount: share,
-            bestFive: evalResult?.bestFive,
-            handStrength: evalResult?.score,
-            handLabel,
+          award.set(potWinner.playerId, {
+            playerId: potWinner.playerId,
+            amount: potWinner.amount,
+            bestFive: potWinner.bestFive,
+            handStrength: potWinner.handStrength,
+            handLabel: potWinner.handLabel,
+            potIds: [potId],
+            potLabels: [label],
           });
         }
       });
-      if (remainder > 0 && orderedWinners.length > 0) {
-        const winnerId = orderedWinners[0].id;
-        const existing = award.get(winnerId);
-        const evalResult = evalById.get(winnerId);
-        const handLabel = evalResult ? HAND_CATEGORY_LABELS[evalResult.category] : undefined;
-        if (existing) {
-          existing.amount += remainder;
-        } else {
-          award.set(winnerId, {
-            playerId: winnerId,
-            amount: remainder,
-            bestFive: evalResult?.bestFive,
-            handStrength: evalResult?.score,
-            handLabel,
-          });
-        }
-      }
     }
-    return [...award.values()];
+    return { winners: [...award.values()], pots: potResults };
   }
 
   private orderWinnersByButton(players: PlayerInHand[], buttonSeat: number): PlayerInHand[] {

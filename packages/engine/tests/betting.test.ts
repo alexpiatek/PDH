@@ -281,10 +281,22 @@ describe('betting rules', () => {
       { amount: 2000, eligible: ['p2'] },
     ]);
 
-    const results = (table as any).scoreShowdown(hand) as Array<{
-      playerId: string;
-      amount: number;
-    }>;
+    const { winners: results, pots } = (table as any).scoreShowdown(hand) as {
+      winners: Array<{
+        playerId: string;
+        amount: number;
+      }>;
+      pots: Array<{
+        label: string;
+        amount: number;
+        winners: Array<{ playerId: string; amount: number }>;
+      }>;
+    };
+    expect(pots.map((pot) => ({ label: pot.label, amount: pot.amount }))).toEqual([
+      { label: 'Main pot', amount: 3000 },
+      { label: 'Side pot 1', amount: 4000 },
+      { label: 'Side pot 2', amount: 2000 },
+    ]);
     const byPlayer = new Map(results.map((r) => [r.playerId, r.amount]));
     expect(byPlayer.get('p0')).toBe(3000);
     expect(byPlayer.get('p1')).toBe(4000);

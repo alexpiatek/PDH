@@ -1,13 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, Trophy } from 'lucide-react';
 import { Client as NakamaClient } from '@heroiclabs/nakama-js';
 import type { Match, Session, Socket as NakamaSocket } from '@heroiclabs/nakama-js';
-import { Card, HandState, PlayerInHand } from '@pdh/engine';
+import { Card, HandState, PlayerInHand, ShowdownPotResult, ShowdownWinner } from '@pdh/engine';
 import { TABLE_CHAT_MAX_LENGTH, TABLE_REACTIONS } from '@pdh/protocol';
 import { ClientMessage, ServerMessage } from '../server-types';
 import { BondiPokerLogo } from './BondiPokerLogo';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
+import { getPlayerInitials } from '../lib/playerInitials';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000';
 
@@ -50,6 +51,7 @@ const UI_STORAGE_KEYS = {
 const REACTION_COOLDOWN_MS = 2500;
 const REACTION_VISIBLE_MS = 2200;
 const CHAT_HISTORY_LIMIT = 50;
+const SHOWDOWN_AUTO_ADVANCE_MS = 6000;
 
 const textDecoder = new TextDecoder();
 
@@ -269,18 +271,6 @@ const suitSymbol = (suit: Card['suit']) => {
   }
 };
 
-const AVATAR_SUITS: Card['suit'][] = ['C', 'S', 'H', 'D'];
-const avatarSuitForId = (id?: string) => {
-  if (!id) return 'S';
-  let hash = 0;
-  for (let i = 0; i < id.length; i += 1) {
-    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  }
-  return AVATAR_SUITS[hash % AVATAR_SUITS.length];
-};
-const avatarSuitColor = (suit: Card['suit']) =>
-  suit === 'H' || suit === 'D' ? '#dc2626' : '#111827';
-
 const cardRankLabel = (rank: Card['rank']) => (rank === 'T' ? '10' : rank);
 const cardText = (c: Card) => `${cardRankLabel(c.rank)}${suitSymbol(c.suit)}`;
 type PlayerActionType = Extract<ClientMessage, { type: 'action' }>['action'];
@@ -304,20 +294,36 @@ const stateHasSeatedPlayer = (state: ServerStatePayload, playerId: string) =>
 const isHiddenCard = (card: Card) =>
   (card as unknown as { rank: string }).rank === 'X' ||
   (card as unknown as { suit: string }).suit === 'X';
-const formatHandLabel = (label: string) => {
-  const lower = label.trim().toLowerCase();
-  if (!lower) return lower;
-  if (lower.endsWith(' high')) return lower;
-  if (lower.startsWith('two pair')) return lower;
-  if (lower.startsWith('three of a kind')) return lower;
-  if (lower.startsWith('four of a kind')) return lower;
-  if (lower.startsWith('five of a kind')) return lower;
-  if (lower.startsWith('pair of')) return `a ${lower}`;
-  if (lower === 'pair') return 'a pair';
-  if (['full house', 'straight', 'flush', 'straight flush', 'royal flush'].includes(lower)) {
-    return `a ${lower}`;
+const formatHandTitle = (label?: string) =>
+  (label ?? '')
+    .trim()
+    .split(/\s+/)
+    .map((part, index) => {
+      const lower = part.toLowerCase();
+      if (index > 0 && ['a', 'an', 'by', 'of'].includes(lower)) {
+        return lower;
+      }
+      return part ? `${part[0].toUpperCase()}${part.slice(1).toLowerCase()}` : part;
+    })
+    .join(' ');
+
+const formatShowdownHandPhrase = (label?: string) => {
+  const title = formatHandTitle(label);
+  if (!title) return 'at showdown';
+  if (title === 'Uncontested') return 'uncontested';
+  if (title === 'Win By Fold') return 'by fold';
+  if (title === 'Two Pair' || title === 'High Card' || title === 'One Pair') {
+    return `with ${title}`;
   }
-  return lower;
+  return `with a ${title}`;
+};
+
+const formatChips = (amount: number) => new Intl.NumberFormat('en-US').format(amount);
+
+const joinPlayerNames = (names: string[]) => {
+  if (names.length <= 1) return names[0] ?? '';
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
 };
 
 const formatStreetLabel = (street: HandState['street']) => {
@@ -533,6 +539,383 @@ const parseActionMessage = (message: string): ActionBadge | null => {
   return null;
 };
 
+const formatSeatTimer = (secondsLeft: number | null | undefined) =>
+  typeof secondsLeft === 'number' ? ` · ${secondsLeft}s` : '';
+
+const playerSeatStatusLabel = ({
+  status,
+  isTurn,
+  isHero,
+  secondsLeft,
+  isBetting,
+  isDiscarding,
+  hasDiscarded,
+}: {
+  status: PlayerInHand['status'];
+  isTurn: boolean;
+  isHero?: boolean;
+  secondsLeft: number | null;
+  isBetting: boolean;
+  isDiscarding?: boolean;
+  hasDiscarded?: boolean;
+}) => {
+  if (isTurn) {
+    return `${isHero ? 'YOUR TURN' : 'TO ACT'}${formatSeatTimer(secondsLeft)}`;
+  }
+  if (status === 'folded') return 'FOLDED';
+  if (status === 'allIn') return 'ALL-IN';
+  if (status === 'sitting_out') return 'SITTING OUT';
+  if (status === 'busted' || status === 'out') return 'WAITING';
+  if (isDiscarding) return hasDiscarded ? 'DISCARDED' : 'DISCARDING';
+  if (isBetting && status === 'active') return 'WAITING';
+  return null;
+};
+
+const PlayerIdentityBadge = ({
+  name,
+  size,
+  isActive = false,
+  isWinner = false,
+  isDimmed = false,
+  secondsLeft,
+  maxSeconds = 30,
+  timerTone,
+}: {
+  name?: string | null;
+  size: number;
+  isActive?: boolean;
+  isWinner?: boolean;
+  isDimmed?: boolean;
+  secondsLeft?: number | null;
+  maxSeconds?: number;
+  timerTone: string;
+}) => {
+  const initials = getPlayerInitials(name);
+  const progress =
+    isActive && typeof secondsLeft === 'number'
+      ? Math.max(0, Math.min(1, secondsLeft / Math.max(1, maxSeconds)))
+      : null;
+
+  return (
+    <div
+      aria-label={`${name?.trim() || 'Unknown player'} initials ${initials}`}
+      data-testid="player-initials-badge"
+      style={{
+        width: size,
+        height: size,
+        flex: `0 0 ${size}px`,
+        borderRadius: '50%',
+        padding: isActive ? 2 : 1,
+        background:
+          progress !== null
+            ? `conic-gradient(${timerTone} ${Math.round(progress * 360)}deg, rgba(148,163,184,0.24) 0deg)`
+            : isWinner
+              ? '#22c55e'
+              : 'rgba(251,191,36,0.42)',
+        boxShadow: isActive ? '0 0 18px rgba(20,184,166,0.42)' : '0 8px 18px rgba(0,0,0,0.34)',
+        opacity: isDimmed ? 0.72 : 1,
+      }}
+    >
+      <span
+        style={{
+          width: '100%',
+          height: '100%',
+          borderRadius: '50%',
+          border: '1px solid rgba(255,255,255,0.16)',
+          background: 'linear-gradient(180deg, rgba(30,41,59,0.98), rgba(15,23,42,0.96))',
+          color: '#f8fafc',
+          display: 'grid',
+          placeItems: 'center',
+          fontFamily: TABLE_THEME.fontSans,
+          fontWeight: 800,
+          fontSize: size <= 32 ? 11 : 12,
+          lineHeight: 1,
+          letterSpacing: 0.4,
+        }}
+      >
+        {initials}
+      </span>
+    </div>
+  );
+};
+
+type ShowdownWinnerView = ShowdownWinner & {
+  name: string;
+  handTitle: string;
+  cardLine: string;
+};
+
+type ShowdownPotView = Omit<ShowdownPotResult, 'winners'> & {
+  winners: ShowdownWinnerView[];
+};
+
+type ShowdownResultView = {
+  winners: ShowdownWinnerView[];
+  pots: ShowdownPotView[];
+  hasSplitPot: boolean;
+  hasSidePots: boolean;
+};
+
+const formatPotWinnerText = (pot: ShowdownPotView) => {
+  const winners = pot.winners;
+  if (!winners.length) return `${pot.label}: unresolved`;
+  const names = joinPlayerNames(winners.map((winner) => winner.name));
+  const amounts = [...new Set(winners.map((winner) => winner.amount))];
+  const handTitles = [...new Set(winners.map((winner) => winner.handTitle).filter(Boolean))];
+  const amountCopy =
+    amounts.length === 1
+      ? `${formatChips(amounts[0])}${winners.length > 1 ? ' each' : ''}`
+      : winners.map((winner) => `${winner.name} ${formatChips(winner.amount)}`).join(', ');
+  const handCopy =
+    handTitles.length === 1 && handTitles[0] ? ` with ${handTitles[0]}` : ' with winning hands';
+  return `${pot.label}: ${names} ${winners.length === 1 ? 'wins' : 'win'} ${amountCopy}${handCopy}`;
+};
+
+const ShowdownResultOverlay = ({
+  result,
+  isPhone,
+  isMobile,
+  countdownSeconds,
+  onNextHand,
+}: {
+  result: ShowdownResultView;
+  isPhone: boolean;
+  isMobile: boolean;
+  countdownSeconds: number | null;
+  onNextHand: () => void;
+}) => {
+  const { winners, pots, hasSplitPot, hasSidePots } = result;
+  const primaryWinner = winners[0];
+  const sameAmount =
+    winners.length > 1 && new Set(winners.map((winner) => winner.amount)).size === 1;
+  const title = hasSplitPot ? 'Split Pot' : 'Showdown Result';
+  const mainLine = hasSidePots
+    ? 'Side pots awarded'
+    : hasSplitPot
+      ? `Split pot: ${joinPlayerNames(winners.map((winner) => winner.name))} win ${
+          sameAmount
+            ? `${formatChips(winners[0]?.amount ?? 0)} each`
+            : winners.map((winner) => `${formatChips(winner.amount)}`).join(' / ')
+        }`
+      : `${primaryWinner.name} wins ${formatChips(primaryWinner.amount)}`;
+  const subLine = hasSidePots
+    ? 'Main and side pots settled below'
+    : primaryWinner.handLabel
+      ? formatShowdownHandPhrase(primaryWinner.handLabel)
+      : 'best hand at showdown';
+  const detailWinners = hasSidePots ? winners : winners.slice(0, hasSplitPot ? 3 : 1);
+
+  return (
+    <div
+      role="status"
+      aria-live="assertive"
+      data-testid="showdown-result-overlay"
+      style={{
+        position: 'fixed',
+        zIndex: 80,
+        left: isPhone ? 10 : '50%',
+        right: isPhone ? 10 : undefined,
+        top: isPhone ? '50%' : '50%',
+        transform: isPhone ? 'translateY(-50%)' : 'translate(-50%, -50%)',
+        width: isPhone ? 'auto' : isMobile ? 'min(520px, calc(100% - 44px))' : 560,
+        maxWidth: 'calc(100% - 20px)',
+        maxHeight: isPhone ? 'calc(100dvh - 24px)' : 'calc(100dvh - 32px)',
+        overflow: 'hidden',
+        borderRadius: isPhone ? 16 : 18,
+        border: '1px solid rgba(251,191,36,0.62)',
+        background:
+          'linear-gradient(180deg, rgba(9,18,20,0.96), rgba(2,7,9,0.94)), radial-gradient(circle at 50% 0%, rgba(251,191,36,0.16), transparent 48%)',
+        boxShadow:
+          '0 24px 70px rgba(0,0,0,0.58), 0 0 0 1px rgba(34,197,94,0.16), 0 0 46px rgba(251,191,36,0.16)',
+        color: TABLE_THEME.text,
+        padding: isPhone ? '12px 12px 11px' : '16px 18px',
+        fontFamily: TABLE_THEME.fontSans,
+        animation: 'showdown-pop 220ms ease-out both',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          color: TABLE_THEME.amber,
+          fontSize: isPhone ? 11 : 12,
+          fontWeight: 900,
+          letterSpacing: 0.7,
+          textTransform: 'uppercase',
+        }}
+      >
+        <Trophy size={isPhone ? 15 : 17} strokeWidth={2.6} />
+        {title}
+      </div>
+      <div
+        style={{
+          marginTop: isPhone ? 6 : 8,
+          textAlign: 'center',
+          fontFamily: TABLE_THEME.fontDisplay,
+          fontSize: isPhone ? 25 : 34,
+          fontWeight: 900,
+          lineHeight: 1.05,
+          color: '#fef3c7',
+          textShadow: '0 8px 28px rgba(0,0,0,0.55)',
+        }}
+      >
+        {mainLine}
+      </div>
+      <div
+        style={{
+          marginTop: 6,
+          textAlign: 'center',
+          color: '#dcfce7',
+          fontSize: isPhone ? 15 : 18,
+          fontWeight: 800,
+          lineHeight: 1.25,
+        }}
+      >
+        {subLine}
+      </div>
+      <div
+        style={{
+          marginTop: isPhone ? 9 : 12,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: isPhone ? 7 : 9,
+        }}
+      >
+        {detailWinners.map((winner) => (
+          <div
+            key={winner.playerId}
+            style={{
+              borderRadius: 12,
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.045)',
+              padding: isPhone ? '8px 9px' : '10px 11px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 10,
+                alignItems: 'center',
+                color: TABLE_THEME.text,
+                fontSize: isPhone ? 13 : 14,
+                fontWeight: 900,
+                lineHeight: 1.2,
+              }}
+            >
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {winner.name}
+              </span>
+              <span style={{ color: TABLE_THEME.amber, whiteSpace: 'nowrap' }}>
+                +{formatChips(winner.amount)}
+              </span>
+            </div>
+            <div
+              style={{
+                marginTop: 3,
+                color: TABLE_THEME.muted,
+                fontSize: isPhone ? 12 : 13,
+                fontWeight: 700,
+              }}
+            >
+              {winner.handTitle || 'Winning hand'}
+              {winner.cardLine ? ` using ${winner.cardLine}` : ''}
+            </div>
+            {winner.bestFive?.length ? (
+              <div
+                aria-label={`${winner.name} winning five cards`}
+                style={{
+                  marginTop: 8,
+                  display: 'flex',
+                  justifyContent: 'center',
+                  gap: isPhone ? 5 : 7,
+                }}
+              >
+                {winner.bestFive.map((card, idx) => (
+                  <CardView
+                    key={`${winner.playerId}-showdown-card-${idx}-${card.rank}${card.suit}`}
+                    card={card}
+                    size={isPhone ? 'medium' : 'large'}
+                    highlight
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      {hasSidePots ? (
+        <div
+          style={{
+            marginTop: isPhone ? 8 : 10,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 5,
+            color: '#d1fae5',
+            fontSize: isPhone ? 11 : 12,
+            fontWeight: 800,
+            lineHeight: 1.25,
+          }}
+        >
+          {pots.map((pot) => (
+            <div
+              key={pot.potId}
+              style={{
+                borderRadius: 999,
+                border: '1px solid rgba(94,234,212,0.22)',
+                background: 'rgba(20,184,166,0.08)',
+                padding: '5px 8px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: isPhone ? 'normal' : 'nowrap',
+              }}
+            >
+              {formatPotWinnerText(pot)}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div
+        style={{
+          marginTop: isPhone ? 10 : 12,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          color: TABLE_THEME.dim,
+          fontSize: isPhone ? 11 : 12,
+          fontWeight: 700,
+        }}
+      >
+        <span>
+          {countdownSeconds !== null
+            ? `Next hand starting in ${countdownSeconds}s`
+            : 'Next hand starting soon'}
+        </span>
+        <button
+          type="button"
+          onClick={onNextHand}
+          style={{
+            border: '1px solid rgba(94,234,212,0.62)',
+            background: 'rgba(20,184,166,0.22)',
+            color: '#ccfbf1',
+            borderRadius: 999,
+            padding: isPhone ? '7px 10px' : '8px 12px',
+            fontSize: isPhone ? 12 : 13,
+            fontWeight: 900,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Continue
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const CardBack = ({
   size = 'medium',
   tone = 'navy',
@@ -629,6 +1012,7 @@ export const PokerGamePage = ({
   const [chatMessages, setChatMessages] = useState<TableChatMessage[]>([]);
   const [mutedChatPlayerIds, setMutedChatPlayerIds] = useState<string[]>([]);
   const [clockNowMs, setClockNowMs] = useState(() => Date.now());
+  const [showdownStartedAtMs, setShowdownStartedAtMs] = useState<number | null>(null);
   const resolvedForcedMatchId = forcedMatchId?.trim() || '';
   const hasLoggedTableJoinedRef = useRef(false);
   const hasLoggedFirstActionRef = useRef(false);
@@ -1110,9 +1494,9 @@ export const PokerGamePage = ({
     return hand.players.find((p: PlayerInHand) => p.id === playerId);
   }, [hand, playerId]);
   const winnersById = useMemo(() => {
-    const map = new Map<string, { bestFive?: Card[]; handLabel?: string }>();
+    const map = new Map<string, { amount: number; bestFive?: Card[]; handLabel?: string }>();
     for (const w of hand?.showdownWinners ?? []) {
-      map.set(w.playerId, { bestFive: w.bestFive, handLabel: w.handLabel });
+      map.set(w.playerId, { amount: w.amount, bestFive: w.bestFive, handLabel: w.handLabel });
     }
     return map;
   }, [hand?.showdownWinners]);
@@ -1266,14 +1650,23 @@ export const PokerGamePage = ({
     }
     return Math.max(0, Math.ceil((startGate.startsAt - clockNowMs) / 1000));
   }, [startGate?.startsAt, clockNowMs]);
+  const showdownCountdownSeconds = useMemo(() => {
+    if (hand?.phase !== 'showdown' || showdownStartedAtMs === null) {
+      return null;
+    }
+    return Math.max(
+      0,
+      Math.ceil((showdownStartedAtMs + SHOWDOWN_AUTO_ADVANCE_MS - clockNowMs) / 1000)
+    );
+  }, [hand?.phase, showdownStartedAtMs, clockNowMs]);
   const startGateReadyIds = useMemo(
     () => new Set<string>(startGate?.readyPlayerIds ?? []),
     [startGate?.readyPlayerIds]
   );
   const startGateAllReady = Boolean(
     startGate &&
-      seatedPlayers.length >= startGate.minPlayers &&
-      seatedPlayers.every((seat: any) => startGateReadyIds.has(seat.id))
+    seatedPlayers.length >= startGate.minPlayers &&
+    seatedPlayers.every((seat: any) => startGateReadyIds.has(seat.id))
   );
   const startGateCanEarlyStart = Boolean(startGateAllReady);
   const localReadyForStart = Boolean(playerId && startGateReadyIds.has(playerId));
@@ -1282,14 +1675,30 @@ export const PokerGamePage = ({
   const isPortraitPhone = isPhone && viewportHeight > viewportWidth;
   const isLandscapePhone = isMobile && viewportHeight <= 520 && viewportWidth > viewportHeight;
   const pinActionTray = isMobile && !isLandscapePhone;
-  const layoutTableWidth = isPortraitPhone ? 430 : isLandscapePhone ? 780 : isMobile ? BASE_TABLE_WIDTH : 920;
-  const layoutTableHeight = isPortraitPhone ? 640 : isLandscapePhone ? 300 : isMobile ? BASE_TABLE_HEIGHT : 480;
+  const layoutTableWidth = isPortraitPhone
+    ? 430
+    : isLandscapePhone
+      ? 780
+      : isMobile
+        ? BASE_TABLE_WIDTH
+        : 920;
+  const layoutTableHeight = isPortraitPhone
+    ? 640
+    : isLandscapePhone
+      ? 300
+      : isMobile
+        ? BASE_TABLE_HEIGHT
+        : 480;
   const tableTimerSeconds =
     hand?.phase === 'betting'
       ? actionSecondsLeft
       : hand?.phase === 'discard'
         ? discardSecondsLeft
         : null;
+  const tableTimerMaxSeconds =
+    hand?.phase === 'discard'
+      ? Math.max(1, Math.ceil((state?.config?.discardTimeoutMs ?? 30_000) / 1000))
+      : Math.max(1, Math.ceil((state?.config?.actionTimeoutMs ?? 30_000) / 1000));
   const isBettingPhase = hand?.phase === 'betting';
   const isDiscardPhase = hand?.phase === 'discard';
   const isRevealPhase = hand?.phase === 'showdown';
@@ -1380,6 +1789,14 @@ export const PokerGamePage = ({
   const hiddenChatCount = chatMessages.length - visibleChatMessages.length;
 
   useEffect(() => {
+    if (hand?.phase === 'showdown') {
+      setShowdownStartedAtMs(Date.now());
+      return;
+    }
+    setShowdownStartedAtMs(null);
+  }, [hand?.handId, hand?.phase]);
+
+  useEffect(() => {
     if (!hand) {
       return;
     }
@@ -1389,7 +1806,7 @@ export const PokerGamePage = ({
     if (localNeedsRebuy) {
       return;
     }
-    const timeoutId = window.setTimeout(() => send({ type: 'nextHand' }), 6000);
+    const timeoutId = window.setTimeout(() => send({ type: 'nextHand' }), SHOWDOWN_AUTO_ADVANCE_MS);
     return () => window.clearTimeout(timeoutId);
   }, [hand?.phase, hand?.handId, localNeedsRebuy]);
 
@@ -1466,7 +1883,10 @@ export const PokerGamePage = ({
   }, [hand?.handId]);
 
   useEffect(() => {
-    if (!startGate && (!hand || (hand.phase !== 'betting' && hand.phase !== 'discard'))) {
+    if (
+      !startGate &&
+      (!hand || (hand.phase !== 'betting' && hand.phase !== 'discard' && hand.phase !== 'showdown'))
+    ) {
       return;
     }
     setClockNowMs(Date.now());
@@ -1807,48 +2227,6 @@ export const PokerGamePage = ({
     );
   };
 
-  const renderTurnTimer = (isActive: boolean) => {
-    if (!isActive || tableTimerSeconds === null) {
-      return null;
-    }
-    const progress = Math.max(0, Math.min(1, tableTimerSeconds / 30));
-    return (
-      <div
-        aria-label={`${tableTimerSeconds} seconds to act`}
-        style={{
-          position: 'absolute',
-          top: -12,
-          left: -12,
-          width: 30,
-          height: 30,
-          borderRadius: '50%',
-          background: `conic-gradient(${timerTone} ${Math.round(progress * 360)}deg, rgba(148,163,184,0.22) 0deg)`,
-          boxShadow: '0 0 18px rgba(20,184,166,0.32)',
-          display: 'grid',
-          placeItems: 'center',
-          pointerEvents: 'none',
-        }}
-      >
-        <span
-          style={{
-            width: 23,
-            height: 23,
-            borderRadius: '50%',
-            background: 'rgba(2,7,9,0.92)',
-            color: timerTone,
-            display: 'grid',
-            placeItems: 'center',
-            fontSize: 10,
-            fontWeight: 800,
-            lineHeight: 1,
-          }}
-        >
-          {tableTimerSeconds}
-        </span>
-      </div>
-    );
-  };
-
   const renderBetPill = (amount: number | undefined, style?: React.CSSProperties) => {
     if (!amount || amount <= 0) {
       return null;
@@ -1895,19 +2273,62 @@ export const PokerGamePage = ({
     }
     return keys;
   }, [hand?.showdownWinners]);
+  const showdownResult = useMemo<ShowdownResultView | null>(() => {
+    if (!hand?.showdownWinners?.length) return null;
+
+    const winnerById = new Map(hand.showdownWinners.map((winner) => [winner.playerId, winner]));
+    const toWinnerView = (winner: ShowdownWinner): ShowdownWinnerView => {
+      const aggregate = winnerById.get(winner.playerId);
+      const bestFive = winner.bestFive ?? aggregate?.bestFive;
+      const handLabel = winner.handLabel ?? aggregate?.handLabel;
+      return {
+        ...winner,
+        bestFive,
+        handLabel,
+        name: playerNameById.get(winner.playerId) ?? winner.playerId,
+        handTitle: formatHandTitle(handLabel),
+        cardLine: bestFive?.map(cardText).join(' ') ?? '',
+      };
+    };
+
+    const winners = hand.showdownWinners.map(toWinnerView);
+    const rawPots: ShowdownPotResult[] =
+      hand.showdownPots?.length > 0
+        ? hand.showdownPots
+        : [
+            {
+              potId: 'pot-0',
+              label: 'Main pot',
+              amount: hand.showdownWinners.reduce((sum, winner) => sum + winner.amount, 0),
+              eligible: hand.showdownWinners.map((winner) => winner.playerId),
+              winners: hand.showdownWinners,
+            },
+          ];
+    const pots = rawPots.map((pot) => ({
+      ...pot,
+      winners: pot.winners.map(toWinnerView),
+    }));
+
+    return {
+      winners,
+      pots,
+      hasSplitPot: pots.some((pot) => pot.winners.length > 1),
+      hasSidePots: pots.length > 1,
+    };
+  }, [hand?.showdownPots, hand?.showdownWinners, playerNameById]);
   const showdownSummary = useMemo(() => {
     if (!hand?.showdownWinners?.length) return null;
     const topWinner = hand.showdownWinners[0];
     const winnerSeat = hand.players.find((p) => p.id === topWinner.playerId);
-    const label = topWinner.handLabel ? ` with ${formatHandLabel(topWinner.handLabel)}` : '';
-    return `${winnerSeat?.name ?? topWinner.playerId} wins ${topWinner.amount}${label}`;
+    const label = topWinner.handLabel ? ` ${formatShowdownHandPhrase(topWinner.handLabel)}` : '';
+    return `${winnerSeat?.name ?? topWinner.playerId} wins ${formatChips(topWinner.amount)}${label}`;
   }, [hand?.showdownWinners, hand?.players]);
 
   const seatingPositions = isPortraitPhone
     ? [
         { left: '50%', top: '76%' },
-        { left: '18%', top: '22%' },
-        { left: '82%', top: '22%' },
+        { left: '23%', top: '22%' },
+        { left: '77%', top: '22%' },
         { left: '84%', top: '50%' },
         { left: '16%', top: '50%' },
         { left: '76%', top: '70%' },
@@ -1993,29 +2414,10 @@ export const PokerGamePage = ({
     addChip(bbSeat, { label: 'BB', tone: 'blind' });
     return map;
   }, [hand, state?.seats]);
-  const infoAvatarSize = 36;
+  const infoAvatarSize = isPhone ? 30 : 36;
+  const seatNameplateWidth = isPhone ? 154 : 170;
   const playerInfoOffsetY = -30 + 38;
   const heroAreaOffsetPx = 38 - 33;
-  const youAvatarStyle = useMemo(() => {
-    if (!you) return null;
-    const youIsWinner = winnersById.has(you.id);
-    return {
-      width: infoAvatarSize,
-      height: infoAvatarSize,
-      borderRadius: '50%',
-      background: '#f8fafc',
-      border: youIsWinner ? '3px solid #22c55e' : `3px solid ${TABLE_THEME.borderStrong}`,
-      boxShadow: '0 0 18px rgba(0,0,0,0.45)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontFamily: TABLE_THEME.fontSans,
-      fontWeight: 800,
-      fontSize: 18,
-    };
-  }, [you, winnersById, infoAvatarSize]);
-  const youAvatarSuit = useMemo(() => avatarSuitForId(you?.id), [you?.id]);
-  const youAvatarColor = avatarSuitColor(youAvatarSuit);
   const ellipsisDotStyle = (delayMs: number): React.CSSProperties => ({
     display: 'inline-block',
     width: '0.35em',
@@ -2026,7 +2428,7 @@ export const PokerGamePage = ({
   const hasBottomActionTray = Boolean(
     localNeedsRebuy ||
     localReadyBetweenHands ||
-    (you && (isBettingPhase || isDiscardPhase || isRevealPhase))
+    (you && ((isBettingPhase && isMyTurn) || isDiscardPhase || isRevealPhase))
   );
   const centeredSectionMinHeight = isMobile ? 'calc(100dvh - 160px)' : 'calc(100vh - 220px)';
   const heroInfoBottomOffset = isPhone
@@ -2102,13 +2504,13 @@ export const PokerGamePage = ({
   const allInTotal = maxRaiseTo;
   const canShortOpenAllIn = Boolean(
     isMyTurn &&
-      hand &&
-      hand.currentBet === 0 &&
-      you &&
-      you.stack > 0 &&
-      minRaiseTo !== null &&
-      maxRaiseTo !== null &&
-      maxRaiseTo < minRaiseTo
+    hand &&
+    hand.currentBet === 0 &&
+    you &&
+    you.stack > 0 &&
+    minRaiseTo !== null &&
+    maxRaiseTo !== null &&
+    maxRaiseTo < minRaiseTo
   );
   const clampedRaiseTo =
     minRaiseTo !== null && maxRaiseTo !== null
@@ -2131,10 +2533,10 @@ export const PokerGamePage = ({
   const canCheckOrCall = Boolean(isMyTurn);
   const canOpenRaiseDrawer = Boolean(
     isMyTurn &&
-      minRaiseTo !== null &&
-      maxRaiseTo !== null &&
-      maxRaiseTo >= minRaiseTo &&
-      !raiseCapReached
+    minRaiseTo !== null &&
+    maxRaiseTo !== null &&
+    maxRaiseTo >= minRaiseTo &&
+    !raiseCapReached
   );
   const raiseActionLabel = hand && hand.currentBet === 0 ? 'Bet' : 'Raise';
   const checkOrCallLabel =
@@ -2145,7 +2547,8 @@ export const PokerGamePage = ({
     if (isCallAllIn) return 'The bet covers your stack. Your only call is all-in.';
     if (raiseCapReached) return 'Raise cap reached on this street.';
     if (minRaiseTo === null || maxRaiseTo === null) return 'Raise amount unavailable.';
-    if (maxRaiseTo < minRaiseTo) return `Not enough chips to make the minimum ${raiseActionLabel.toLowerCase()}.`;
+    if (maxRaiseTo < minRaiseTo)
+      return `Not enough chips to make the minimum ${raiseActionLabel.toLowerCase()}.`;
     if (clampedRaiseTo < minRaiseTo) return `Enter at least ${minRaiseTo}.`;
     if (clampedRaiseTo > maxRaiseTo) return `Max raise is ${maxRaiseTo} (all-in).`;
     return 'Raise available.';
@@ -2208,6 +2611,37 @@ export const PokerGamePage = ({
         ? '#fda4af'
         : '#d1fae5'
       : 'rgba(226,232,240,0.72)';
+  const youDisplayName = you?.name || localPlayerName || 'You';
+  const youWinnerInfo = you ? winnersById.get(you.id) : undefined;
+  const youShowDiscardState = Boolean(
+    hand?.phase === 'discard' &&
+    you &&
+    you.status !== 'folded' &&
+    you.status !== 'out' &&
+    you.status !== 'busted' &&
+    you.status !== 'sitting_out'
+  );
+  const youHasDiscardedThisStreet = Boolean(you && discardConfirmedPlayers.has(you.id));
+  const youSeatStatusLabel = you
+    ? playerSeatStatusLabel({
+        status: you.status,
+        isTurn: isMyTurn,
+        isHero: true,
+        secondsLeft: tableTimerSeconds,
+        isBetting: isBettingPhase,
+        isDiscarding: youShowDiscardState,
+        hasDiscarded: youHasDiscardedThisStreet,
+      })
+    : null;
+  const youSeatStatusColor = isMyTurn
+    ? '#bae6fd'
+    : youBusted || you?.status === 'folded'
+      ? '#cbd5e1'
+      : you?.status === 'allIn'
+        ? '#fef3c7'
+        : youShowDiscardState && youHasDiscardedThisStreet
+          ? '#86efac'
+          : TABLE_THEME.dim;
   const utilityEnabledCount =
     Number(soundEnabled) + Number(showActivityFeed) + Number(showTableChat);
   const rebuyButtonDisabled = rebuyState !== 'idle';
@@ -2336,132 +2770,134 @@ export const PokerGamePage = ({
       </button>
     </div>
   ) : null;
-  const startGateTray = startGate && seated ? (
-    <div
-      data-testid="start-gate"
-      style={{
-        width: isMobile ? 'auto' : 'min(680px, 100%)',
-        margin: isMobile ? 0 : '0 auto',
-        borderRadius: 8,
-        border: `1px solid ${TABLE_THEME.tealBorder}`,
-        background: TABLE_THEME.panelStrong,
-        padding: isPhone ? '12px' : '14px 16px',
-        boxShadow: '0 16px 34px rgba(2,6,23,0.42)',
-        display: 'grid',
-        gap: 12,
-      }}
-    >
+  const startGateTray =
+    startGate && seated ? (
       <div
+        data-testid="start-gate"
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
+          width: isMobile ? 'auto' : 'min(680px, 100%)',
+          margin: isMobile ? 0 : '0 auto',
+          borderRadius: 8,
+          border: `1px solid ${TABLE_THEME.tealBorder}`,
+          background: TABLE_THEME.panelStrong,
+          padding: isPhone ? '12px' : '14px 16px',
+          boxShadow: '0 16px 34px rgba(2,6,23,0.42)',
+          display: 'grid',
           gap: 12,
         }}
       >
-        <div style={{ minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: isPhone ? 14 : 15,
-              fontWeight: 900,
-              color: TABLE_THEME.text,
-            }}
-          >
-            Waiting for players
-          </div>
-          <div
-            style={{
-              marginTop: 3,
-              fontSize: 12,
-              color: TABLE_THEME.muted,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {tableLabel} - {seatedPlayers.length} seated
-          </div>
-        </div>
         <div
-          data-testid="start-gate-countdown"
           style={{
-            minWidth: 58,
-            borderRadius: 999,
-            border: `1px solid ${TABLE_THEME.border}`,
-            background: 'rgba(255,255,255,0.045)',
-            color: startGateSecondsLeft !== null && startGateSecondsLeft <= 3 ? '#fecaca' : '#ccfbf1',
-            padding: '5px 9px',
-            textAlign: 'center',
-            fontSize: 12,
-            fontWeight: 900,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 12,
           }}
         >
-          {startGateSecondsLeft !== null ? `${startGateSecondsLeft}s` : '--'}
-        </div>
-      </div>
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 8,
-        }}
-      >
-        {seatedPlayers.map((seat: any) => {
-          const ready = startGateReadyIds.has(seat.id);
-          return (
+          <div style={{ minWidth: 0 }}>
             <div
-              key={seat.id}
-              data-testid="start-gate-player"
               style={{
-                borderRadius: 999,
-                border: `1px solid ${ready ? TABLE_THEME.tealBorder : TABLE_THEME.border}`,
-                background: ready ? 'rgba(20,184,166,0.18)' : 'rgba(255,255,255,0.04)',
-                color: ready ? '#ccfbf1' : TABLE_THEME.text,
-                padding: '6px 10px',
+                fontSize: isPhone ? 14 : 15,
+                fontWeight: 900,
+                color: TABLE_THEME.text,
+              }}
+            >
+              Waiting for players
+            </div>
+            <div
+              style={{
+                marginTop: 3,
                 fontSize: 12,
-                fontWeight: 800,
-                maxWidth: '100%',
+                color: TABLE_THEME.muted,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }}
             >
-              {seat.name} {ready ? 'ready' : 'waiting'}
+              {tableLabel} - {seatedPlayers.length} seated
             </div>
-          );
-        })}
-      </div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: isPhone ? '1fr' : '1fr auto',
-          gap: 10,
-          alignItems: 'center',
-        }}
-      >
-        <div style={{ fontSize: 12, color: TABLE_THEME.muted }}>
-          {startGateCanEarlyStart
-            ? 'Starting now.'
-            : startGateAllReady
-              ? 'Everyone is ready. Starting now.'
-              : 'The hand starts when the timer ends, or earlier when everyone is ready.'}
+          </div>
+          <div
+            data-testid="start-gate-countdown"
+            style={{
+              minWidth: 58,
+              borderRadius: 999,
+              border: `1px solid ${TABLE_THEME.border}`,
+              background: 'rgba(255,255,255,0.045)',
+              color:
+                startGateSecondsLeft !== null && startGateSecondsLeft <= 3 ? '#fecaca' : '#ccfbf1',
+              padding: '5px 9px',
+              textAlign: 'center',
+              fontSize: 12,
+              fontWeight: 900,
+            }}
+          >
+            {startGateSecondsLeft !== null ? `${startGateSecondsLeft}s` : '--'}
+          </div>
         </div>
-        <button
-          data-testid="ready-for-hand"
-          type="button"
-          onClick={toggleReadyForHand}
-          style={turnActionStyle(true, {
-            border: localReadyForStart ? 'rgba(148,163,184,0.65)' : 'rgba(94,234,212,0.78)',
-            background: localReadyForStart ? 'rgba(255,255,255,0.045)' : 'rgba(20,184,166,0.28)',
-            color: localReadyForStart ? '#e2e8f0' : '#ccfbf1',
-            glow: localReadyForStart ? 'rgba(148,163,184,0.18)' : 'rgba(20,184,166,0.3)',
-          })}
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 8,
+          }}
         >
-          {localReadyForStart ? 'Ready' : 'Ready for Hand'}
-        </button>
+          {seatedPlayers.map((seat: any) => {
+            const ready = startGateReadyIds.has(seat.id);
+            return (
+              <div
+                key={seat.id}
+                data-testid="start-gate-player"
+                style={{
+                  borderRadius: 999,
+                  border: `1px solid ${ready ? TABLE_THEME.tealBorder : TABLE_THEME.border}`,
+                  background: ready ? 'rgba(20,184,166,0.18)' : 'rgba(255,255,255,0.04)',
+                  color: ready ? '#ccfbf1' : TABLE_THEME.text,
+                  padding: '6px 10px',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {seat.name} {ready ? 'ready' : 'waiting'}
+              </div>
+            );
+          })}
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isPhone ? '1fr' : '1fr auto',
+            gap: 10,
+            alignItems: 'center',
+          }}
+        >
+          <div style={{ fontSize: 12, color: TABLE_THEME.muted }}>
+            {startGateCanEarlyStart
+              ? 'Starting now.'
+              : startGateAllReady
+                ? 'Everyone is ready. Starting now.'
+                : 'The hand starts when the timer ends, or earlier when everyone is ready.'}
+          </div>
+          <button
+            data-testid="ready-for-hand"
+            type="button"
+            onClick={toggleReadyForHand}
+            style={turnActionStyle(true, {
+              border: localReadyForStart ? 'rgba(148,163,184,0.65)' : 'rgba(94,234,212,0.78)',
+              background: localReadyForStart ? 'rgba(255,255,255,0.045)' : 'rgba(20,184,166,0.28)',
+              color: localReadyForStart ? '#e2e8f0' : '#ccfbf1',
+              glow: localReadyForStart ? 'rgba(148,163,184,0.18)' : 'rgba(20,184,166,0.3)',
+            })}
+          >
+            {localReadyForStart ? 'Ready' : 'Ready for Hand'}
+          </button>
+        </div>
       </div>
-    </div>
-  ) : null;
+    ) : null;
 
   useEffect(() => {
     if (!seated || !hand || hand.phase !== 'betting') {
@@ -2600,7 +3036,7 @@ export const PokerGamePage = ({
         backgroundRepeat: 'no-repeat, no-repeat, no-repeat, no-repeat',
         backgroundSize: 'auto, auto, auto, cover',
         padding: isPhone
-          ? '8px 8px calc(8px + env(safe-area-inset-bottom))'
+          ? '8px 8px calc(16px + env(safe-area-inset-bottom))'
           : `14px 16px calc(${18 + actionBarReserve}px + env(safe-area-inset-bottom))`,
       }}
     >
@@ -3407,6 +3843,7 @@ export const PokerGamePage = ({
                       card={c}
                       size={isPhone ? 'large' : 'xlarge'}
                       highlight={isShowdown && winningCards.has(cardKey(c))}
+                      dim={isShowdown && winningCards.size > 0 && !winningCards.has(cardKey(c))}
                     />
                   </div>
                 ))}
@@ -3436,51 +3873,12 @@ export const PokerGamePage = ({
                   {latestActionLine}
                 </div>
               ) : null}
-              {isShowdown && showdownSummary && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: '40%',
-                    left: '50%',
-                    transform:
-                      'translate(-50%, -50%) translateY(calc(-19px + 1.7cm)) translateX(4cm)',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '3.22cm',
-                      height: '0.92cm',
-                      padding: '0 6px',
-                      borderRadius: 999,
-                      background: '#123b2f',
-                      border: '1px solid #22c55e',
-                      color: '#d1fae5',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      textAlign: 'center',
-                      fontSize: 11,
-                      lineHeight: 1.1,
-                      fontFamily: TABLE_THEME.fontSans,
-                      overflow: 'hidden',
-                      whiteSpace: 'normal',
-                    }}
-                  >
-                    {showdownSummary}
-                  </div>
-                </div>
-              )}
               {tablePlayers.map((p, idx) => {
                 const pos = seatingPositions[idx];
                 const winner = winnersById.has(p.id);
+                const winnerInfo = winnersById.get(p.id);
                 const isYou = p.id === playerId;
                 const roleChips = roleChipsBySeat.get(p.seat) ?? [];
-                const avatarSize = infoAvatarSize;
-                const avatarBorder = winner
-                  ? '3px solid #22c55e'
-                  : `3px solid ${TABLE_THEME.borderStrong}`;
-                const avatarSuit = avatarSuitForId(p.id);
-                const avatarColor = avatarSuitColor(avatarSuit);
                 const isTurn = Boolean(
                   hand && hand.phase === 'betting' && hand.actionOnSeat === p.seat
                 );
@@ -3496,21 +3894,24 @@ export const PokerGamePage = ({
                   p.status !== 'sitting_out';
                 const hasDiscardedThisStreet =
                   showDiscardState && discardConfirmedPlayers.has(p.id);
-                const avatarStyle = {
-                  width: avatarSize,
-                  height: avatarSize,
-                  borderRadius: '50%',
-                  background: '#f8fafc',
-                  border: avatarBorder,
-                  boxShadow: '0 0 18px rgba(0,0,0,0.45)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontFamily: TABLE_THEME.fontSans,
-                  fontWeight: 800,
-                  fontSize: 18,
-                  color: avatarColor,
-                };
+                const statusLabel = playerSeatStatusLabel({
+                  status: p.status,
+                  isTurn,
+                  secondsLeft: tableTimerSeconds,
+                  isBetting: isBettingPhase,
+                  isDiscarding: showDiscardState,
+                  hasDiscarded: hasDiscardedThisStreet,
+                });
+                const statusColor = isTurn
+                  ? '#bae6fd'
+                  : p.status === 'folded' || playerBusted
+                    ? '#cbd5e1'
+                    : p.status === 'allIn'
+                      ? '#fef3c7'
+                      : showDiscardState && hasDiscardedThisStreet
+                        ? '#86efac'
+                        : TABLE_THEME.dim;
+                const displayName = p.name || 'Player';
                 return (
                   <div
                     key={p.id}
@@ -3519,13 +3920,15 @@ export const PokerGamePage = ({
                       left: pos.left,
                       top: pos.top,
                       transform: `translate(-50%, -50%) translateY(${playerInfoOffsetY}px)`,
-                      width: 170,
+                      width: seatNameplateWidth,
                       textAlign: 'center',
                     }}
                   >
                     {!isYou && (
-                      <div style={{ display: 'inline-block' }}>
-                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                      <div style={{ display: 'inline-block', width: seatNameplateWidth }}>
+                        <div
+                          style={{ position: 'relative', display: 'inline-block', width: '100%' }}
+                        >
                           {roleChips.length > 0 && (
                             <div
                               style={{
@@ -3551,7 +3954,9 @@ export const PokerGamePage = ({
                           <div
                             style={{
                               position: 'relative',
-                              padding: '6px 10px 6px 60px',
+                              width: '100%',
+                              minHeight: isPhone ? 48 : 54,
+                              padding: isPhone ? '6px 8px' : '7px 10px',
                               borderRadius: 10,
                               background: infoDimmed ? 'rgba(3,8,11,0.58)' : 'rgba(3,8,11,0.82)',
                               border: isTurn
@@ -3562,85 +3967,146 @@ export const PokerGamePage = ({
                               boxShadow: isTurn
                                 ? '0 0 0 3px rgba(20,184,166,0.22), 0 0 30px rgba(20,184,166,0.42)'
                                 : winner
-                                  ? '0 0 0 2px rgba(34, 197, 94, 0.2)'
+                                  ? '0 0 0 2px rgba(34,197,94,0.28), 0 0 34px rgba(34,197,94,0.42), 0 12px 30px rgba(0,0,0,0.34)'
                                   : undefined,
                               opacity: playerInactive ? 0.5 : infoDimmed ? 0.78 : 1,
-                              textAlign: 'center',
-                              display: 'flex',
-                              flexDirection: 'column',
+                              textAlign: 'left',
+                              display: 'grid',
+                              gridTemplateColumns: `${infoAvatarSize}px minmax(0, 1fr)`,
                               alignItems: 'center',
+                              columnGap: 8,
                             }}
                           >
-                            {renderTurnTimer(isTurn)}
+                            {winner ? (
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  top: -13,
+                                  left: '50%',
+                                  transform: 'translateX(-50%)',
+                                  zIndex: 3,
+                                  borderRadius: 999,
+                                  border: '1px solid rgba(187,247,208,0.68)',
+                                  background: 'rgba(20,83,45,0.92)',
+                                  color: '#dcfce7',
+                                  padding: '2px 7px',
+                                  fontSize: 9,
+                                  fontWeight: 900,
+                                  lineHeight: 1.1,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: 0.35,
+                                  whiteSpace: 'nowrap',
+                                  boxShadow: '0 8px 18px rgba(0,0,0,0.34)',
+                                }}
+                              >
+                                Winner +{formatChips(winnerInfo?.amount ?? 0)}
+                              </div>
+                            ) : null}
+                            <PlayerIdentityBadge
+                              name={displayName}
+                              size={infoAvatarSize}
+                              isActive={isTurn}
+                              isWinner={winner}
+                              isDimmed={infoDimmed || playerInactive}
+                              secondsLeft={tableTimerSeconds}
+                              maxSeconds={tableTimerMaxSeconds}
+                              timerTone={timerTone}
+                            />
                             <div
                               style={{
-                                position: 'absolute',
-                                top: '50%',
-                                left: 12,
-                                transform: 'translateY(-50%)',
-                                overflow: 'hidden',
-                                ...avatarStyle,
+                                minWidth: 0,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 2,
                               }}
                             >
-                              {suitSymbol(avatarSuit)}
-                            </div>
-                            <div
-                              style={{
-                                fontWeight: 700,
-                                fontFamily: TABLE_THEME.fontSans,
-                                fontSize: 12,
-                              }}
-                            >
-                              {p.name}
-                            </div>
-                            {p.id !== playerId && (
-                              <div style={{ fontSize: 12, fontFamily: TABLE_THEME.fontSans }}>
-                                <span
-                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                              <div
+                                title={displayName}
+                                style={{
+                                  fontWeight: 800,
+                                  fontFamily: TABLE_THEME.fontSans,
+                                  fontSize: isPhone ? 11 : 12,
+                                  lineHeight: 1.15,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {displayName}
+                              </div>
+                              {p.id !== playerId && (
+                                <div
+                                  style={{
+                                    fontSize: isPhone ? 11 : 12,
+                                    fontFamily: TABLE_THEME.fontSans,
+                                    color: 'rgba(226,232,240,0.82)',
+                                    lineHeight: 1.1,
+                                  }}
                                 >
-                                  <StackChipsIcon size={14} />
-                                  {p.stack}
-                                </span>
-                              </div>
-                            )}
-                            {playerBusted ? (
-                              <div
-                                style={{
-                                  marginTop: 4,
-                                  fontSize: 10,
-                                  letterSpacing: 0.2,
-                                  color: '#fecaca',
-                                  textTransform: 'uppercase',
-                                }}
-                              >
-                                out of chips
-                              </div>
-                            ) : showDiscardState ? (
-                              <div
-                                style={{
-                                  marginTop: 4,
-                                  fontSize: 10,
-                                  letterSpacing: 0.2,
-                                  color: hasDiscardedThisStreet ? '#86efac' : '#cbd5e1',
-                                }}
-                              >
-                                {hasDiscardedThisStreet ? 'discarded ✓' : 'discarding...'}
-                              </div>
-                            ) : null}
-                            {isTurn ? (
-                              <div
-                                style={{
-                                  marginTop: 4,
-                                  fontSize: 10,
-                                  letterSpacing: 0.3,
-                                  color: '#bae6fd',
-                                  textTransform: 'uppercase',
-                                  animation: 'turn-pulse 1.2s ease-in-out infinite',
-                                }}
-                              >
-                                to act
-                              </div>
-                            ) : null}
+                                  <span
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                                  >
+                                    <StackChipsIcon size={14} />
+                                    {p.stack}
+                                  </span>
+                                </div>
+                              )}
+                              {playerBusted ? (
+                                <div
+                                  style={{
+                                    marginTop: 4,
+                                    fontSize: 10,
+                                    letterSpacing: 0.2,
+                                    color: statusColor,
+                                    textTransform: 'uppercase',
+                                  }}
+                                >
+                                  {statusLabel}
+                                </div>
+                              ) : showDiscardState ? (
+                                <div
+                                  style={{
+                                    marginTop: 4,
+                                    fontSize: 10,
+                                    letterSpacing: 0.2,
+                                    color: statusColor,
+                                  }}
+                                >
+                                  {statusLabel}
+                                </div>
+                              ) : null}
+                              {isTurn ? (
+                                <div
+                                  style={{
+                                    marginTop: 4,
+                                    fontSize: 10,
+                                    letterSpacing: 0.3,
+                                    color: statusColor,
+                                    textTransform: 'uppercase',
+                                    animation: 'turn-pulse 1.2s ease-in-out infinite',
+                                  }}
+                                >
+                                  {statusLabel}
+                                </div>
+                              ) : null}
+                              {statusLabel && !playerBusted && !showDiscardState && !isTurn ? (
+                                <div
+                                  style={{
+                                    marginTop: 4,
+                                    fontSize: isPhone ? 9 : 10,
+                                    letterSpacing: 0.35,
+                                    color: statusColor,
+                                    textTransform: 'uppercase',
+                                    lineHeight: 1.1,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {statusLabel}
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
                           {renderReactionBadge(p.id)}
                           {renderBetPill(p.betThisStreet, seatBetOffsets[idx])}
@@ -3705,7 +4171,12 @@ export const PokerGamePage = ({
                                       <CardView
                                         card={card}
                                         size="medium"
-                                        highlight={winningCards.has(cardKey(card))}
+                                        highlight={isShowdown && winningCards.has(cardKey(card))}
+                                        dim={
+                                          isShowdown &&
+                                          winningCards.size > 0 &&
+                                          !winningCards.has(cardKey(card))
+                                        }
                                       />
                                     )}
                                   </div>
@@ -3761,7 +4232,13 @@ export const PokerGamePage = ({
                       gap: 8,
                     }}
                   >
-                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'inline-block',
+                        width: seatNameplateWidth,
+                      }}
+                    >
                       {(roleChipsBySeat.get(you.seat) ?? []).length > 0 && (
                         <div
                           style={{
@@ -3786,7 +4263,9 @@ export const PokerGamePage = ({
                       )}
                       <div
                         style={{
-                          padding: '6px 10px 6px 60px',
+                          width: '100%',
+                          minHeight: isPhone ? 48 : 54,
+                          padding: isPhone ? '6px 8px' : '7px 10px',
                           borderRadius: 10,
                           background: youInfoDimmed ? 'rgba(3,8,11,0.58)' : 'rgba(3,8,11,0.82)',
                           border: isMyTurn
@@ -3797,77 +4276,132 @@ export const PokerGamePage = ({
                           boxShadow: isMyTurn
                             ? '0 0 0 3px rgba(20,184,166,0.22), 0 0 32px rgba(20,184,166,0.44)'
                             : winnersById.has(you.id)
-                              ? '0 0 0 2px rgba(34, 197, 94, 0.2)'
+                              ? '0 0 0 2px rgba(34,197,94,0.28), 0 0 34px rgba(34,197,94,0.42), 0 12px 30px rgba(0,0,0,0.34)'
                               : undefined,
-                          textAlign: 'center',
+                          textAlign: 'left',
                           opacity: youInfoDimmed ? 0.7 : 1,
                           position: 'relative',
-                          display: 'flex',
-                          flexDirection: 'column',
+                          display: 'grid',
+                          gridTemplateColumns: `${infoAvatarSize}px minmax(0, 1fr)`,
                           alignItems: 'center',
+                          columnGap: 8,
                         }}
                       >
-                        {renderTurnTimer(isMyTurn)}
-                        {youAvatarStyle && (
+                        {youWinnerInfo ? (
                           <div
                             style={{
                               position: 'absolute',
-                              top: '50%',
-                              left: 12,
-                              transform: 'translateY(-50%)',
-                              overflow: 'hidden',
-                              color: youAvatarColor,
-                              ...youAvatarStyle,
+                              top: -13,
+                              left: '50%',
+                              transform: 'translateX(-50%)',
+                              zIndex: 3,
+                              borderRadius: 999,
+                              border: '1px solid rgba(187,247,208,0.68)',
+                              background: 'rgba(20,83,45,0.92)',
+                              color: '#dcfce7',
+                              padding: '2px 7px',
+                              fontSize: 9,
+                              fontWeight: 900,
+                              lineHeight: 1.1,
+                              textTransform: 'uppercase',
+                              letterSpacing: 0.35,
+                              whiteSpace: 'nowrap',
+                              boxShadow: '0 8px 18px rgba(0,0,0,0.34)',
                             }}
                           >
-                            {suitSymbol(youAvatarSuit)}
+                            Winner +{formatChips(youWinnerInfo.amount)}
                           </div>
-                        )}
+                        ) : null}
+                        <PlayerIdentityBadge
+                          name={youDisplayName}
+                          size={infoAvatarSize}
+                          isActive={isMyTurn}
+                          isWinner={winnersById.has(you.id)}
+                          isDimmed={youInfoDimmed}
+                          secondsLeft={tableTimerSeconds}
+                          maxSeconds={tableTimerMaxSeconds}
+                          timerTone={timerTone}
+                        />
                         <div
                           style={{
-                            fontWeight: 700,
-                            fontFamily: TABLE_THEME.fontSans,
-                            fontSize: 12,
+                            minWidth: 0,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 2,
                           }}
                         >
-                          {you.name}
-                        </div>
-                        <div
-                          data-testid="hero-stack"
-                          style={{ fontSize: 12, fontFamily: TABLE_THEME.fontSans }}
-                        >
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            <StackChipsIcon size={14} />
-                            {you.stack}
-                          </span>
-                        </div>
-                        {youBusted ? (
                           <div
                             style={{
-                              marginTop: 4,
-                              fontSize: 10,
-                              letterSpacing: 0.2,
-                              color: '#fecaca',
-                              textTransform: 'uppercase',
+                              fontWeight: 800,
+                              fontFamily: TABLE_THEME.fontSans,
+                              fontSize: isPhone ? 11 : 12,
+                              lineHeight: 1.15,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
                             }}
                           >
-                            out of chips
+                            {youDisplayName}
                           </div>
-                        ) : null}
-                        {isMyTurn ? (
                           <div
+                            data-testid="hero-stack"
                             style={{
-                              marginTop: 4,
-                              fontSize: 10,
-                              letterSpacing: 0.3,
-                              color: '#bae6fd',
-                              textTransform: 'uppercase',
-                              animation: 'turn-pulse 1.2s ease-in-out infinite',
+                              fontSize: isPhone ? 11 : 12,
+                              fontFamily: TABLE_THEME.fontSans,
+                              color: 'rgba(226,232,240,0.82)',
+                              lineHeight: 1.1,
                             }}
                           >
-                            your turn
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <StackChipsIcon size={14} />
+                              {you.stack}
+                            </span>
                           </div>
-                        ) : null}
+                          {youBusted ? (
+                            <div
+                              style={{
+                                marginTop: 4,
+                                fontSize: 10,
+                                letterSpacing: 0.2,
+                                color: youSeatStatusColor,
+                                textTransform: 'uppercase',
+                              }}
+                            >
+                              {youSeatStatusLabel}
+                            </div>
+                          ) : null}
+                          {isMyTurn ? (
+                            <div
+                              style={{
+                                marginTop: 4,
+                                fontSize: 10,
+                                letterSpacing: 0.3,
+                                color: youSeatStatusColor,
+                                textTransform: 'uppercase',
+                                animation: 'turn-pulse 1.2s ease-in-out infinite',
+                              }}
+                            >
+                              {youSeatStatusLabel}
+                            </div>
+                          ) : null}
+                          {youSeatStatusLabel && !youBusted && !isMyTurn ? (
+                            <div
+                              style={{
+                                marginTop: 4,
+                                fontSize: isPhone ? 9 : 10,
+                                letterSpacing: 0.35,
+                                color: youSeatStatusColor,
+                                textTransform: 'uppercase',
+                                lineHeight: 1.1,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {youSeatStatusLabel}
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                       {renderReactionBadge(you.id)}
                       {renderBetPill(you.betThisStreet, {
@@ -3931,6 +4465,12 @@ export const PokerGamePage = ({
                               <CardView
                                 card={c}
                                 size="large"
+                                highlight={isShowdown && winningCards.has(cardKey(c))}
+                                dim={
+                                  isShowdown &&
+                                  winningCards.size > 0 &&
+                                  !winningCards.has(cardKey(c))
+                                }
                                 outline={
                                   discardFlashIndex === idx
                                     ? 'red'
@@ -3951,6 +4491,15 @@ export const PokerGamePage = ({
                 </>
               )}
             </div>
+            {isShowdown && showdownResult ? (
+              <ShowdownResultOverlay
+                result={showdownResult}
+                isPhone={isPhone}
+                isMobile={isMobile}
+                countdownSeconds={showdownCountdownSeconds}
+                onNextHand={() => send({ type: 'nextHand' })}
+              />
+            ) : null}
           </div>
           {(you || localNeedsRebuy) && (
             <div
@@ -3959,7 +4508,7 @@ export const PokerGamePage = ({
                 left: pinActionTray ? (isPhone ? 8 : 16) : undefined,
                 right: pinActionTray ? (isPhone ? 8 : 16) : undefined,
                 bottom: pinActionTray
-                  ? `calc(${isPhone ? 8 : 12}px + env(safe-area-inset-bottom))`
+                  ? `calc(${isPhone ? 12 : 14}px + env(safe-area-inset-bottom))`
                   : undefined,
                 zIndex: pinActionTray ? 35 : 'auto',
                 width: pinActionTray ? 'auto' : 'min(820px, 100%)',
@@ -4049,37 +4598,41 @@ export const PokerGamePage = ({
                     boxShadow: isMyTurn
                       ? '0 0 0 1px rgba(20,184,166,0.2), 0 14px 28px rgba(20,184,166,0.16)'
                       : '0 10px 20px rgba(0,0,0,0.22)',
-                    display: 'flex',
+                    display: isMyTurn ? 'flex' : 'contents',
                     flexDirection: 'column',
                     gap: isMyTurn ? 8 : 4,
                   }}
                 >
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'flex-start',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    <span
-                      data-testid="turn-indicator"
+                  {isMyTurn ? (
+                    <div
                       style={{
-                        borderRadius: 999,
-                        border: isMyTurn
-                          ? `1px solid ${TABLE_THEME.tealBorder}`
-                          : `1px solid ${TABLE_THEME.border}`,
-                        background: isMyTurn ? TABLE_THEME.tealSoft : TABLE_THEME.panelSoft,
-                        color: isMyTurn ? '#ccfbf1' : TABLE_THEME.muted,
-                        padding: '3px 10px',
-                        fontSize: 11,
-                        fontWeight: 700,
-                        whiteSpace: 'nowrap',
+                        display: 'flex',
+                        justifyContent: 'flex-start',
+                        alignItems: 'center',
+                        gap: 8,
                       }}
                     >
+                      <span
+                        data-testid="turn-indicator"
+                        style={{
+                          borderRadius: 999,
+                          border: `1px solid ${TABLE_THEME.tealBorder}`,
+                          background: TABLE_THEME.tealSoft,
+                          color: '#ccfbf1',
+                          padding: '3px 10px',
+                          fontSize: 11,
+                          fontWeight: 800,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {trayTurnStatusLabel}
+                      </span>
+                    </div>
+                  ) : (
+                    <span data-testid="turn-indicator" style={{ display: 'none' }}>
                       {trayTurnStatusLabel}
                     </span>
-                  </div>
+                  )}
                   {isMyTurn ? (
                     <div style={{ fontSize: 12, color: 'rgba(244,244,245,0.9)' }}>
                       {actionTrayStakeLine}
@@ -4444,7 +4997,7 @@ export const PokerGamePage = ({
                 left: pinActionTray ? (isPhone ? 8 : 16) : undefined,
                 right: pinActionTray ? (isPhone ? 8 : 16) : undefined,
                 bottom: pinActionTray
-                  ? `calc(${isPhone ? 8 : 12}px + env(safe-area-inset-bottom))`
+                  ? `calc(${isPhone ? 12 : 14}px + env(safe-area-inset-bottom))`
                   : undefined,
                 zIndex: pinActionTray ? 35 : 'auto',
                 width: pinActionTray ? 'auto' : 'min(820px, 100%)',
@@ -4496,6 +5049,14 @@ export const PokerGamePage = ({
           }
           50% {
             opacity: 0.7;
+          }
+        }
+        @keyframes showdown-pop {
+          0% {
+            opacity: 0;
+          }
+          100% {
+            opacity: 1;
           }
         }
       `}</style>
@@ -4566,12 +5127,14 @@ const CardView = ({
   highlight = false,
   outline,
   fade = false,
+  dim = false,
   size = 'small',
 }: {
   card: Card;
   highlight?: boolean;
   outline?: 'green' | 'red';
   fade?: boolean;
+  dim?: boolean;
   size?: 'small' | 'medium' | 'large' | 'xlarge';
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
@@ -4598,11 +5161,15 @@ const CardView = ({
   const baseShadow = isClassicSize ? '0 6px 16px rgba(0,0,0,0.25)' : undefined;
   const outlineColor = outline === 'green' ? '#22c55e' : outline === 'red' ? '#ef4444' : null;
   const outlineShadow = outlineColor ? `0 0 0 2px ${outlineColor}` : undefined;
-  const highlightShadow = highlight ? '0 0 0 2px rgba(34, 197, 94, 0.2)' : undefined;
+  const highlightShadow = highlight
+    ? '0 0 0 2px rgba(34,197,94,0.38), 0 0 18px rgba(34,197,94,0.5)'
+    : undefined;
   const cardShadow =
     [outlineShadow, highlightShadow, baseShadow].filter(Boolean).join(', ') || undefined;
-  const cardOpacity = fade ? 0 : 1;
-  const opacityTransition = 'opacity 0.5s ease';
+  const cardOpacity = fade ? 0 : dim ? 0.46 : 1;
+  const cardFilter = dim ? 'saturate(0.72) brightness(0.74)' : undefined;
+  const cardTransform = highlight ? 'translateY(-2px) scale(1.045)' : undefined;
+  const opacityTransition = 'opacity 0.5s ease, transform 160ms ease, filter 160ms ease';
   const cardImageSources = isClassicSize
     ? [rasterPngCardPath(card), modernMinimalCardPath(card)].filter((value): value is string =>
         Boolean(value)
@@ -4633,6 +5200,8 @@ const CardView = ({
           background: MINIMAL_DECK_PALETTE.face,
           boxShadow: cardShadow,
           opacity: cardOpacity,
+          filter: cardFilter,
+          transform: cardTransform,
           transition: opacityTransition,
           overflow: 'hidden',
           display: 'flex',
@@ -4709,6 +5278,8 @@ const CardView = ({
           background: '#f8fafc',
           boxShadow: cardShadow,
           opacity: cardOpacity,
+          filter: cardFilter,
+          transform: cardTransform,
           transition: opacityTransition,
           overflow: 'hidden',
           display: 'flex',
@@ -4755,6 +5326,8 @@ const CardView = ({
         color: cardColor,
         boxShadow: cardShadow,
         opacity: cardOpacity,
+        filter: cardFilter,
+        transform: cardTransform,
         transition: opacityTransition,
         position: 'relative',
         overflow: 'hidden',

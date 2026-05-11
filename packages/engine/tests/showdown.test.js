@@ -18,8 +18,20 @@ describe('showdown split pots', () => {
     p2.holeCards = [C('Q', 'C'), C('Q', 'D')];
 
     hand.pots = [{ amount: 2000, eligible: [p1.id, p2.id] }];
-    const results = table.scoreShowdown(hand);
+    const { winners: results, pots } = table.scoreShowdown(hand);
 
+    expect(pots).toEqual([
+      expect.objectContaining({
+        potId: 'pot-0',
+        label: 'Main pot',
+        amount: 2000,
+        eligible: [p1.id, p2.id],
+        winners: expect.arrayContaining([
+          expect.objectContaining({ playerId: p1.id, amount: 1000 }),
+          expect.objectContaining({ playerId: p2.id, amount: 1000 }),
+        ]),
+      }),
+    ]);
     expect(results.length).toBe(2);
     const amounts = results.map((r) => r.amount).sort((a, b) => a - b);
     expect(amounts).toEqual([1000, 1000]);
