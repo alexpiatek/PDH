@@ -2590,6 +2590,11 @@ export const PokerGamePage = ({
     </>
   );
   const statusDisplay = friendlyStatus(status);
+  const shouldShowTableStatus = Boolean(seated && statusDisplay && !status.startsWith('Connected'));
+  const statusIsProblem =
+    status.toLowerCase().includes('error') ||
+    status.toLowerCase().includes('failed') ||
+    status.toLowerCase().includes('500');
 
   return (
     <div
@@ -3091,37 +3096,6 @@ export const PokerGamePage = ({
           ) : null}
         </div>
       ) : null}
-      {seated && statusDisplay && !status.startsWith('Connected') ? (
-        <div
-          style={{
-            position: 'fixed',
-            left: isPhone ? 10 : '50%',
-            right: isPhone ? 10 : undefined,
-            top: isPhone ? 78 : 88,
-            transform: isPhone ? 'none' : 'translateX(-50%)',
-            zIndex: 60,
-            maxWidth: isPhone ? undefined : 520,
-            borderRadius: 8,
-            border:
-              status.toLowerCase().includes('error') ||
-              status.toLowerCase().includes('failed') ||
-              status.toLowerCase().includes('500')
-                ? '1px solid rgba(248,113,113,0.45)'
-                : `1px solid ${TABLE_THEME.border}`,
-            background: 'rgba(2,7,9,0.92)',
-            boxShadow: '0 18px 36px rgba(0,0,0,0.38)',
-            color: TABLE_THEME.text,
-            padding: '10px 12px',
-            fontFamily: TABLE_THEME.fontSans,
-            pointerEvents: 'none',
-          }}
-        >
-          <div style={{ fontSize: 12, fontWeight: 900 }}>{statusDisplay.title}</div>
-          <div style={{ marginTop: 3, fontSize: 12, color: TABLE_THEME.muted }}>
-            {statusDisplay.detail}
-          </div>
-        </div>
-      ) : null}
       {!seated && (
         <div
           style={{
@@ -3355,6 +3329,30 @@ export const PokerGamePage = ({
                   gap: 5,
                 }}
               >
+                {shouldShowTableStatus && statusDisplay ? (
+                  <div
+                    style={{
+                      width: 360,
+                      maxWidth: '78vw',
+                      borderRadius: 8,
+                      border: statusIsProblem
+                        ? '1px solid rgba(248,113,113,0.45)'
+                        : `1px solid ${TABLE_THEME.border}`,
+                      background: 'rgba(2,7,9,0.84)',
+                      boxShadow: '0 14px 30px rgba(0,0,0,0.32)',
+                      color: TABLE_THEME.text,
+                      padding: '8px 10px',
+                      textAlign: 'center',
+                      fontFamily: TABLE_THEME.fontSans,
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 900 }}>{statusDisplay.title}</div>
+                    <div style={{ marginTop: 3, fontSize: 12, color: TABLE_THEME.muted }}>
+                      {statusDisplay.detail}
+                    </div>
+                  </div>
+                ) : null}
                 <div
                   data-testid="pot-amount"
                   style={{
