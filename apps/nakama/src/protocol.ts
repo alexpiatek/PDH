@@ -1,5 +1,6 @@
 import type {
   ClientMessage as SharedClientMessage,
+  LegalActions as SharedLegalActions,
   MutatingClientMessage as SharedMutatingClientMessage,
   PublicState as SharedPublicState,
   ServerMessage as SharedServerMessage,
@@ -18,6 +19,7 @@ export type ClientMessage = SharedClientMessage;
 export type MutatingClientMessage = SharedMutatingClientMessage;
 export type ServerMessage = SharedServerMessage;
 export type PublicState = SharedPublicState;
+export type LegalActions = SharedLegalActions;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';

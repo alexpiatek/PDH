@@ -105,6 +105,59 @@ export interface TableState {
   auditHands?: AuditHandLog[];
 }
 
+export type LegalActionsPhase = 'betting' | 'discard' | 'waiting' | 'between_hands' | 'showdown';
+
+export type LegalActionsReason =
+  | 'not_your_turn'
+  | 'waiting_for_players'
+  | 'between_hands'
+  | 'showdown'
+  | 'sitting_out'
+  | 'disconnected'
+  | 'busted'
+  | 'folded'
+  | 'all_in'
+  | 'not_seated'
+  | 'waiting_for_next_phase';
+
+export interface LegalBettingActions {
+  canFold: boolean;
+  canCheck: boolean;
+  canCall: boolean;
+  callAmount: number;
+  canBet: boolean;
+  minBet: number | null;
+  maxBet: number | null;
+  canRaise: boolean;
+  minRaiseTo: number | null;
+  maxRaiseTo: number | null;
+  canAllIn: boolean;
+  allInAmount: number;
+  stack: number;
+  committedThisStreet: number;
+  currentBet: number;
+}
+
+export interface LegalDiscardActions {
+  required: boolean;
+  count: number;
+  validIndexes: number[];
+  deadlineMs: number | null;
+}
+
+export interface LegalActions {
+  phase: LegalActionsPhase;
+  isActor: boolean;
+  reason?: LegalActionsReason;
+  betting?: LegalBettingActions;
+  discard?: LegalDiscardActions;
+}
+
+export interface LegalActionsContext {
+  betweenHand?: boolean;
+  connectionStatus?: 'connected' | 'reconnecting' | 'disconnected' | null;
+}
+
 export type PlayerAction =
   | { type: 'fold' }
   | { type: 'check' }

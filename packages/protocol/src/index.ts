@@ -36,6 +36,55 @@ const clientActionSchema = z.enum(['fold', 'check', 'call', 'bet', 'raise', 'all
 const tableReactionSchema = z.enum(TABLE_REACTIONS);
 const seqSchema = z.number().int().positive();
 const playerConnectionStatusSchema = z.enum(['connected', 'reconnecting', 'disconnected']);
+const legalActionsReasonSchema = z.enum([
+  'not_your_turn',
+  'waiting_for_players',
+  'between_hands',
+  'showdown',
+  'sitting_out',
+  'disconnected',
+  'busted',
+  'folded',
+  'all_in',
+  'not_seated',
+  'waiting_for_next_phase',
+]);
+const legalBettingActionsSchema = z
+  .object({
+    canFold: z.boolean(),
+    canCheck: z.boolean(),
+    canCall: z.boolean(),
+    callAmount: z.number().int().nonnegative(),
+    canBet: z.boolean(),
+    minBet: z.number().int().nonnegative().nullable(),
+    maxBet: z.number().int().nonnegative().nullable(),
+    canRaise: z.boolean(),
+    minRaiseTo: z.number().int().nonnegative().nullable(),
+    maxRaiseTo: z.number().int().nonnegative().nullable(),
+    canAllIn: z.boolean(),
+    allInAmount: z.number().int().nonnegative(),
+    stack: z.number().int().nonnegative(),
+    committedThisStreet: z.number().int().nonnegative(),
+    currentBet: z.number().int().nonnegative(),
+  })
+  .strict();
+const legalDiscardActionsSchema = z
+  .object({
+    required: z.boolean(),
+    count: z.number().int().nonnegative(),
+    validIndexes: z.array(z.number().int().nonnegative()),
+    deadlineMs: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+export const legalActionsSchema = z
+  .object({
+    phase: z.enum(['betting', 'discard', 'waiting', 'between_hands', 'showdown']),
+    isActor: z.boolean(),
+    reason: legalActionsReasonSchema.optional(),
+    betting: legalBettingActionsSchema.optional(),
+    discard: legalDiscardActionsSchema.optional(),
+  })
+  .strict();
 
 const versionedMessage = <T extends z.ZodRawShape>(shape: T) =>
   z
@@ -163,6 +212,7 @@ const publicStateSchema = z
     betweenHandMinUntilMs: z.number().int().nonnegative().nullable().optional(),
     betweenHandAutoStartAtMs: z.number().int().nonnegative().nullable().optional(),
     readyForNextHandPlayerIds: z.array(z.string().min(1)).optional(),
+    legalActions: legalActionsSchema.optional(),
     you: z.object({
       playerId: z.string().min(1),
     }),
@@ -170,6 +220,7 @@ const publicStateSchema = z
   .strict();
 
 export type PublicState = z.infer<typeof publicStateSchema>;
+export type LegalActions = z.infer<typeof legalActionsSchema>;
 
 const welcomeServerMessageSchema = versionedMessage({
   type: z.literal('welcome'),

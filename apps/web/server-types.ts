@@ -13,6 +13,7 @@ export {
 
 export type {
   ClientMessage,
+  LegalActions,
   MutatingClientMessage,
   PublicState,
   ServerMessage,

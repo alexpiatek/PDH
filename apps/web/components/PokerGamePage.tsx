@@ -4,15 +4,13 @@ import { Client as NakamaClient } from '@heroiclabs/nakama-js';
 import type { Match, Session, Socket as NakamaSocket } from '@heroiclabs/nakama-js';
 import { Card, HandState, PlayerInHand, ShowdownPotResult, ShowdownWinner } from '@pdh/engine';
 import { TABLE_CHAT_MAX_LENGTH, TABLE_REACTIONS } from '@pdh/protocol';
-import { ClientMessage, ServerMessage } from '../server-types';
+import type { ClientMessage, LegalActions, ServerMessage } from '../server-types';
 import { BondiPokerLogo } from './BondiPokerLogo';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
 import { getPlayerInitials } from '../lib/playerInitials';
-import {
-  nextAppliedStateVersion,
-  shouldApplyStateSnapshot,
-} from '../lib/stateVersion';
+import { resolveBettingActionControls } from '../lib/actionControls';
+import { nextAppliedStateVersion, shouldApplyStateSnapshot } from '../lib/stateVersion';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000';
 
@@ -1205,7 +1203,9 @@ const NextHandCountdown = ({
               alignSelf: 'flex-start',
               minHeight: 30,
               borderRadius: 7,
-              border: ready ? `1px solid ${TABLE_THEME.border}` : `1px solid ${TABLE_THEME.tealBorder}`,
+              border: ready
+                ? `1px solid ${TABLE_THEME.border}`
+                : `1px solid ${TABLE_THEME.tealBorder}`,
               background: ready ? 'rgba(255,255,255,0.045)' : TABLE_THEME.tealSoft,
               color: ready ? TABLE_THEME.muted : '#ccfbf1',
               padding: '5px 10px',
@@ -1826,6 +1826,8 @@ export const PokerGamePage = ({
 
   const hand: HandState | null = state?.hand ?? null;
   const startGate = state?.startGate ?? null;
+  const serverLegalActions: LegalActions | null =
+    USE_NAKAMA_BACKEND && state?.legalActions ? (state.legalActions as LegalActions) : null;
   const localSeat = useMemo(() => {
     if (!playerId || !Array.isArray(state?.seats)) return null;
     return (state.seats.find((s: any) => s && s.id === playerId) as any) ?? null;
@@ -1842,7 +1844,7 @@ export const PokerGamePage = ({
   }, [state?.seats]);
   const you = useMemo(() => {
     if (!hand || !playerId) return null;
-    return hand.players.find((p: PlayerInHand) => p.id === playerId);
+    return hand.players.find((p: PlayerInHand) => p.id === playerId) ?? null;
   }, [hand, playerId]);
   const showdownDeltasById = useMemo(() => {
     const payouts = new Map<string, number>();
@@ -1990,9 +1992,9 @@ export const PokerGamePage = ({
     });
   };
 
-  const isMyTurn = Boolean(
-    hand && you && hand.phase === 'betting' && hand.actionOnSeat === you.seat
-  );
+  const isMyTurn = serverLegalActions
+    ? Boolean(serverLegalActions.isActor && serverLegalActions.betting)
+    : Boolean(hand && you && hand.phase === 'betting' && hand.actionOnSeat === you.seat);
   const youInfoDimmed = Boolean(
     you &&
     (you.status === 'folded' ||
@@ -2002,10 +2004,15 @@ export const PokerGamePage = ({
       (hand?.phase === 'betting' && !isMyTurn))
   );
   const youBusted = Boolean(you && (you.status === 'busted' || you.status === 'sitting_out'));
-  const discardPending = Boolean(
-    hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id)
-  );
-  const toCall = hand && you ? Math.max(0, hand.currentBet - you.betThisStreet) : 0;
+  const serverDiscardActions =
+    serverLegalActions?.phase === 'discard' ? serverLegalActions.discard : undefined;
+  const serverDiscardValidIndexes =
+    serverDiscardActions?.validIndexes && Array.isArray(serverDiscardActions.validIndexes)
+      ? new Set(serverDiscardActions.validIndexes)
+      : null;
+  const discardPending = serverLegalActions
+    ? Boolean(serverLegalActions.isActor && serverDiscardActions?.required)
+    : Boolean(hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id));
   const isShowdown = hand?.phase === 'showdown';
   const currentStreetLabel = hand ? formatStreetLabel(hand.street) : '';
   const actionOnPlayer = useMemo(() => {
@@ -2082,18 +2089,18 @@ export const PokerGamePage = ({
   );
   const betweenHandActive = Boolean(
     hand?.phase === 'showdown' &&
-      betweenHandStartedAtMs !== null &&
-      betweenHandMinUntilMs !== null &&
-      betweenHandAutoStartAtMs !== null
+    betweenHandStartedAtMs !== null &&
+    betweenHandMinUntilMs !== null &&
+    betweenHandAutoStartAtMs !== null
   );
   const readyForNextHand = Boolean(playerId && readyForNextHandIds.has(playerId));
   const canReadyForNextHand = Boolean(
     seated &&
-      localSeat &&
-      betweenHandActive &&
-      !localNeedsRebuy &&
-      localSeatStack > 0 &&
-      localSeatStatus === 'active'
+    localSeat &&
+    betweenHandActive &&
+    !localNeedsRebuy &&
+    localSeatStack > 0 &&
+    localSeatStatus === 'active'
   );
   const betweenHandCountdownSeconds = useMemo(() => {
     if (!betweenHandActive || betweenHandAutoStartAtMs === null) {
@@ -2537,6 +2544,7 @@ export const PokerGamePage = ({
 
   const submitDiscard = (idx: number) => {
     if (!discardPending || discardSubmitted) return;
+    if (!isDiscardIndexAllowed(idx)) return;
     logFirstAction('discard', { discardIndex: idx });
     setDiscardSubmitted(true);
     setDiscardFlashIndex(idx);
@@ -2553,6 +2561,7 @@ export const PokerGamePage = ({
 
   const handleDiscardClick = (idx: number) => {
     if (!discardPending || discardSubmitted) return;
+    if (!isDiscardIndexAllowed(idx)) return;
     setSelectedDiscardIndex((previous) => (previous === idx ? null : idx));
   };
 
@@ -3003,54 +3012,32 @@ export const PokerGamePage = ({
     boxShadow: '0 8px 20px rgba(0,0,0,0.25)',
     cursor: 'pointer',
   };
-  const minRaiseTo = hand
-    ? hand.currentBet === 0
-      ? hand.minRaise
-      : hand.currentBet + hand.minRaise
-    : null;
-  const maxRaiseTo = you ? you.stack + you.betThisStreet : null;
-  const normalizedBetAmount = Number.isFinite(betAmount) ? Math.max(0, Math.floor(betAmount)) : 0;
-  const isCallAllIn = Boolean(you && isMyTurn && toCall > 0 && you.stack <= toCall);
-  const allInTotal = maxRaiseTo;
-  const canShortOpenAllIn = Boolean(
-    isMyTurn &&
-    hand &&
-    hand.currentBet === 0 &&
-    you &&
-    you.stack > 0 &&
-    minRaiseTo !== null &&
-    maxRaiseTo !== null &&
-    maxRaiseTo < minRaiseTo
-  );
-  const clampedRaiseTo =
-    minRaiseTo !== null && maxRaiseTo !== null
-      ? Math.min(maxRaiseTo, Math.max(minRaiseTo, normalizedBetAmount))
-      : normalizedBetAmount;
-  const canFold = Boolean(isMyTurn);
-  const canCheck = Boolean(isMyTurn && toCall === 0);
-  const canCall = Boolean(isMyTurn && toCall > 0);
-  const canRaise = Boolean(
-    isMyTurn &&
-    hand &&
-    !raiseCapReached &&
-    minRaiseTo !== null &&
-    maxRaiseTo !== null &&
-    maxRaiseTo >= minRaiseTo &&
-    clampedRaiseTo >= minRaiseTo &&
-    clampedRaiseTo <= maxRaiseTo &&
-    clampedRaiseTo > hand.currentBet
-  );
-  const canCheckOrCall = Boolean(isMyTurn);
-  const canOpenRaiseDrawer = Boolean(
-    isMyTurn &&
-    minRaiseTo !== null &&
-    maxRaiseTo !== null &&
-    maxRaiseTo >= minRaiseTo &&
-    !raiseCapReached
-  );
-  const raiseActionLabel = hand && hand.currentBet === 0 ? 'Bet' : 'Raise';
-  const checkOrCallLabel =
-    toCall === 0 ? 'Check' : isCallAllIn && you ? `All-in ${you.stack}` : `Call ${toCall}`;
+  const bettingControls = resolveBettingActionControls({
+    hand,
+    player: you,
+    legalActions: serverLegalActions,
+    preferLegalActions: USE_NAKAMA_BACKEND,
+    betAmount,
+    raiseCapReached,
+  });
+  const {
+    toCall,
+    currentBet: actionCurrentBet,
+    minRaiseTo,
+    maxRaiseTo,
+    allInTotal,
+    clampedRaiseTo,
+    canFold,
+    canCheck,
+    canCall,
+    canRaise,
+    canCheckOrCall,
+    canOpenRaiseDrawer,
+    canShortOpenAllIn,
+    isCallAllIn,
+    raiseActionLabel,
+    checkOrCallLabel,
+  } = bettingControls;
   const raiseDisabledHint = (() => {
     if (!hand || hand.phase !== 'betting') return 'Betting controls unlock during betting rounds.';
     if (!isMyTurn) return 'Wait for your turn.';
@@ -3073,18 +3060,22 @@ export const PokerGamePage = ({
         ? `To call ${formatChips(toCall)} \u00b7 Pot ${formatChips(potAmount)}`
         : `Check available \u00b7 Pot ${formatChips(potAmount)}`
       : '';
-  const discardLimit = 1;
+  const discardLimit = serverDiscardActions?.count ?? 1;
+  const isDiscardIndexAllowed = (idx: number) =>
+    !serverDiscardValidIndexes || serverDiscardValidIndexes.has(idx);
   const selectedDiscardCount = selectedDiscardIndex === null ? 0 : 1;
-  const canConfirmDiscard = discardPending && selectedDiscardIndex !== null && !discardSubmitted;
+  const selectedDiscardIsValid =
+    selectedDiscardIndex !== null && isDiscardIndexAllowed(selectedDiscardIndex);
+  const canConfirmDiscard = discardPending && selectedDiscardIsValid && !discardSubmitted;
   const quickRaiseOptions = useMemo(() => {
     if (!hand || minRaiseTo === null || maxRaiseTo === null) {
       return [] as Array<{ label: string; value: number; requiresConfirm?: boolean }>;
     }
     const clamp = (value: number) => Math.min(maxRaiseTo, Math.max(minRaiseTo, Math.floor(value)));
     const seed = [
-      { label: '1/2 pot', value: clamp(hand.currentBet + potAmount * 0.5) },
-      { label: 'pot', value: clamp(hand.currentBet + potAmount) },
-      { label: '2x', value: clamp(Math.max(hand.currentBet * 2, minRaiseTo)) },
+      { label: '1/2 pot', value: clamp(actionCurrentBet + potAmount * 0.5) },
+      { label: 'pot', value: clamp(actionCurrentBet + potAmount) },
+      { label: '2x', value: clamp(Math.max(actionCurrentBet * 2, minRaiseTo)) },
       { label: 'all-in', value: maxRaiseTo, requiresConfirm: true },
     ];
     const seen = new Set<number>();
@@ -3095,7 +3086,7 @@ export const PokerGamePage = ({
       deduped.push(option);
     }
     return deduped;
-  }, [hand?.currentBet, minRaiseTo, maxRaiseTo, potAmount]);
+  }, [hand?.handId, actionCurrentBet, minRaiseTo, maxRaiseTo, potAmount]);
   const disabledActionStyle: React.CSSProperties = {
     opacity: 0.48,
     cursor: 'not-allowed',
@@ -3158,13 +3149,13 @@ export const PokerGamePage = ({
       ? '#fef3c7'
       : youConnectionState?.status === 'disconnected'
         ? '#cbd5e1'
-    : youBusted || you?.status === 'folded'
-      ? '#cbd5e1'
-      : you?.status === 'allIn'
-        ? '#fef3c7'
-        : youShowDiscardState && youHasDiscardedThisStreet
-          ? '#86efac'
-          : TABLE_THEME.dim;
+        : youBusted || you?.status === 'folded'
+          ? '#cbd5e1'
+          : you?.status === 'allIn'
+            ? '#fef3c7'
+            : youShowDiscardState && youHasDiscardedThisStreet
+              ? '#86efac'
+              : TABLE_THEME.dim;
   const showYouSeatDelta = Boolean(
     isShowdown &&
     youSeatDelta &&
@@ -3279,37 +3270,38 @@ export const PokerGamePage = ({
       </div>
     </div>
   ) : null;
-  const nextHandTray = !USE_NAKAMA_BACKEND && localReadyBetweenHands ? (
-    <div
-      style={{
-        borderRadius: 8,
-        border: `1px solid ${TABLE_THEME.border}`,
-        background: TABLE_THEME.panelStrong,
-        padding: isPhone ? '10px 12px' : '12px 14px',
-        display: 'flex',
-        flexDirection: isPhone ? 'column' : 'row',
-        justifyContent: 'space-between',
-        alignItems: isPhone ? 'stretch' : 'center',
-        gap: 10,
-      }}
-    >
-      <div style={{ fontSize: isPhone ? 13 : 14, fontWeight: 800, color: TABLE_THEME.text }}>
-        Ready for next hand
-      </div>
-      <button
-        type="button"
-        onClick={sendReadyForNextHand}
-        style={turnActionStyle(true, {
-          border: 'rgba(94,234,212,0.78)',
-          background: 'rgba(20,184,166,0.28)',
-          color: '#ccfbf1',
-          glow: 'rgba(20,184,166,0.3)',
-        })}
+  const nextHandTray =
+    !USE_NAKAMA_BACKEND && localReadyBetweenHands ? (
+      <div
+        style={{
+          borderRadius: 8,
+          border: `1px solid ${TABLE_THEME.border}`,
+          background: TABLE_THEME.panelStrong,
+          padding: isPhone ? '10px 12px' : '12px 14px',
+          display: 'flex',
+          flexDirection: isPhone ? 'column' : 'row',
+          justifyContent: 'space-between',
+          alignItems: isPhone ? 'stretch' : 'center',
+          gap: 10,
+        }}
       >
-        Next Hand
-      </button>
-    </div>
-  ) : null;
+        <div style={{ fontSize: isPhone ? 13 : 14, fontWeight: 800, color: TABLE_THEME.text }}>
+          Ready for next hand
+        </div>
+        <button
+          type="button"
+          onClick={sendReadyForNextHand}
+          style={turnActionStyle(true, {
+            border: 'rgba(94,234,212,0.78)',
+            background: 'rgba(20,184,166,0.28)',
+            color: '#ccfbf1',
+            glow: 'rgba(20,184,166,0.3)',
+          })}
+        >
+          Next Hand
+        </button>
+      </div>
+    ) : null;
   const startGateTray =
     startGate && seated ? (
       <div
@@ -3506,7 +3498,7 @@ export const PokerGamePage = ({
   };
 
   const submitRaiseAction = () => {
-    if (!hand || !canRaise) {
+    if (!canRaise) {
       return;
     }
     const isAllInRaise = maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo;
@@ -3514,7 +3506,7 @@ export const PokerGamePage = ({
       setConfirmAllIn(true);
       return;
     }
-    act(isAllInRaise ? 'allIn' : hand.currentBet === 0 ? 'bet' : 'raise', clampedRaiseTo);
+    act(isAllInRaise ? 'allIn' : raiseActionLabel === 'Bet' ? 'bet' : 'raise', clampedRaiseTo);
     setConfirmAllIn(false);
     setShowRaiseDrawer(false);
   };
@@ -4480,13 +4472,13 @@ export const PokerGamePage = ({
                     ? '#fef3c7'
                     : connectionState?.status === 'disconnected'
                       ? '#cbd5e1'
-                  : p.status === 'folded' || playerBusted
-                    ? '#cbd5e1'
-                    : p.status === 'allIn'
-                      ? '#fef3c7'
-                      : showDiscardState && hasDiscardedThisStreet
-                        ? '#86efac'
-                        : TABLE_THEME.dim;
+                      : p.status === 'folded' || playerBusted
+                        ? '#cbd5e1'
+                        : p.status === 'allIn'
+                          ? '#fef3c7'
+                          : showDiscardState && hasDiscardedThisStreet
+                            ? '#86efac'
+                            : TABLE_THEME.dim;
                 const displayName = p.name || 'Player';
                 const seatDelta = showdownDeltasById.get(p.id);
                 const showSeatDelta = Boolean(
@@ -5064,7 +5056,10 @@ export const PokerGamePage = ({
                     <div style={{ display: 'flex', gap: isPhone ? 8 : 10 }}>
                       {you.holeCards.map((c, idx) => {
                         const discardSelectable =
-                          discardPending && !discardSubmitted && !animateHoleDeal;
+                          discardPending &&
+                          !discardSubmitted &&
+                          !animateHoleDeal &&
+                          isDiscardIndexAllowed(idx);
                         const discardSelected = discardSelectable && selectedDiscardIndex === idx;
                         return (
                           <div
@@ -5083,7 +5078,7 @@ export const PokerGamePage = ({
                             <div
                               style={{
                                 transform: `rotate(${idx === 0 ? -6 : 6}deg) translateY(${discardSelected ? '-8px' : '0px'})`,
-                                cursor: discardPending && !discardSubmitted ? 'pointer' : 'default',
+                                cursor: discardSelectable ? 'pointer' : 'default',
                                 transition: 'transform 140ms ease, filter 140ms ease',
                                 filter: discardSelectable
                                   ? discardSelected
@@ -5396,7 +5391,7 @@ export const PokerGamePage = ({
                           }}
                         >
                           <div style={{ fontSize: 12, color: '#e2e8f0' }}>
-                            {hand?.currentBet === 0 ? 'Bet amount' : 'Raise to'}{' '}
+                            {raiseActionLabel === 'Bet' ? 'Bet amount' : 'Raise to'}{' '}
                             <strong>{clampedRaiseTo}</strong>
                           </div>
                           <input

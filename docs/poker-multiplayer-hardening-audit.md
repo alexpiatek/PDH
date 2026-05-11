@@ -977,3 +977,32 @@ Remaining risks:
 - The legacy WebSocket dev path does not have the same server-owned between-hand policy as the Nakama authoritative path.
 
 Next recommended task: server-sent `legalActions`.
+
+## Implementation Note: Reliability Hardening Slice 4
+
+Date: 2026-05-11
+
+Fixed in this slice:
+
+- The engine now computes deterministic per-player `legalActions` from authoritative table state.
+- Nakama authoritative snapshots now include personalized `legalActions` for the receiving player.
+- The web table action tray prefers Nakama `legalActions` for betting controls, call/check labels, raise/bet bounds, all-in affordances, and discard card validity.
+
+`legalActions` now covers:
+
+- Betting turn ownership, fold/check/call/bet/raise/all-in availability, call amount, bet and raise-to bounds, stack, street commitment, and current bet.
+- Discard turn ownership, required discard count, valid card indexes, and discard deadline when available.
+- Waiting, showdown, between-hand, folded, busted, disconnected, sitting-out, all-in, and non-actor states with no betting controls exposed.
+
+Legacy fallback behavior:
+
+- The legacy/local web path keeps the existing public-state derivation when `legalActions` is missing.
+- In Nakama mode, a received `legalActions` object is treated as authoritative for the action tray, even when it intentionally contains no betting actions.
+
+Remaining risks:
+
+- `legalActions` is UI guidance only; server validation remains the final authority for every submitted action.
+- Active hand persistence/restart recovery is still not implemented.
+- Mobile-specific action-tray regression coverage is still thin.
+
+Next recommended task: add mobile action-tray regression tests, or move to persistence/restart recovery if restart safety is the higher priority.

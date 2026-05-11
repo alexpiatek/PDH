@@ -102,6 +102,27 @@ describe('protocol schemas', () => {
         betweenHandMinUntilMs: 126_000,
         betweenHandAutoStartAtMs: 132_000,
         readyForNextHandPlayerIds: ['p1'],
+        legalActions: {
+          phase: 'betting',
+          isActor: true,
+          betting: {
+            canFold: true,
+            canCheck: false,
+            canCall: true,
+            callAmount: 800,
+            canBet: false,
+            minBet: null,
+            maxBet: null,
+            canRaise: true,
+            minRaiseTo: 1600,
+            maxRaiseTo: 5000,
+            canAllIn: true,
+            allInAmount: 5000,
+            stack: 5000,
+            committedThisStreet: 0,
+            currentBet: 800,
+          },
+        },
         you: { playerId: 'p1' },
       },
     });
@@ -115,6 +136,7 @@ describe('protocol schemas', () => {
     expect(parsed.state.serverTimeMs).toBe(123_456);
     expect(parsed.state.betweenHandMinUntilMs).toBe(126_000);
     expect(parsed.state.readyForNextHandPlayerIds).toEqual(['p1']);
+    expect(parsed.state.legalActions?.betting?.minRaiseTo).toBe(1600);
   });
 
   it('rejects unsupported reaction token', () => {

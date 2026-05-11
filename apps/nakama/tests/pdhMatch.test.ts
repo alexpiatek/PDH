@@ -52,6 +52,23 @@ function stateMessagesFrom(broadcastMessage: ReturnType<typeof vi.fn>) {
     .filter((msg): msg is { type: 'state'; state: any } => Boolean(msg));
 }
 
+function stateMessagesTo(broadcastMessage: ReturnType<typeof vi.fn>, playerId: string) {
+  return broadcastMessage.mock.calls
+    .filter((call) => {
+      const targets = call[2] as Array<{ userId?: string }> | undefined;
+      return Array.isArray(targets) && targets.some((presence) => presence.userId === playerId);
+    })
+    .map((call) => {
+      try {
+        const parsed = JSON.parse(call[1] as string);
+        return parsed.type === 'state' ? parsed : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter((msg): msg is { type: 'state'; state: any } => Boolean(msg));
+}
+
 function connectionFor(state: any, playerId: string) {
   return state.playerConnections[playerId];
 }
@@ -564,7 +581,9 @@ describe('pdhMatchHandler', () => {
 
   it('keeps a player active when one of multiple sessions leaves', () => {
     const { nk, dispatcher, state, presenceById, broadcastMessage } = setupThreePlayerMatch();
-    const actor = state.table.hand.players.find((p: any) => p.seat === state.table.hand.actionOnSeat);
+    const actor = state.table.hand.players.find(
+      (p: any) => p.seat === state.table.hand.actionOnSeat
+    );
     const secondSession = { userId: actor.id, sessionId: `${actor.id}-second` };
 
     pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 3, state, [secondSession]);
@@ -582,7 +601,9 @@ describe('pdhMatchHandler', () => {
 
   it('puts an active player into reconnect grace without immediately folding', () => {
     const { dispatcher, state, presenceById } = setupThreePlayerMatch();
-    const actor = state.table.hand.players.find((p: any) => p.seat === state.table.hand.actionOnSeat);
+    const actor = state.table.hand.players.find(
+      (p: any) => p.seat === state.table.hand.actionOnSeat
+    );
     const versionBefore = state.stateVersion;
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(10_000);
     try {
@@ -605,13 +626,17 @@ describe('pdhMatchHandler', () => {
 
   it('lets a player reconnect before grace expires without duplicating seats or resetting the hand', () => {
     const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
-    const actor = state.table.hand.players.find((p: any) => p.seat === state.table.hand.actionOnSeat);
+    const actor = state.table.hand.players.find(
+      (p: any) => p.seat === state.table.hand.actionOnSeat
+    );
     const handId = state.table.hand.handId;
     const seatIndex = actor.seat;
 
     let nowSpy = vi.spyOn(Date, 'now').mockReturnValue(10_000);
     try {
-      pdhMatchHandler.matchLeave({}, logger, nk, dispatcher, 4, state, [presenceById.get(actor.id)]);
+      pdhMatchHandler.matchLeave({}, logger, nk, dispatcher, 4, state, [
+        presenceById.get(actor.id),
+      ]);
     } finally {
       nowSpy.mockRestore();
     }
@@ -639,11 +664,15 @@ describe('pdhMatchHandler', () => {
 
   it('expires reconnect grace with deterministic auto-action and sit-out policy', () => {
     const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
-    const actor = state.table.hand.players.find((p: any) => p.seat === state.table.hand.actionOnSeat);
+    const actor = state.table.hand.players.find(
+      (p: any) => p.seat === state.table.hand.actionOnSeat
+    );
 
     let nowSpy = vi.spyOn(Date, 'now').mockReturnValue(10_000);
     try {
-      pdhMatchHandler.matchLeave({}, logger, nk, dispatcher, 4, state, [presenceById.get(actor.id)]);
+      pdhMatchHandler.matchLeave({}, logger, nk, dispatcher, 4, state, [
+        presenceById.get(actor.id),
+      ]);
     } finally {
       nowSpy.mockRestore();
     }
@@ -669,7 +698,9 @@ describe('pdhMatchHandler', () => {
 
   it('keeps a non-acting disconnected player in grace without corrupting the hand', () => {
     const { dispatcher, state, presenceById } = setupThreePlayerMatch();
-    const actor = state.table.hand.players.find((p: any) => p.seat === state.table.hand.actionOnSeat);
+    const actor = state.table.hand.players.find(
+      (p: any) => p.seat === state.table.hand.actionOnSeat
+    );
     const nonActor = state.table.hand.players.find((p: any) => p.id !== actor.id);
     const handBefore = JSON.stringify(state.table.hand);
     const versionBefore = state.stateVersion;
@@ -872,6 +903,46 @@ describe('pdhMatchHandler', () => {
     expect(latest.serverTimeMs).toBeGreaterThan(0);
   });
 
+  it('includes personalized legal actions in authoritative state snapshots', () => {
+    const { nk, dispatcher, state, presenceById, broadcastMessage } = setupThreePlayerMatch();
+    const hand = state.table.hand;
+    const actor = hand.players.find((p: any) => p.seat === hand.actionOnSeat);
+    const nonActor = hand.players.find((p: any) => p.id !== actor.id);
+
+    broadcastMessage.mockClear();
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+      { opCode: 1, sender: presenceById.get(actor.id), data: encode({ type: 'requestState' }) },
+      {
+        opCode: 1,
+        sender: presenceById.get(nonActor.id),
+        data: encode({ type: 'requestState' }),
+      },
+    ]);
+
+    const actorSnapshot = stateMessagesTo(broadcastMessage, actor.id).at(-1)?.state;
+    expect(actorSnapshot?.you.playerId).toBe(actor.id);
+    expect(actorSnapshot?.legalActions).toMatchObject({
+      phase: 'betting',
+      isActor: true,
+      betting: {
+        canFold: true,
+        canCall: true,
+        callAmount: 800,
+        canRaise: true,
+        minRaiseTo: 1600,
+      },
+    });
+
+    const nonActorSnapshot = stateMessagesTo(broadcastMessage, nonActor.id).at(-1)?.state;
+    expect(nonActorSnapshot?.you.playerId).toBe(nonActor.id);
+    expect(nonActorSnapshot?.legalActions).toMatchObject({
+      phase: 'betting',
+      isActor: false,
+      reason: 'not_your_turn',
+    });
+    expect(nonActorSnapshot?.legalActions.betting).toBeUndefined();
+  });
+
   it('enters server-owned between-hand state after showdown settlement', () => {
     const { nk, dispatcher, state, broadcastMessage } = setupThreePlayerMatch();
     const versionBefore = state.stateVersion;
@@ -898,10 +969,18 @@ describe('pdhMatchHandler', () => {
     const handId = state.table.hand.handId;
     const versionBeforeReady = state.stateVersion;
 
-    sendReadyForNextHand(nk, dispatcher, state, presenceById.get('u1'), between.minUntilMs - 1, 11, {
-      type: 'nextHand',
-      seq: 1,
-    });
+    sendReadyForNextHand(
+      nk,
+      dispatcher,
+      state,
+      presenceById.get('u1'),
+      between.minUntilMs - 1,
+      11,
+      {
+        type: 'nextHand',
+        seq: 1,
+      }
+    );
 
     expect(state.table.hand.handId).toBe(handId);
     expect(state.table.hand.phase).toBe('showdown');

@@ -1,5 +1,10 @@
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
-import { PokerTable, type Seat, type TableState } from '@pdh/engine';
+import {
+  computeLegalActionsForPlayer,
+  PokerTable,
+  type Seat,
+  type TableState,
+} from '../../../packages/engine/src';
 import {
   MatchOpCode,
   TABLE_CHAT_MAX_LENGTH,
@@ -275,10 +280,10 @@ function commitTableMutation<T>(
 function isEligibleBetweenHandSeat(seat: Seat | null | undefined): seat is Seat {
   return Boolean(
     seat &&
-      seat.stack > 0 &&
-      !seat.sittingOut &&
-      seat.status !== 'sitting_out' &&
-      seat.status !== 'busted'
+    seat.stack > 0 &&
+    !seat.sittingOut &&
+    seat.status !== 'sitting_out' &&
+    seat.status !== 'busted'
   );
 }
 
@@ -477,10 +482,7 @@ function removePresence(state: MatchState, presence: nkruntime.Presence) {
   delete state.presences[presenceKey(presence)];
 }
 
-function playerConnectionForSnapshot(
-  state: MatchState,
-  playerId: string
-): PlayerConnectionState {
+function playerConnectionForSnapshot(state: MatchState, playerId: string): PlayerConnectionState {
   if (hasActivePresenceForUser(state, playerId)) {
     return {
       status: 'connected',
@@ -497,11 +499,7 @@ function playerConnectionForSnapshot(
   );
 }
 
-function updatePlayerConnection(
-  state: MatchState,
-  playerId: string,
-  next: PlayerConnectionState
-) {
+function updatePlayerConnection(state: MatchState, playerId: string, next: PlayerConnectionState) {
   const previous = state.playerConnections[playerId] ?? null;
   if (JSON.stringify(previous) === JSON.stringify(next)) {
     return false;
@@ -560,6 +558,7 @@ function annotateSeatsWithConnectionState(state: MatchState, seats: Array<any | 
 function stateSnapshotForPresence(state: MatchState, table: PokerTable, playerId: string) {
   const publicState = table.getPublicState(playerId);
   const connections = publicConnectionsForSeats(state, publicState.seats);
+  const ownConnection = playerConnectionForSnapshot(state, playerId);
   return {
     ...publicState,
     seats: annotateSeatsWithConnectionState(state, publicState.seats),
@@ -570,6 +569,10 @@ function stateSnapshotForPresence(state: MatchState, table: PokerTable, playerId
     betweenHandMinUntilMs: state.betweenHand?.minUntilMs ?? null,
     betweenHandAutoStartAtMs: state.betweenHand?.autoStartAtMs ?? null,
     readyForNextHandPlayerIds: state.betweenHand ? [...state.betweenHand.readyPlayerIds] : [],
+    legalActions: computeLegalActionsForPlayer(table.state, playerId, {
+      betweenHand: Boolean(state.betweenHand),
+      connectionStatus: ownConnection.status,
+    }),
     you: { playerId },
   };
 }
@@ -1140,8 +1143,7 @@ function applyExpiredTableTimers(
     shouldBroadcast = true;
   }
 
-  shouldBroadcast =
-    applyExpiredReconnectGrace(logger, state, table, tick, now) || shouldBroadcast;
+  shouldBroadcast = applyExpiredReconnectGrace(logger, state, table, tick, now) || shouldBroadcast;
 
   const autoActionMutation = commitTableMutation(state, table, () => table.autoAction(now));
   if (autoActionMutation.result) {
@@ -1173,8 +1175,7 @@ function applyExpiredTableTimers(
     shouldBroadcast = true;
   }
 
-  shouldBroadcast =
-    advanceBetweenHandIfReady(logger, state, table, tick, now) || shouldBroadcast;
+  shouldBroadcast = advanceBetweenHandIfReady(logger, state, table, tick, now) || shouldBroadcast;
 
   if (!table.state.hand) {
     if (state.betweenHand) {
@@ -1315,7 +1316,8 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
           if (data.playerId !== presence.userId) {
             throw new Error('Reconnect identity mismatch');
           }
-          shouldBroadcast = markPlayerConnected(state, presence.userId, Date.now()) || shouldBroadcast;
+          shouldBroadcast =
+            markPlayerConnected(state, presence.userId, Date.now()) || shouldBroadcast;
           const mutation = commitTableMutation(state, table, () => {
             table.setSittingOut(presence.userId, false);
             table.beginNextHandIfReady();

@@ -5,6 +5,10 @@ import {
   AuditHandLog,
   HandLogEntry,
   HandState,
+  LegalActions,
+  LegalActionsContext,
+  LegalActionsPhase,
+  LegalActionsReason,
   Phase,
   PlayerAction,
   PlayerInHand,
@@ -110,6 +114,180 @@ function playerById(hand: HandState, id: string): PlayerInHand {
     throw new Error(`No player with id ${id}`);
   }
   return p;
+}
+
+function phaseForLegalActions(
+  hand: HandState | null | undefined,
+  context?: LegalActionsContext
+): LegalActionsPhase {
+  if (context?.betweenHand) return 'between_hands';
+  if (!hand || hand.phase === 'complete') return 'waiting';
+  if (hand.phase === 'showdown') return 'showdown';
+  return hand.phase;
+}
+
+function inactiveSeatReason(seat: Seat | null | undefined): LegalActionsReason | null {
+  if (!seat) return 'not_seated';
+  if (seat.status === 'busted') return 'busted';
+  if (seat.status === 'sitting_out' || seat.sittingOut) return 'sitting_out';
+  return null;
+}
+
+function inactiveBettingPlayerReason(player: PlayerInHand): LegalActionsReason | null {
+  switch (player.status) {
+    case 'active':
+      return null;
+    case 'folded':
+    case 'out':
+      return 'folded';
+    case 'allIn':
+      return 'all_in';
+    case 'busted':
+      return 'busted';
+    case 'sitting_out':
+      return 'sitting_out';
+    default:
+      return 'not_your_turn';
+  }
+}
+
+function inactiveDiscardPlayerReason(player: PlayerInHand): LegalActionsReason | null {
+  switch (player.status) {
+    case 'active':
+    case 'allIn':
+      return null;
+    case 'folded':
+    case 'out':
+      return 'folded';
+    case 'busted':
+      return 'busted';
+    case 'sitting_out':
+      return 'sitting_out';
+    default:
+      return 'not_your_turn';
+  }
+}
+
+function emptyLegalActions(phase: LegalActionsPhase, reason: LegalActionsReason): LegalActions {
+  return { phase, isActor: false, reason };
+}
+
+export function computeLegalActionsForPlayer(
+  table: TableState,
+  playerId: string,
+  context: LegalActionsContext = {}
+): LegalActions {
+  const hand = table.hand;
+  const phase = phaseForLegalActions(hand, context);
+  const seat = table.seats.find((candidate) => candidate?.id === playerId);
+
+  if (context.connectionStatus && context.connectionStatus !== 'connected') {
+    return emptyLegalActions(phase, 'disconnected');
+  }
+
+  const seatReason = inactiveSeatReason(seat);
+  if (seatReason) {
+    return emptyLegalActions(phase, seatReason);
+  }
+
+  if (!hand || hand.phase === 'complete') {
+    return emptyLegalActions(phase, 'waiting_for_players');
+  }
+
+  if (context.betweenHand) {
+    return emptyLegalActions('between_hands', 'between_hands');
+  }
+
+  if (hand.phase === 'showdown') {
+    return emptyLegalActions('showdown', 'showdown');
+  }
+
+  const player = hand.players.find((candidate) => candidate.id === playerId);
+  if (!player) {
+    return emptyLegalActions(phase, 'not_your_turn');
+  }
+
+  if (hand.phase === 'discard') {
+    const inactiveReason = inactiveDiscardPlayerReason(player);
+    if (inactiveReason) {
+      return emptyLegalActions('discard', inactiveReason);
+    }
+
+    if (!hand.discardPending.includes(player.id)) {
+      return emptyLegalActions('discard', 'not_your_turn');
+    }
+
+    return {
+      phase: 'discard',
+      isActor: true,
+      discard: {
+        required: true,
+        count: 1,
+        validIndexes: player.holeCards.map((_, index) => index),
+        deadlineMs: hand.discardDeadline ?? null,
+      },
+    };
+  }
+
+  if (hand.phase !== 'betting') {
+    return emptyLegalActions(phase, 'waiting_for_players');
+  }
+
+  const inactiveReason = inactiveBettingPlayerReason(player);
+  if (inactiveReason) {
+    return emptyLegalActions('betting', inactiveReason);
+  }
+
+  if (hand.pendingNextPhaseAt || hand.actionOnSeat < 0) {
+    return emptyLegalActions('betting', 'waiting_for_next_phase');
+  }
+
+  if (player.seat !== hand.actionOnSeat) {
+    return emptyLegalActions('betting', 'not_your_turn');
+  }
+
+  const toCall = Math.max(0, hand.currentBet - player.betThisStreet);
+  const allInAmount = player.betThisStreet + player.stack;
+  const raiseCapReached = hand.raisesThisStreet >= 2;
+  const minBet = hand.currentBet === 0 ? table.config.bigBlind : null;
+  const maxBet = hand.currentBet === 0 ? allInAmount : null;
+  const minRaiseTo = hand.currentBet > 0 ? hand.currentBet + hand.minRaise : null;
+  const maxRaiseTo = hand.currentBet > 0 ? allInAmount : null;
+  const canBet =
+    minBet !== null && maxBet !== null && !raiseCapReached && player.stack > 0 && maxBet >= minBet;
+  const canRaise =
+    minRaiseTo !== null &&
+    maxRaiseTo !== null &&
+    !raiseCapReached &&
+    player.stack > 0 &&
+    maxRaiseTo >= minRaiseTo;
+  const canAllIn =
+    player.stack > 0 &&
+    (allInAmount > hand.currentBet
+      ? !raiseCapReached
+      : toCall > 0 && allInAmount > player.betThisStreet);
+
+  return {
+    phase: 'betting',
+    isActor: true,
+    betting: {
+      canFold: true,
+      canCheck: toCall === 0,
+      canCall: toCall > 0,
+      callAmount: toCall,
+      canBet,
+      minBet,
+      maxBet,
+      canRaise,
+      minRaiseTo,
+      maxRaiseTo,
+      canAllIn,
+      allInAmount,
+      stack: player.stack,
+      committedThisStreet: player.betThisStreet,
+      currentBet: hand.currentBet,
+    },
+  };
 }
 
 function resetStreetState(hand: HandState, nextStreet: Street, table: TableState) {
@@ -1086,6 +1264,10 @@ export class PokerTable {
     this.state.auditHands = auditHands;
     this.state.hand = null;
     this.beginNextHandIfReady();
+  }
+
+  getLegalActionsForPlayer(playerId: string, context?: LegalActionsContext): LegalActions {
+    return computeLegalActionsForPlayer(this.state, playerId, context);
   }
 
   getPublicState(forPlayerId?: string) {
