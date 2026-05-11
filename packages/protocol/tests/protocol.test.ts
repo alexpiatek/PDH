@@ -64,6 +64,17 @@ describe('protocol schemas', () => {
     expect(parsed.v).toBe(PDH_PROTOCOL_VERSION);
   });
 
+  it('accepts next-hand client payloads scoped to a hand', () => {
+    const parsed = parseClientMessagePayload({
+      type: 'nextHand',
+      handId: 'hand-123',
+      seq: 1,
+    });
+
+    expect(parsed.v).toBe(PDH_PROTOCOL_VERSION);
+    expect(parsed.handId).toBe('hand-123');
+  });
+
   it('accepts public state payloads with a start gate', () => {
     const parsed = parseServerMessagePayload({
       type: 'state',

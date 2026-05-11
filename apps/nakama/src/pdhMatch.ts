@@ -325,12 +325,21 @@ function ensureDiscardTurn(table: PokerTable, playerId: string) {
   }
 }
 
-function ensureCanAdvanceHand(table: PokerTable, playerId: string) {
+function advanceToNextHandFromClient(
+  table: PokerTable,
+  playerId: string,
+  requestedHandId?: string
+) {
   ensurePlayerSeated(table, playerId);
   const hand = table.state.hand;
+  if (requestedHandId && (!hand || hand.handId !== requestedHandId)) {
+    return false;
+  }
   if (hand && hand.phase !== 'showdown') {
     throw new Error('Hand not complete');
   }
+  table.advanceToNextHand();
+  return true;
 }
 
 function reserveReactionWindow(state: MatchState, playerId: string, nowMs: number) {
@@ -793,9 +802,24 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
           break;
         }
         case 'nextHand': {
-          ensureCanAdvanceHand(table, presence.userId);
-          table.advanceToNextHand();
-          shouldBroadcast = true;
+          if (advanceToNextHandFromClient(table, presence.userId, data.handId)) {
+            shouldBroadcast = true;
+          } else {
+            logStructured(logger, 'info', 'match.next_hand.stale_ignored', {
+              matchId: state.matchId,
+              tableId: table.state.id,
+              tick,
+              userId: presence.userId,
+              requestedHandId: data.handId,
+              currentHandId: table.state.hand?.handId ?? null,
+              currentPhase: table.state.hand?.phase ?? null,
+            });
+            const publicState = table.getPublicState(presence.userId);
+            sendToPresence(dispatcher, presence, {
+              type: 'state',
+              state: { ...publicState, you: { playerId: presence.userId } },
+            });
+          }
           break;
         }
         case 'rebuy': {

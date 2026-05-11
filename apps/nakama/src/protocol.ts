@@ -81,7 +81,10 @@ export function isClientMessage(value: unknown): value is ClientMessage {
         Number.isInteger(value.index) && Number(value.index) >= 0 && hasValidOptionalSequence(value)
       );
     case 'nextHand':
-      return hasValidOptionalSequence(value);
+      return (
+        (value.handId === undefined || typeof value.handId === 'string') &&
+        hasValidOptionalSequence(value)
+      );
     case 'rebuy':
       return (
         (value.amount === undefined || isPositiveInt(value.amount)) &&

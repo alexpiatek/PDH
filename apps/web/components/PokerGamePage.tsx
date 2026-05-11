@@ -821,6 +821,8 @@ export const PokerGamePage = ({
           msg.message.toLowerCase().includes('not in discard phase')
         ) {
           recoverDiscardSubmission('Discard not received. Choose a card again.');
+        } else if (msg.message.toLowerCase().includes('hand not complete')) {
+          logClientEvent('suppressed_table_notice', { message: msg.message });
         } else {
           setStatus(msg.message);
         }
@@ -1393,7 +1395,8 @@ export const PokerGamePage = ({
     if (localNeedsRebuy) {
       return;
     }
-    const timeoutId = window.setTimeout(() => send({ type: 'nextHand' }), 6000);
+    const handId = hand.handId;
+    const timeoutId = window.setTimeout(() => send({ type: 'nextHand', handId }), 6000);
     return () => window.clearTimeout(timeoutId);
   }, [hand?.phase, hand?.handId, localNeedsRebuy]);
 
@@ -1420,7 +1423,7 @@ export const PokerGamePage = ({
 
     rebuyNextHandSentRef.current = true;
     setStatus('Rebuy confirmed. Entering the next hand...');
-    send({ type: 'nextHand' });
+    send(hand ? { type: 'nextHand', handId: hand.handId } : { type: 'nextHand' });
   }, [hand?.handId, hand?.phase, localNeedsRebuy, localSeatStack, rebuyState, seated]);
 
   useEffect(() => {
@@ -4359,7 +4362,7 @@ export const PokerGamePage = ({
                   </div>
                   <button
                     type="button"
-                    onClick={() => send({ type: 'nextHand' })}
+                    onClick={() => hand && send({ type: 'nextHand', handId: hand.handId })}
                     style={turnActionStyle(true, {
                       border: 'rgba(94,234,212,0.78)',
                       background: 'rgba(20,184,166,0.28)',

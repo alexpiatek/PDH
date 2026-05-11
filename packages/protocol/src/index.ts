@@ -71,6 +71,7 @@ const discardClientMessageSchema = versionedMessage({
 
 const nextHandClientMessageSchema = versionedMessage({
   type: z.literal('nextHand'),
+  handId: z.string().min(1).optional(),
   seq: seqSchema.optional(),
 });
 

@@ -20,6 +20,23 @@ const REACTION_COOLDOWN_MS = 2500;
 const CHAT_COOLDOWN_MS = 800;
 const DEFAULT_LEGACY_BUY_IN = 10000;
 
+function advanceToNextHandFromClient(raw: Extract<ClientMessage, { type: 'nextHand' }>) {
+  const hand = table.state.hand;
+  if (raw.handId && (!hand || hand.handId !== raw.handId)) {
+    console.log(
+      JSON.stringify({
+        event: 'legacy.next_hand.stale_ignored',
+        requestedHandId: raw.handId,
+        currentHandId: hand?.handId ?? null,
+        currentPhase: hand?.phase ?? null,
+      })
+    );
+    return false;
+  }
+  table.advanceToNextHand();
+  return true;
+}
+
 const server = createServer((req, res) => {
   if (!req.url) {
     res.statusCode = 404;
@@ -161,8 +178,9 @@ function handleMessage(ws: WebSocket, raw: ClientMessage) {
       }
       case 'nextHand': {
         if (!ctx) throw new Error('Join first');
-        table.advanceToNextHand();
-        broadcast();
+        if (advanceToNextHandFromClient(raw)) {
+          broadcast();
+        }
         break;
       }
       case 'rebuy': {
