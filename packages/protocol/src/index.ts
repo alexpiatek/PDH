@@ -35,6 +35,7 @@ export const TABLE_CHAT_MAX_LENGTH = 140 as const;
 const clientActionSchema = z.enum(['fold', 'check', 'call', 'bet', 'raise', 'allIn']);
 const tableReactionSchema = z.enum(TABLE_REACTIONS);
 const seqSchema = z.number().int().positive();
+const playerConnectionStatusSchema = z.enum(['connected', 'reconnecting', 'disconnected']);
 
 const versionedMessage = <T extends z.ZodRawShape>(shape: T) =>
   z
@@ -141,6 +142,15 @@ const publicStateSchema = z
       .nullable(),
     hand: z.any().nullable(),
     log: z.array(z.any()),
+    connections: z
+      .record(
+        z.object({
+          status: playerConnectionStatusSchema,
+          graceDeadlineMs: z.number().int().nonnegative().nullable().optional(),
+          lastSeenMs: z.number().int().nonnegative().nullable().optional(),
+        })
+      )
+      .optional(),
     stateVersion: z.number().int().nonnegative().optional(),
     serverTimeMs: z.number().int().nonnegative().optional(),
     you: z.object({

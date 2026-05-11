@@ -52,6 +52,15 @@ function stateMessagesFrom(broadcastMessage: ReturnType<typeof vi.fn>) {
     .filter((msg): msg is { type: 'state'; state: any } => Boolean(msg));
 }
 
+function connectionFor(state: any, playerId: string) {
+  return state.playerConnections[playerId];
+}
+
+function activeSessionCount(state: any, playerId: string) {
+  return Object.values(state.presences).filter((presence: any) => presence.userId === playerId)
+    .length;
+}
+
 function actionPayloadFor(hand: any, playerId: string, seq: number) {
   const player = hand.players.find((p: any) => p.id === playerId);
   const toCall = hand.currentBet - player.betThisStreet;
@@ -509,6 +518,132 @@ describe('pdhMatchHandler', () => {
     ]);
     expect(errorMessagesFrom(broadcastMessage)).toEqual([]);
     expect(state.lastSeqByPlayer[contender.id]).toBe(2);
+  });
+
+  it('keeps a player active when one of multiple sessions leaves', () => {
+    const { nk, dispatcher, state, presenceById, broadcastMessage } = setupThreePlayerMatch();
+    const actor = state.table.hand.players.find((p: any) => p.seat === state.table.hand.actionOnSeat);
+    const secondSession = { userId: actor.id, sessionId: `${actor.id}-second` };
+
+    pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 3, state, [secondSession]);
+    expect(activeSessionCount(state, actor.id)).toBe(2);
+
+    const handBefore = JSON.stringify(state.table.hand);
+    broadcastMessage.mockClear();
+    pdhMatchHandler.matchLeave({}, logger, nk, dispatcher, 4, state, [presenceById.get(actor.id)]);
+
+    expect(activeSessionCount(state, actor.id)).toBe(1);
+    expect(connectionFor(state, actor.id).status).toBe('connected');
+    expect(JSON.stringify(state.table.hand)).toBe(handBefore);
+    expect(state.table.seats[actor.seat]?.sittingOut).not.toBe(true);
+  });
+
+  it('puts an active player into reconnect grace without immediately folding', () => {
+    const { dispatcher, state, presenceById } = setupThreePlayerMatch();
+    const actor = state.table.hand.players.find((p: any) => p.seat === state.table.hand.actionOnSeat);
+    const versionBefore = state.stateVersion;
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    try {
+      pdhMatchHandler.matchLeave({}, logger, makeNakamaMock(), dispatcher, 4, state, [
+        presenceById.get(actor.id),
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    const updatedActor = state.table.hand.players.find((p: any) => p.id === actor.id);
+    expect(connectionFor(state, actor.id)).toMatchObject({
+      status: 'reconnecting',
+      graceDeadlineMs: 25_000,
+    });
+    expect(updatedActor.status).toBe('active');
+    expect(state.table.seats[actor.seat]?.sittingOut).not.toBe(true);
+    expect(state.stateVersion).toBeGreaterThan(versionBefore);
+  });
+
+  it('lets a player reconnect before grace expires without duplicating seats or resetting the hand', () => {
+    const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
+    const actor = state.table.hand.players.find((p: any) => p.seat === state.table.hand.actionOnSeat);
+    const handId = state.table.hand.handId;
+    const seatIndex = actor.seat;
+
+    let nowSpy = vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    try {
+      pdhMatchHandler.matchLeave({}, logger, nk, dispatcher, 4, state, [presenceById.get(actor.id)]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+    const graceVersion = state.stateVersion;
+
+    nowSpy = vi.spyOn(Date, 'now').mockReturnValue(20_000);
+    try {
+      pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 5, state, [
+        { userId: actor.id, sessionId: 'reconnected-session' },
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    const seatsForPlayer = state.table.seats.filter((seat: any) => seat?.id === actor.id);
+    const updatedActor = state.table.hand.players.find((p: any) => p.id === actor.id);
+    expect(connectionFor(state, actor.id).status).toBe('connected');
+    expect(connectionFor(state, actor.id).graceDeadlineMs).toBeNull();
+    expect(seatsForPlayer).toHaveLength(1);
+    expect(seatsForPlayer[0].seat).toBe(seatIndex);
+    expect(state.table.hand.handId).toBe(handId);
+    expect(updatedActor.status).toBe('active');
+    expect(state.stateVersion).toBeGreaterThan(graceVersion);
+  });
+
+  it('expires reconnect grace with deterministic auto-action and sit-out policy', () => {
+    const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
+    const actor = state.table.hand.players.find((p: any) => p.seat === state.table.hand.actionOnSeat);
+
+    let nowSpy = vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    try {
+      pdhMatchHandler.matchLeave({}, logger, nk, dispatcher, 4, state, [presenceById.get(actor.id)]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+    const graceVersion = state.stateVersion;
+
+    nowSpy = vi.spyOn(Date, 'now').mockReturnValue(25_001);
+    try {
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 5, state, []);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    const updatedActor = state.table.hand.players.find((p: any) => p.id === actor.id);
+    expect(connectionFor(state, actor.id).status).toBe('disconnected');
+    expect(connectionFor(state, actor.id).graceDeadlineMs).toBeNull();
+    expect(updatedActor.status).toBe('folded');
+    expect(state.table.seats[actor.seat]?.sittingOut).toBe(true);
+    expect(
+      state.table.hand.log.some((entry: any) => entry.message.includes('auto-folded (timeout)'))
+    ).toBe(true);
+    expect(state.stateVersion).toBeGreaterThan(graceVersion);
+  });
+
+  it('keeps a non-acting disconnected player in grace without corrupting the hand', () => {
+    const { dispatcher, state, presenceById } = setupThreePlayerMatch();
+    const actor = state.table.hand.players.find((p: any) => p.seat === state.table.hand.actionOnSeat);
+    const nonActor = state.table.hand.players.find((p: any) => p.id !== actor.id);
+    const handBefore = JSON.stringify(state.table.hand);
+    const versionBefore = state.stateVersion;
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    try {
+      pdhMatchHandler.matchLeave({}, logger, makeNakamaMock(), dispatcher, 4, state, [
+        presenceById.get(nonActor.id),
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(connectionFor(state, nonActor.id).status).toBe('reconnecting');
+    expect(JSON.stringify(state.table.hand)).toBe(handBefore);
+    expect(state.stateVersion).toBeGreaterThan(versionBefore);
   });
 
   it('ensures an authoritative pdh match via helper/rpc', () => {

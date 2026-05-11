@@ -656,8 +656,12 @@ const parseActionMessage = (message: string): ActionBadge | null => {
 const formatSeatTimer = (secondsLeft: number | null | undefined) =>
   typeof secondsLeft === 'number' ? ` · ${secondsLeft}s` : '';
 
+type PlayerConnectionStatus = 'connected' | 'reconnecting' | 'disconnected';
+
 const playerSeatStatusLabel = ({
   status,
+  connectionStatus,
+  reconnectSecondsLeft,
   isTurn,
   isHero,
   secondsLeft,
@@ -666,6 +670,8 @@ const playerSeatStatusLabel = ({
   hasDiscarded,
 }: {
   status: PlayerInHand['status'];
+  connectionStatus?: PlayerConnectionStatus | null;
+  reconnectSecondsLeft?: number | null;
   isTurn: boolean;
   isHero?: boolean;
   secondsLeft: number | null;
@@ -673,6 +679,10 @@ const playerSeatStatusLabel = ({
   isDiscarding?: boolean;
   hasDiscarded?: boolean;
 }) => {
+  if (connectionStatus === 'reconnecting') {
+    return `RECONNECTING${formatSeatTimer(reconnectSecondsLeft)}`;
+  }
+  if (connectionStatus === 'disconnected') return 'DISCONNECTED';
   if (isTurn) {
     return `${isHero ? 'YOUR TURN' : 'TO ACT'}${formatSeatTimer(secondsLeft)}`;
   }
@@ -1873,6 +1883,42 @@ export const PokerGamePage = ({
   }, [state?.seats]);
   const waitingForPlayers = seated && !hand && seatedPlayerCount < 2;
   const tableCode = typeof state?.id === 'string' ? state.id : '';
+  const connectionStateByPlayerId = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        status: PlayerConnectionStatus;
+        graceDeadlineMs: number | null;
+      }
+    >();
+    const connections = state?.connections;
+    if (connections && typeof connections === 'object') {
+      for (const [id, connection] of Object.entries(connections as Record<string, any>)) {
+        const status = connection?.status;
+        if (status !== 'connected' && status !== 'reconnecting' && status !== 'disconnected') {
+          continue;
+        }
+        map.set(id, {
+          status,
+          graceDeadlineMs:
+            typeof connection?.graceDeadlineMs === 'number' ? connection.graceDeadlineMs : null,
+        });
+      }
+    }
+    for (const seat of state?.seats ?? []) {
+      if (!seat?.id || map.has(seat.id)) continue;
+      const status = seat.connectionStatus;
+      if (status !== 'connected' && status !== 'reconnecting' && status !== 'disconnected') {
+        continue;
+      }
+      map.set(seat.id, {
+        status,
+        graceDeadlineMs:
+          typeof seat.reconnectGraceDeadlineMs === 'number' ? seat.reconnectGraceDeadlineMs : null,
+      });
+    }
+    return map;
+  }, [state?.connections, state?.seats]);
   useEffect(() => {
     if (!seated) {
       setShowUtilitiesPanel(false);
@@ -3040,9 +3086,17 @@ export const PokerGamePage = ({
     you.status !== 'sitting_out'
   );
   const youHasDiscardedThisStreet = Boolean(you && discardConfirmedPlayers.has(you.id));
+  const youConnectionState = you ? (connectionStateByPlayerId.get(you.id) ?? null) : null;
+  const youReconnectSecondsLeft =
+    youConnectionState?.status === 'reconnecting' &&
+    typeof youConnectionState.graceDeadlineMs === 'number'
+      ? Math.max(0, Math.ceil((youConnectionState.graceDeadlineMs - clockNowMs) / 1000))
+      : null;
   const youSeatStatusLabel = you
     ? playerSeatStatusLabel({
         status: you.status,
+        connectionStatus: youConnectionState?.status ?? null,
+        reconnectSecondsLeft: youReconnectSecondsLeft,
         isTurn: isMyTurn,
         isHero: true,
         secondsLeft: tableTimerSeconds,
@@ -3053,6 +3107,10 @@ export const PokerGamePage = ({
     : null;
   const youSeatStatusColor = isMyTurn
     ? '#bae6fd'
+    : youConnectionState?.status === 'reconnecting'
+      ? '#fef3c7'
+      : youConnectionState?.status === 'disconnected'
+        ? '#cbd5e1'
     : youBusted || you?.status === 'folded'
       ? '#cbd5e1'
       : you?.status === 'allIn'
@@ -4353,8 +4411,16 @@ export const PokerGamePage = ({
                   p.status !== 'sitting_out';
                 const hasDiscardedThisStreet =
                   showDiscardState && discardConfirmedPlayers.has(p.id);
+                const connectionState = connectionStateByPlayerId.get(p.id) ?? null;
+                const reconnectSecondsLeft =
+                  connectionState?.status === 'reconnecting' &&
+                  typeof connectionState.graceDeadlineMs === 'number'
+                    ? Math.max(0, Math.ceil((connectionState.graceDeadlineMs - clockNowMs) / 1000))
+                    : null;
                 const statusLabel = playerSeatStatusLabel({
                   status: p.status,
+                  connectionStatus: connectionState?.status ?? null,
+                  reconnectSecondsLeft,
                   isTurn,
                   secondsLeft: tableTimerSeconds,
                   isBetting: isBettingPhase,
@@ -4363,6 +4429,10 @@ export const PokerGamePage = ({
                 });
                 const statusColor = isTurn
                   ? '#bae6fd'
+                  : connectionState?.status === 'reconnecting'
+                    ? '#fef3c7'
+                    : connectionState?.status === 'disconnected'
+                      ? '#cbd5e1'
                   : p.status === 'folded' || playerBusted
                     ? '#cbd5e1'
                     : p.status === 'allIn'

@@ -890,6 +890,28 @@ Intentionally not fixed yet:
 
 Next recommended task: implement session-aware reconnect grace in the Nakama presence path so transient refreshes and same-user multi-session joins do not immediately fold or sit out an active player.
 
+## Implementation Note: Reliability Hardening Slice 2
+
+Date: 2026-05-11
+
+Fixed in this slice:
+
+- Nakama authoritative match presence is now session-aware: active presences are keyed by `userId` plus `sessionId`, so leaving one tab/session does not disconnect the player while another session remains.
+- Seated players with no active sessions enter reconnect grace instead of immediately calling the engine disconnect policy.
+- Reconnecting during grace restores connected status, keeps the same seat, and preserves the current hand.
+- When grace expires, the match layer applies the existing disconnect policy deterministically. If the expired player is on action, the server first applies the existing auto-action timeout behavior.
+- Public snapshots expose minimal per-player connection status so the web table can show a compact reconnecting/disconnected label without redesigning the table.
+
+Default reconnect grace duration: 15 seconds.
+
+Remaining limitations:
+
+- Reconnect grace is still in-memory with the authoritative match; active hand persistence remains unfixed.
+- Between-hand advancement is still client-driven.
+- Legal action options are still derived by the client rather than server-owned.
+
+Next recommended task: implement server-owned between-hand state so showdown visibility and next-hand advancement are authoritative instead of client-timed.
+
 ### 8. Add Mobile Action-Tray Regression Tests
 
 Why it matters: hidden action buttons are a direct gameplay failure on timed turns.

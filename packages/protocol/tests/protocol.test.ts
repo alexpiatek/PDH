@@ -80,6 +80,13 @@ describe('protocol schemas', () => {
         },
         hand: null,
         log: [],
+        connections: {
+          p1: {
+            status: 'reconnecting',
+            graceDeadlineMs: 15_000,
+            lastSeenMs: 1_000,
+          },
+        },
         stateVersion: 3,
         serverTimeMs: 123_456,
         you: { playerId: 'p1' },
@@ -90,6 +97,7 @@ describe('protocol schemas', () => {
     if (parsed.type !== 'state') {
       throw new Error('Expected state message');
     }
+    expect(parsed.state.connections?.p1.status).toBe('reconnecting');
     expect(parsed.state.stateVersion).toBe(3);
     expect(parsed.state.serverTimeMs).toBe(123_456);
   });

@@ -27,9 +27,13 @@ const MAX_TABLE_BUY_IN = 1_000_000;
 const DEFAULT_MAX_PLAYERS = 9;
 const MIN_MAX_PLAYERS = 2;
 const MAX_MAX_PLAYERS = 9;
+const DEFAULT_RECONNECT_GRACE_MS = 15_000;
+const MIN_RECONNECT_GRACE_MS = 0;
+const MAX_RECONNECT_GRACE_MS = 120_000;
 
 type ReplayEventKind = 'action' | 'discard' | 'nextHand' | 'rebuy' | 'sitOut';
 type ReplayOutcome = 'accepted' | 'rejected';
+type PlayerConnectionStatus = 'connected' | 'reconnecting' | 'disconnected';
 
 interface ReplayEvent {
   ts: number;
@@ -59,13 +63,21 @@ interface ReplayState {
 
 const replayByMatch = new Map<string, ReplayEvent[]>();
 
+interface PlayerConnectionState {
+  status: PlayerConnectionStatus;
+  graceDeadlineMs: number | null;
+  lastSeenMs: number | null;
+}
+
 interface MatchState {
   matchId: string;
   table: TableState;
   stateVersion: number;
   tableBuyIn: number;
   maxPlayers: number;
+  reconnectGraceMs: number;
   presences: Record<string, nkruntime.Presence>;
+  playerConnections: Record<string, PlayerConnectionState>;
   lastSeqByPlayer: Record<string, number>;
   lastReactionAtByPlayer: Record<string, number>;
   lastChatAtByPlayer: Record<string, number>;
@@ -176,6 +188,16 @@ function parseMatchMaxPlayers(params: Record<string, unknown> | undefined): numb
   );
 }
 
+function parseReconnectGraceMs(params: Record<string, unknown> | undefined): number {
+  return parseIntegerParam(
+    params?.reconnectGraceMs,
+    DEFAULT_RECONNECT_GRACE_MS,
+    MIN_RECONNECT_GRACE_MS,
+    MAX_RECONNECT_GRACE_MS,
+    'Reconnect grace'
+  );
+}
+
 function compactFields(fields: Record<string, unknown>) {
   const compact: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fields)) {
@@ -239,10 +261,123 @@ function commitTableMutation<T>(
   return { result, changed };
 }
 
+function presenceSessionKey(presence: nkruntime.Presence) {
+  return presence.sessionId && typeof presence.sessionId === 'string'
+    ? presence.sessionId
+    : '__default__';
+}
+
+function presenceKey(presence: nkruntime.Presence) {
+  return `${presence.userId}:${presenceSessionKey(presence)}`;
+}
+
+function activePresences(state: MatchState) {
+  return Object.values(state.presences);
+}
+
+function activePresencesForUser(state: MatchState, userId: string) {
+  return activePresences(state).filter((presence) => presence.userId === userId);
+}
+
+function hasActivePresenceForUser(state: MatchState, userId: string) {
+  return activePresencesForUser(state, userId).length > 0;
+}
+
+function upsertPresence(state: MatchState, presence: nkruntime.Presence) {
+  state.presences[presenceKey(presence)] = presence;
+}
+
+function removePresence(state: MatchState, presence: nkruntime.Presence) {
+  delete state.presences[presenceKey(presence)];
+}
+
+function playerConnectionForSnapshot(
+  state: MatchState,
+  playerId: string
+): PlayerConnectionState {
+  if (hasActivePresenceForUser(state, playerId)) {
+    return {
+      status: 'connected',
+      graceDeadlineMs: null,
+      lastSeenMs: state.playerConnections[playerId]?.lastSeenMs ?? null,
+    };
+  }
+  return (
+    state.playerConnections[playerId] ?? {
+      status: 'disconnected',
+      graceDeadlineMs: null,
+      lastSeenMs: null,
+    }
+  );
+}
+
+function updatePlayerConnection(
+  state: MatchState,
+  playerId: string,
+  next: PlayerConnectionState
+) {
+  const previous = state.playerConnections[playerId] ?? null;
+  if (JSON.stringify(previous) === JSON.stringify(next)) {
+    return false;
+  }
+  state.playerConnections[playerId] = next;
+  bumpStateVersion(state);
+  return true;
+}
+
+function markPlayerConnected(state: MatchState, playerId: string, now: number) {
+  return updatePlayerConnection(state, playerId, {
+    status: 'connected',
+    graceDeadlineMs: null,
+    lastSeenMs: now,
+  });
+}
+
+function markPlayerReconnecting(state: MatchState, playerId: string, now: number) {
+  return updatePlayerConnection(state, playerId, {
+    status: 'reconnecting',
+    graceDeadlineMs: now + state.reconnectGraceMs,
+    lastSeenMs: now,
+  });
+}
+
+function markPlayerDisconnected(state: MatchState, playerId: string, now: number) {
+  return updatePlayerConnection(state, playerId, {
+    status: 'disconnected',
+    graceDeadlineMs: null,
+    lastSeenMs: now,
+  });
+}
+
+function publicConnectionsForSeats(state: MatchState, seats: Array<{ id?: string } | null>) {
+  const connections: Record<string, PlayerConnectionState> = {};
+  for (const seat of seats) {
+    if (!seat?.id) continue;
+    connections[seat.id] = playerConnectionForSnapshot(state, seat.id);
+  }
+  return connections;
+}
+
+function annotateSeatsWithConnectionState(state: MatchState, seats: Array<any | null>) {
+  const connections = publicConnectionsForSeats(state, seats);
+  return seats.map((seat) => {
+    if (!seat?.id) return seat;
+    const connection = connections[seat.id];
+    return {
+      ...seat,
+      connectionStatus: connection.status,
+      reconnectGraceDeadlineMs: connection.graceDeadlineMs,
+    };
+  });
+}
+
 function stateSnapshotForPresence(state: MatchState, table: PokerTable, playerId: string) {
   const publicState = table.getPublicState(playerId);
+  const connections = publicConnectionsForSeats(state, publicState.seats);
   return {
     ...publicState,
+    seats: annotateSeatsWithConnectionState(state, publicState.seats),
+    connections,
     stateVersion: state.stateVersion,
     serverTimeMs: Date.now(),
     you: { playerId },
@@ -268,7 +403,7 @@ function broadcastServerMessage(
   state: MatchState,
   message: ServerMessage
 ) {
-  const presences = Object.values(state.presences);
+  const presences = activePresences(state);
   if (!presences.length) {
     return;
   }
@@ -283,7 +418,7 @@ function broadcastServerMessage(
 
 function broadcastState(dispatcher: nkruntime.MatchDispatcher, state: MatchState) {
   const table = hydrateTable(state.table);
-  const presences = Object.values(state.presences);
+  const presences = activePresences(state);
   for (const presence of presences) {
     const playerId = presence.userId;
     const msg: ServerMessage = {
@@ -326,7 +461,7 @@ function parseClientMessage(nk: nkruntime.Nakama, message: nkruntime.MatchMessag
 }
 
 function ensurePresenceBound(state: MatchState, presence: nkruntime.Presence) {
-  const active = state.presences[presence.userId];
+  const active = state.presences[presenceKey(presence)];
   if (!active) {
     throw new Error('Presence not joined');
   }
@@ -339,6 +474,10 @@ function ensurePlayerSeated(table: PokerTable, playerId: string) {
   if (!table.state.seats.some((seat) => seat?.id === playerId)) {
     throw new Error('Join required');
   }
+}
+
+function isPlayerSeated(table: PokerTable, playerId: string) {
+  return table.state.seats.some((seat) => seat?.id === playerId);
 }
 
 function ensureBettingTurn(table: PokerTable, playerId: string) {
@@ -603,6 +742,7 @@ function matchInit(ctx, logger, nk, params) {
   const matchParams = (params ?? {}) as Record<string, unknown>;
   const tableBuyIn = parseMatchBuyIn(matchParams);
   const maxPlayers = parseMatchMaxPlayers(matchParams);
+  const reconnectGraceMs = parseReconnectGraceMs(matchParams);
   const table = new PokerTable(tableId, undefined, maxPlayers);
   const state: MatchState = {
     matchId,
@@ -610,7 +750,9 @@ function matchInit(ctx, logger, nk, params) {
     stateVersion: 0,
     tableBuyIn,
     maxPlayers,
+    reconnectGraceMs,
     presences: {},
+    playerConnections: {},
     lastSeqByPlayer: {},
     lastReactionAtByPlayer: {},
     lastChatAtByPlayer: {},
@@ -624,6 +766,7 @@ function matchInit(ctx, logger, nk, params) {
     tableId,
     tableBuyIn,
     maxPlayers,
+    reconnectGraceMs,
     tickRate: 10,
   });
   return {
@@ -645,14 +788,22 @@ function matchJoinAttempt(ctx, logger, nk, dispatcher, tick, state, presence, me
 
 function matchJoin(ctx, logger, nk, dispatcher, tick, state, presences) {
   const table = hydrateTable(state.table);
+  let shouldBroadcast = false;
+  const now = Date.now();
   for (const presence of presences) {
-    state.presences[presence.userId] = presence;
-    commitTableMutation(state, table, () => table.setSittingOut(presence.userId, false));
+    upsertPresence(state, presence);
+    shouldBroadcast = markPlayerConnected(state, presence.userId, now) || shouldBroadcast;
+    const sittingOutMutation = commitTableMutation(state, table, () =>
+      table.setSittingOut(presence.userId, false)
+    );
+    shouldBroadcast = sittingOutMutation.changed || shouldBroadcast;
     logStructured(logger, 'info', 'match.join', {
       matchId: state.matchId,
       tableId: table.state.id,
       tick,
       userId: presence.userId,
+      sessionId: presence.sessionId ?? null,
+      activeSessions: activePresencesForUser(state, presence.userId).length,
       handId: table.state.hand?.handId ?? null,
     });
     sendToPresence(dispatcher, presence, {
@@ -661,30 +812,111 @@ function matchJoin(ctx, logger, nk, dispatcher, tick, state, presences) {
       tableId: table.state.id,
     });
   }
-  commitTableMutation(state, table, () => table.beginNextHandIfReady());
+  const startMutation = commitTableMutation(state, table, () => table.beginNextHandIfReady());
+  shouldBroadcast = startMutation.changed || shouldBroadcast;
   state.table = table.state;
-  broadcastState(dispatcher, state);
+  if (shouldBroadcast || presences.length > 0) {
+    broadcastState(dispatcher, state);
+  }
   return { state };
 }
 
 function matchLeave(ctx, logger, nk, dispatcher, tick, state, presences) {
   const table = hydrateTable(state.table);
+  let shouldBroadcast = false;
+  const now = Date.now();
   for (const presence of presences) {
-    delete state.presences[presence.userId];
-    delete state.lastReactionAtByPlayer[presence.userId];
-    delete state.lastChatAtByPlayer[presence.userId];
-    commitTableMutation(state, table, () => table.handleDisconnect(presence.userId));
+    removePresence(state, presence);
+    const activeSessions = activePresencesForUser(state, presence.userId).length;
+    if (activeSessions === 0) {
+      delete state.lastReactionAtByPlayer[presence.userId];
+      delete state.lastChatAtByPlayer[presence.userId];
+      if (isPlayerSeated(table, presence.userId)) {
+        shouldBroadcast = markPlayerReconnecting(state, presence.userId, now) || shouldBroadcast;
+      } else {
+        shouldBroadcast = markPlayerDisconnected(state, presence.userId, now) || shouldBroadcast;
+      }
+    }
     logStructured(logger, 'info', 'match.leave', {
       matchId: state.matchId,
       tableId: table.state.id,
       tick,
       userId: presence.userId,
+      sessionId: presence.sessionId ?? null,
+      activeSessions,
+      graceDeadlineMs: state.playerConnections[presence.userId]?.graceDeadlineMs ?? null,
       handId: table.state.hand?.handId ?? null,
     });
   }
   state.table = table.state;
-  broadcastState(dispatcher, state);
+  if (shouldBroadcast || presences.length > 0) {
+    broadcastState(dispatcher, state);
+  }
   return { state };
+}
+
+function applyGraceExpiryPolicy(table: PokerTable, playerId: string, now: number) {
+  const hand = table.state.hand;
+  const player = hand?.players.find((p) => p.id === playerId) ?? null;
+  let autoAction: { playerId: string; action: 'fold' | 'check' } | null = null;
+
+  if (!hand || hand.phase === 'showdown' || !player) {
+    table.setSittingOut(playerId, true);
+    return { autoAction };
+  }
+
+  if (hand.phase === 'betting' && hand.actionOnSeat === player.seat) {
+    hand.actionDeadline = now;
+    autoAction = table.autoAction(now);
+  }
+
+  if (table.state.hand && table.state.hand.phase !== 'showdown') {
+    table.handleDisconnect(playerId);
+  } else {
+    table.setSittingOut(playerId, true);
+  }
+
+  return { autoAction };
+}
+
+function applyExpiredReconnectGrace(
+  logger: nkruntime.Logger,
+  state: MatchState,
+  table: PokerTable,
+  tick: number,
+  now: number
+) {
+  let shouldBroadcast = false;
+  const expiredUserIds = Object.entries(state.playerConnections)
+    .filter(
+      ([userId, connection]) =>
+        connection.status === 'reconnecting' &&
+        connection.graceDeadlineMs !== null &&
+        now >= connection.graceDeadlineMs &&
+        !hasActivePresenceForUser(state, userId)
+    )
+    .map(([userId]) => userId);
+
+  for (const userId of expiredUserIds) {
+    const previousDeadline = state.playerConnections[userId]?.graceDeadlineMs ?? null;
+    shouldBroadcast = markPlayerDisconnected(state, userId, now) || shouldBroadcast;
+    const expiryMutation = commitTableMutation(state, table, () =>
+      applyGraceExpiryPolicy(table, userId, now)
+    );
+    shouldBroadcast = expiryMutation.changed || shouldBroadcast;
+    logStructured(logger, 'info', 'match.reconnect_grace.expired', {
+      matchId: state.matchId,
+      tableId: table.state.id,
+      tick,
+      userId,
+      graceDeadlineMs: previousDeadline,
+      autoAction: expiryMutation.result.autoAction?.action,
+      handId: table.state.hand?.handId ?? null,
+      stateVersion: state.stateVersion,
+    });
+  }
+
+  return shouldBroadcast;
 }
 
 function applyExpiredTableTimers(
@@ -723,6 +955,9 @@ function applyExpiredTableTimers(
     });
     shouldBroadcast = true;
   }
+
+  shouldBroadcast =
+    applyExpiredReconnectGrace(logger, state, table, tick, now) || shouldBroadcast;
 
   const autoActionMutation = commitTableMutation(state, table, () => table.autoAction(now));
   if (autoActionMutation.result) {
@@ -868,6 +1103,11 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
       switch (data.type) {
         case 'join': {
           const mutation = commitTableMutation(state, table, () => {
+            if (isPlayerSeated(table, presence.userId)) {
+              table.setSittingOut(presence.userId, false);
+              table.beginNextHandIfReady();
+              return;
+            }
             seatPlayer(table, presence.userId, data.name, state.tableBuyIn, data.seat);
             table.setSittingOut(presence.userId, false);
           });
@@ -883,6 +1123,7 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
           if (data.playerId !== presence.userId) {
             throw new Error('Reconnect identity mismatch');
           }
+          shouldBroadcast = markPlayerConnected(state, presence.userId, Date.now()) || shouldBroadcast;
           const mutation = commitTableMutation(state, table, () => {
             table.setSittingOut(presence.userId, false);
             table.beginNextHandIfReady();
