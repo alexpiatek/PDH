@@ -102,6 +102,26 @@ type NakamaWithMatchSignal = nkruntime.Nakama & {
   matchSignal?: (matchId: string, data: string) => string | void;
 };
 
+function readContextUserId(ctx: unknown): string | null {
+  const c = (ctx ?? {}) as { userId?: unknown; user_id?: unknown };
+  if (typeof c.userId === 'string' && c.userId.length > 0) {
+    return c.userId;
+  }
+  if (typeof c.user_id === 'string' && c.user_id.length > 0) {
+    return c.user_id;
+  }
+  return null;
+}
+
+function requireTrustedServerRpc(ctx: unknown, logger: nkruntime.Logger, event: string) {
+  const userId = readContextUserId(ctx);
+  if (!userId) {
+    return;
+  }
+  logStructured(logger, 'warn', `${event}.denied`, { userId });
+  throw new Error('RPC is restricted to trusted server-to-server calls');
+}
+
 function readMatchId(ctx: unknown): string | null {
   const c = (ctx ?? {}) as { matchId?: unknown; match_id?: unknown };
   if (typeof c.matchId === 'string' && c.matchId.length > 0) {
@@ -478,6 +498,8 @@ export function rpcGetPdhReplay(
   nk: nkruntime.Nakama,
   payload: string | undefined
 ) {
+  requireTrustedServerRpc(ctx, logger, 'rpc.replay.get');
+
   let input: GetReplayInput | undefined;
 
   if (payload && payload.trim()) {
@@ -519,6 +541,8 @@ export function rpcTerminatePdhMatch(
   nk: nkruntime.Nakama,
   payload: string | undefined
 ) {
+  requireTrustedServerRpc(ctx, logger, 'rpc.admin.terminate_match');
+
   if (!payload || !payload.trim()) {
     throw new Error('matchId is required');
   }

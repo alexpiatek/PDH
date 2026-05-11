@@ -563,6 +563,24 @@ describe('pdhMatchHandler', () => {
     expect(replay.events[0].outcome).toBe('rejected');
   });
 
+  it('rejects client sessions for admin/debug RPCs', () => {
+    const nk = makeNakamaMock();
+    const clientCtx = { userId: 'attacker-user' };
+
+    expect(() =>
+      rpcGetPdhReplay(clientCtx, logger as any, nk as any, JSON.stringify({ tableId: 'main' }))
+    ).toThrow('trusted server-to-server');
+    expect(() =>
+      rpcTerminatePdhMatch(
+        clientCtx,
+        logger as any,
+        nk as any,
+        JSON.stringify({ matchId: 'match-123', reason: 'grief' })
+      )
+    ).toThrow('trusted server-to-server');
+    expect(nk.matchSignal).not.toHaveBeenCalled();
+  });
+
   it('auto-acts timed-out betting turns in match loop', () => {
     const { nk, dispatcher, state } = setupThreePlayerMatch();
     const hand = state.table.hand;
