@@ -1,5 +1,5 @@
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
-import { PokerTable, type TableState } from '@pdh/engine';
+import { PokerTable, type Seat, type TableState } from '@pdh/engine';
 import {
   MatchOpCode,
   TABLE_CHAT_MAX_LENGTH,
@@ -30,6 +30,8 @@ const MAX_MAX_PLAYERS = 9;
 const DEFAULT_RECONNECT_GRACE_MS = 15_000;
 const MIN_RECONNECT_GRACE_MS = 0;
 const MAX_RECONNECT_GRACE_MS = 120_000;
+const DEFAULT_BETWEEN_HAND_MIN_MS = 6_000;
+const DEFAULT_BETWEEN_HAND_AUTO_START_MS = 12_000;
 
 type ReplayEventKind = 'action' | 'discard' | 'nextHand' | 'rebuy' | 'sitOut';
 type ReplayOutcome = 'accepted' | 'rejected';
@@ -69,6 +71,14 @@ interface PlayerConnectionState {
   lastSeenMs: number | null;
 }
 
+interface BetweenHandState {
+  handId: string;
+  startedAtMs: number;
+  minUntilMs: number;
+  autoStartAtMs: number;
+  readyPlayerIds: string[];
+}
+
 interface MatchState {
   matchId: string;
   table: TableState;
@@ -81,6 +91,7 @@ interface MatchState {
   lastSeqByPlayer: Record<string, number>;
   lastReactionAtByPlayer: Record<string, number>;
   lastChatAtByPlayer: Record<string, number>;
+  betweenHand: BetweenHandState | null;
   replay: ReplayState;
   terminateRequested: boolean;
   terminateReason: string | null;
@@ -261,6 +272,181 @@ function commitTableMutation<T>(
   return { result, changed };
 }
 
+function isEligibleBetweenHandSeat(seat: Seat | null | undefined): seat is Seat {
+  return Boolean(
+    seat &&
+      seat.stack > 0 &&
+      !seat.sittingOut &&
+      seat.status !== 'sitting_out' &&
+      seat.status !== 'busted'
+  );
+}
+
+function eligibleBetweenHandPlayerIds(table: PokerTable): string[] {
+  return table.state.seats.filter(isEligibleBetweenHandSeat).map((seat) => seat.id);
+}
+
+function isEligibleBetweenHandPlayer(table: PokerTable, playerId: string) {
+  return eligibleBetweenHandPlayerIds(table).includes(playerId);
+}
+
+function pruneBetweenHandReadyPlayers(state: MatchState, table: PokerTable) {
+  if (!state.betweenHand) return false;
+  const eligibleIds = new Set(eligibleBetweenHandPlayerIds(table));
+  const nextReadyIds = state.betweenHand.readyPlayerIds.filter((id) => eligibleIds.has(id));
+  if (nextReadyIds.length === state.betweenHand.readyPlayerIds.length) {
+    return false;
+  }
+  state.betweenHand.readyPlayerIds = nextReadyIds;
+  bumpStateVersion(state);
+  return true;
+}
+
+function ensureBetweenHandState(
+  logger: nkruntime.Logger,
+  state: MatchState,
+  table: PokerTable,
+  tick: number,
+  now: number
+) {
+  const hand = table.state.hand;
+  if (!hand || hand.phase !== 'showdown') {
+    if (!state.betweenHand) return false;
+    state.betweenHand = null;
+    bumpStateVersion(state);
+    return true;
+  }
+
+  if (state.betweenHand?.handId === hand.handId) {
+    return pruneBetweenHandReadyPlayers(state, table);
+  }
+
+  state.betweenHand = {
+    handId: hand.handId,
+    startedAtMs: now,
+    minUntilMs: now + DEFAULT_BETWEEN_HAND_MIN_MS,
+    autoStartAtMs: now + DEFAULT_BETWEEN_HAND_AUTO_START_MS,
+    readyPlayerIds: [],
+  };
+  bumpStateVersion(state);
+  logStructured(logger, 'info', 'match.between_hand.started', {
+    matchId: state.matchId,
+    tableId: table.state.id,
+    tick,
+    handId: hand.handId,
+    startedAtMs: state.betweenHand.startedAtMs,
+    minUntilMs: state.betweenHand.minUntilMs,
+    autoStartAtMs: state.betweenHand.autoStartAtMs,
+    stateVersion: state.stateVersion,
+  });
+  return true;
+}
+
+function advanceBetweenHandIfReady(
+  logger: nkruntime.Logger,
+  state: MatchState,
+  table: PokerTable,
+  tick: number,
+  now: number
+) {
+  let changed = ensureBetweenHandState(logger, state, table, tick, now);
+  const betweenHand = state.betweenHand;
+  const hand = table.state.hand;
+  if (!betweenHand || !hand || hand.phase !== 'showdown') {
+    return changed;
+  }
+
+  const eligibleIds = eligibleBetweenHandPlayerIds(table);
+  if (now < betweenHand.minUntilMs) {
+    return changed;
+  }
+
+  const readyIds = new Set(betweenHand.readyPlayerIds);
+  const allEligibleReady =
+    eligibleIds.length >= 2 && eligibleIds.every((playerId) => readyIds.has(playerId));
+  const autoStartElapsed = now >= betweenHand.autoStartAtMs;
+  const shouldLeaveForWaiting = eligibleIds.length < 2;
+  const shouldStartNextHand = allEligibleReady || (autoStartElapsed && eligibleIds.length >= 2);
+
+  if (!shouldLeaveForWaiting && !shouldStartNextHand) {
+    return changed;
+  }
+
+  const reason = shouldLeaveForWaiting
+    ? 'waiting_for_players'
+    : allEligibleReady
+      ? 'all_ready'
+      : 'auto_start';
+  state.betweenHand = null;
+  const nextHandMutation = commitTableMutation(state, table, () => table.advanceToNextHand());
+  changed = nextHandMutation.changed || changed;
+
+  logStructured(logger, 'info', 'match.between_hand.completed', {
+    matchId: state.matchId,
+    tableId: table.state.id,
+    tick,
+    handIdBefore: hand.handId,
+    handIdAfter: table.state.hand?.handId ?? null,
+    reason,
+    eligiblePlayers: eligibleIds.length,
+    readyPlayers: readyIds.size,
+    stateVersion: state.stateVersion,
+  });
+
+  return changed;
+}
+
+function setReadyForNextHand(
+  logger: nkruntime.Logger,
+  state: MatchState,
+  table: PokerTable,
+  playerId: string,
+  ready: boolean,
+  tick: number,
+  now: number
+) {
+  ensurePlayerSeated(table, playerId);
+  const hand = table.state.hand;
+  if (!hand || hand.phase !== 'showdown') {
+    throw new Error('Hand not complete');
+  }
+  if (!isEligibleBetweenHandPlayer(table, playerId)) {
+    throw new Error('Player not eligible for next hand');
+  }
+
+  let changed = ensureBetweenHandState(logger, state, table, tick, now);
+  const betweenHand = state.betweenHand;
+  if (!betweenHand) return changed;
+
+  const readyIds = new Set(betweenHand.readyPlayerIds);
+  const wasReady = readyIds.has(playerId);
+  if (ready) {
+    readyIds.add(playerId);
+  } else {
+    readyIds.delete(playerId);
+  }
+
+  if (readyIds.has(playerId) !== wasReady) {
+    betweenHand.readyPlayerIds = [...readyIds].filter((id) =>
+      isEligibleBetweenHandPlayer(table, id)
+    );
+    bumpStateVersion(state);
+    changed = true;
+    logStructured(logger, 'info', 'match.between_hand.ready_changed', {
+      matchId: state.matchId,
+      tableId: table.state.id,
+      tick,
+      handId: hand.handId,
+      userId: playerId,
+      ready,
+      readyPlayers: betweenHand.readyPlayerIds.length,
+      stateVersion: state.stateVersion,
+    });
+  }
+
+  return advanceBetweenHandIfReady(logger, state, table, tick, now) || changed;
+}
+
 function presenceSessionKey(presence: nkruntime.Presence) {
   return presence.sessionId && typeof presence.sessionId === 'string'
     ? presence.sessionId
@@ -380,6 +566,10 @@ function stateSnapshotForPresence(state: MatchState, table: PokerTable, playerId
     connections,
     stateVersion: state.stateVersion,
     serverTimeMs: Date.now(),
+    betweenHandStartedAtMs: state.betweenHand?.startedAtMs ?? null,
+    betweenHandMinUntilMs: state.betweenHand?.minUntilMs ?? null,
+    betweenHandAutoStartAtMs: state.betweenHand?.autoStartAtMs ?? null,
+    readyForNextHandPlayerIds: state.betweenHand ? [...state.betweenHand.readyPlayerIds] : [],
     you: { playerId },
   };
 }
@@ -499,14 +689,6 @@ function ensureDiscardTurn(table: PokerTable, playerId: string) {
   }
 }
 
-function ensureCanAdvanceHand(table: PokerTable, playerId: string) {
-  ensurePlayerSeated(table, playerId);
-  const hand = table.state.hand;
-  if (hand && hand.phase !== 'showdown') {
-    throw new Error('Hand not complete');
-  }
-}
-
 function reserveReactionWindow(state: MatchState, playerId: string, nowMs: number) {
   const last = state.lastReactionAtByPlayer[playerId] ?? 0;
   if (nowMs - last < REACTION_COOLDOWN_MS) {
@@ -524,15 +706,16 @@ function reserveChatWindow(state: MatchState, playerId: string, nowMs: number) {
 }
 
 function reserveSequence(state: MatchState, playerId: string, message: MutatingClientMessage) {
-  if (!Number.isInteger(message.seq) || message.seq < 1) {
+  const seq = message.seq;
+  if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 1) {
     throw new Error('Missing action sequence');
   }
   const lastSeq = state.lastSeqByPlayer[playerId] ?? 0;
-  if (message.seq <= lastSeq) {
+  if (seq <= lastSeq) {
     throw new Error('Duplicate or stale action sequence');
   }
   // Reserve immediately so delayed/replayed packets from an older turn cannot apply later.
-  state.lastSeqByPlayer[playerId] = message.seq;
+  state.lastSeqByPlayer[playerId] = seq;
 }
 
 function replayLimit(limit: unknown) {
@@ -756,6 +939,7 @@ function matchInit(ctx, logger, nk, params) {
     lastSeqByPlayer: {},
     lastReactionAtByPlayer: {},
     lastChatAtByPlayer: {},
+    betweenHand: null,
     replay: { maxEvents: REPLAY_MAX_EVENTS, events: [] },
     terminateRequested: false,
     terminateReason: null,
@@ -989,7 +1173,15 @@ function applyExpiredTableTimers(
     shouldBroadcast = true;
   }
 
+  shouldBroadcast =
+    advanceBetweenHandIfReady(logger, state, table, tick, now) || shouldBroadcast;
+
   if (!table.state.hand) {
+    if (state.betweenHand) {
+      state.betweenHand = null;
+      bumpStateVersion(state);
+      shouldBroadcast = true;
+    }
     const nextHandMutation = commitTableMutation(state, table, () => table.beginNextHandIfReady());
     if (nextHandMutation.changed) {
       shouldBroadcast = true;
@@ -1156,9 +1348,16 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
           break;
         }
         case 'nextHand': {
-          ensureCanAdvanceHand(table, presence.userId);
-          const mutation = commitTableMutation(state, table, () => table.advanceToNextHand());
-          shouldBroadcast = mutation.changed || shouldBroadcast;
+          const mutationChanged = setReadyForNextHand(
+            logger,
+            state,
+            table,
+            presence.userId,
+            true,
+            tick,
+            Date.now()
+          );
+          shouldBroadcast = mutationChanged || shouldBroadcast;
           break;
         }
         case 'rebuy': {
@@ -1182,6 +1381,19 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
             table.advanceStartGate();
           });
           shouldBroadcast = mutation.changed || shouldBroadcast;
+          break;
+        }
+        case 'readyForNextHand': {
+          const mutationChanged = setReadyForNextHand(
+            logger,
+            state,
+            table,
+            presence.userId,
+            data.ready,
+            tick,
+            Date.now()
+          );
+          shouldBroadcast = mutationChanged || shouldBroadcast;
           break;
         }
         case 'reaction': {

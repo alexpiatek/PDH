@@ -64,6 +64,15 @@ describe('protocol schemas', () => {
     expect(parsed.v).toBe(PDH_PROTOCOL_VERSION);
   });
 
+  it('accepts ready-for-next-hand client payloads', () => {
+    const parsed = parseClientMessagePayload({
+      type: 'readyForNextHand',
+      ready: true,
+    });
+
+    expect(parsed.v).toBe(PDH_PROTOCOL_VERSION);
+  });
+
   it('accepts public state payloads with a start gate', () => {
     const parsed = parseServerMessagePayload({
       type: 'state',
@@ -89,6 +98,10 @@ describe('protocol schemas', () => {
         },
         stateVersion: 3,
         serverTimeMs: 123_456,
+        betweenHandStartedAtMs: 120_000,
+        betweenHandMinUntilMs: 126_000,
+        betweenHandAutoStartAtMs: 132_000,
+        readyForNextHandPlayerIds: ['p1'],
         you: { playerId: 'p1' },
       },
     });
@@ -100,6 +113,8 @@ describe('protocol schemas', () => {
     expect(parsed.state.connections?.p1.status).toBe('reconnecting');
     expect(parsed.state.stateVersion).toBe(3);
     expect(parsed.state.serverTimeMs).toBe(123_456);
+    expect(parsed.state.betweenHandMinUntilMs).toBe(126_000);
+    expect(parsed.state.readyForNextHandPlayerIds).toEqual(['p1']);
   });
 
   it('rejects unsupported reaction token', () => {

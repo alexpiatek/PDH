@@ -953,3 +953,27 @@ Acceptance criteria:
 - Any evaluator change must pass known vectors and existing property tests.
 
 Suggested Codex model setting: Medium.
+
+## Implementation Note: Reliability Hardening Slice 3
+
+Date: 2026-05-11
+
+Fixed in this slice:
+
+- Nakama authoritative matches now enter an explicit server-owned between-hand state when a settled hand reaches showdown.
+- Between-hand snapshots expose `betweenHandStartedAtMs`, `betweenHandMinUntilMs`, `betweenHandAutoStartAtMs`, and `readyForNextHandPlayerIds`. Clients continue to use `serverTimeMs` for countdown display.
+- The web table no longer auto-sends `nextHand` from a local showdown timer. It shows the server countdown and lets the seated player mark ready.
+- Legacy `nextHand` messages are preserved as compatibility input, but Nakama now interprets them as ready-for-next-hand signals rather than immediate authority.
+
+Default between-hand timings:
+
+- Minimum result display: 6 seconds.
+- Maximum auto-start delay: 12 seconds.
+
+Remaining risks:
+
+- Between-hand state is still in match memory only; restart recovery is not implemented.
+- Legal action options are still client-derived.
+- The legacy WebSocket dev path does not have the same server-owned between-hand policy as the Nakama authoritative path.
+
+Next recommended task: server-sent `legalActions`.

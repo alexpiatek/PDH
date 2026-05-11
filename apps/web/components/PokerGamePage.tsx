@@ -55,8 +55,6 @@ const UI_STORAGE_KEYS = {
 const REACTION_COOLDOWN_MS = 2500;
 const REACTION_VISIBLE_MS = 2200;
 const CHAT_HISTORY_LIMIT = 50;
-const SHOWDOWN_AUTO_ADVANCE_MS = 5000;
-const EXTENDED_SHOWDOWN_AUTO_ADVANCE_MS = 8000;
 
 const textDecoder = new TextDecoder();
 
@@ -1139,16 +1137,25 @@ const LastHandRecap = ({
 
 const NextHandCountdown = ({
   seconds,
+  minSeconds,
   durationMs,
+  ready,
+  canReady,
   isPhone,
+  onReady,
 }: {
   seconds: number | null;
+  minSeconds: number | null;
   durationMs: number;
+  ready: boolean;
+  canReady: boolean;
   isPhone: boolean;
+  onReady: () => void;
 }) => {
   const totalSeconds = Math.max(1, Math.ceil(durationMs / 1000));
   const displaySeconds = seconds ?? totalSeconds;
   const progress = Math.max(0, Math.min(1, displaySeconds / totalSeconds));
+  const showMinHold = minSeconds !== null && minSeconds > 0;
 
   return (
     <div
@@ -1160,7 +1167,7 @@ const NextHandCountdown = ({
         zIndex: 46,
         right: isPhone ? 10 : 24,
         bottom: isPhone ? 18 : 26,
-        width: isPhone ? 214 : 260,
+        width: isPhone ? 236 : 292,
         borderRadius: 8,
         border: `1px solid ${TABLE_THEME.border}`,
         background:
@@ -1173,20 +1180,44 @@ const NextHandCountdown = ({
         gap: 12,
         color: TABLE_THEME.text,
         fontFamily: TABLE_THEME.fontSans,
-        pointerEvents: 'none',
+        pointerEvents: 'auto',
       }}
     >
-      <div
-        style={{
-          color: TABLE_THEME.muted,
-          fontSize: isPhone ? 12 : 13,
-          fontWeight: 800,
-          lineHeight: 1.25,
-        }}
-      >
-        Next hand starts
-        <br />
-        automatically
+      <div style={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 6 }}>
+        <div
+          style={{
+            color: TABLE_THEME.muted,
+            fontSize: isPhone ? 12 : 13,
+            fontWeight: 800,
+            lineHeight: 1.25,
+          }}
+        >
+          {ready ? 'Ready for next hand' : 'Next hand in'}
+          <br />
+          {showMinHold ? `Results held ${minSeconds}s` : 'Server controlled'}
+        </div>
+        {canReady ? (
+          <button
+            type="button"
+            disabled={ready}
+            onClick={onReady}
+            style={{
+              alignSelf: 'flex-start',
+              minHeight: 30,
+              borderRadius: 7,
+              border: ready ? `1px solid ${TABLE_THEME.border}` : `1px solid ${TABLE_THEME.tealBorder}`,
+              background: ready ? 'rgba(255,255,255,0.045)' : TABLE_THEME.tealSoft,
+              color: ready ? TABLE_THEME.muted : '#ccfbf1',
+              padding: '5px 10px',
+              fontSize: 11,
+              fontWeight: 900,
+              cursor: ready ? 'default' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Ready
+          </button>
+        ) : null}
       </div>
       <div
         style={{
@@ -1318,7 +1349,6 @@ export const PokerGamePage = ({
   const [chatMessages, setChatMessages] = useState<TableChatMessage[]>([]);
   const [mutedChatPlayerIds, setMutedChatPlayerIds] = useState<string[]>([]);
   const [clockNowMs, setClockNowMs] = useState(() => Date.now());
-  const [showdownStartedAtMs, setShowdownStartedAtMs] = useState<number | null>(null);
   const [lastHandRecapCollapsed, setLastHandRecapCollapsed] = useState(false);
   const [showLastHandDetails, setShowLastHandDetails] = useState(false);
   const resolvedForcedMatchId = forcedMatchId?.trim() || '';
@@ -2033,26 +2063,54 @@ export const PokerGamePage = ({
     }
     return Math.max(0, Math.ceil((startGate.startsAt - clockNowMs) / 1000));
   }, [startGate?.startsAt, clockNowMs]);
-  const showdownAutoAdvanceMs = useMemo(() => {
-    if (hand?.phase !== 'showdown') return SHOWDOWN_AUTO_ADVANCE_MS;
-    const allInPlayers = hand.players.filter(
-      (player) =>
-        player.totalCommitted > 0 &&
-        (player.status === 'allIn' || player.status === 'busted' || player.stack === 0)
-    ).length;
-    return (hand.showdownPots?.length ?? 0) > 1 || allInPlayers >= 3
-      ? EXTENDED_SHOWDOWN_AUTO_ADVANCE_MS
-      : SHOWDOWN_AUTO_ADVANCE_MS;
-  }, [hand?.phase, hand?.players, hand?.showdownPots]);
-  const showdownCountdownSeconds = useMemo(() => {
-    if (hand?.phase !== 'showdown' || showdownStartedAtMs === null) {
+  const betweenHandStartedAtMs =
+    typeof state?.betweenHandStartedAtMs === 'number' ? state.betweenHandStartedAtMs : null;
+  const betweenHandMinUntilMs =
+    typeof state?.betweenHandMinUntilMs === 'number' ? state.betweenHandMinUntilMs : null;
+  const betweenHandAutoStartAtMs =
+    typeof state?.betweenHandAutoStartAtMs === 'number' ? state.betweenHandAutoStartAtMs : null;
+  const readyForNextHandIds = useMemo(
+    () =>
+      new Set<string>(
+        Array.isArray(state?.readyForNextHandPlayerIds)
+          ? state.readyForNextHandPlayerIds.filter(
+              (value: unknown): value is string => typeof value === 'string' && value.length > 0
+            )
+          : []
+      ),
+    [state?.readyForNextHandPlayerIds]
+  );
+  const betweenHandActive = Boolean(
+    hand?.phase === 'showdown' &&
+      betweenHandStartedAtMs !== null &&
+      betweenHandMinUntilMs !== null &&
+      betweenHandAutoStartAtMs !== null
+  );
+  const readyForNextHand = Boolean(playerId && readyForNextHandIds.has(playerId));
+  const canReadyForNextHand = Boolean(
+    seated &&
+      localSeat &&
+      betweenHandActive &&
+      !localNeedsRebuy &&
+      localSeatStack > 0 &&
+      localSeatStatus === 'active'
+  );
+  const betweenHandCountdownSeconds = useMemo(() => {
+    if (!betweenHandActive || betweenHandAutoStartAtMs === null) {
       return null;
     }
-    return Math.max(
-      0,
-      Math.ceil((showdownStartedAtMs + showdownAutoAdvanceMs - clockNowMs) / 1000)
-    );
-  }, [hand?.phase, showdownAutoAdvanceMs, showdownStartedAtMs, clockNowMs]);
+    return Math.max(0, Math.ceil((betweenHandAutoStartAtMs - clockNowMs) / 1000));
+  }, [betweenHandActive, betweenHandAutoStartAtMs, clockNowMs]);
+  const betweenHandMinSeconds = useMemo(() => {
+    if (!betweenHandActive || betweenHandMinUntilMs === null) {
+      return null;
+    }
+    return Math.max(0, Math.ceil((betweenHandMinUntilMs - clockNowMs) / 1000));
+  }, [betweenHandActive, betweenHandMinUntilMs, clockNowMs]);
+  const betweenHandDurationMs =
+    betweenHandStartedAtMs !== null && betweenHandAutoStartAtMs !== null
+      ? Math.max(1, betweenHandAutoStartAtMs - betweenHandStartedAtMs)
+      : 12_000;
   const startGateReadyIds = useMemo(
     () => new Set<string>(startGate?.readyPlayerIds ?? []),
     [startGate?.readyPlayerIds]
@@ -2184,27 +2242,11 @@ export const PokerGamePage = ({
 
   useEffect(() => {
     if (hand?.phase === 'showdown') {
-      setShowdownStartedAtMs(Date.now());
       setLastHandRecapCollapsed(false);
       setShowLastHandDetails(false);
       return;
     }
-    setShowdownStartedAtMs(null);
   }, [hand?.handId, hand?.phase]);
-
-  useEffect(() => {
-    if (!hand) {
-      return;
-    }
-    if (hand.phase !== 'showdown') {
-      return;
-    }
-    if (localNeedsRebuy) {
-      return;
-    }
-    const timeoutId = window.setTimeout(() => send({ type: 'nextHand' }), showdownAutoAdvanceMs);
-    return () => window.clearTimeout(timeoutId);
-  }, [hand?.phase, hand?.handId, localNeedsRebuy, showdownAutoAdvanceMs]);
 
   useEffect(() => {
     if (rebuyState === 'idle') {
@@ -2229,7 +2271,7 @@ export const PokerGamePage = ({
 
     rebuyNextHandSentRef.current = true;
     setStatus('Rebuy confirmed. Entering the next hand...');
-    send({ type: 'nextHand' });
+    sendReadyForNextHand();
   }, [hand?.handId, hand?.phase, localNeedsRebuy, localSeatStack, rebuyState, seated]);
 
   useEffect(() => {
@@ -2382,6 +2424,10 @@ export const PokerGamePage = ({
       return;
     }
     connectionRef.current.send(outgoing);
+  };
+
+  const sendReadyForNextHand = () => {
+    send(USE_NAKAMA_BACKEND ? { type: 'readyForNextHand', ready: true } : { type: 'nextHand' });
   };
 
   const join = () => {
@@ -2890,7 +2936,8 @@ export const PokerGamePage = ({
   });
   const hasBottomActionTray = Boolean(
     localNeedsRebuy ||
-    localReadyBetweenHands ||
+    (!USE_NAKAMA_BACKEND && localReadyBetweenHands) ||
+    canReadyForNextHand ||
     (you && ((isBettingPhase && isMyTurn) || isDiscardPhase || isRevealPhase))
   );
   const centeredSectionMinHeight = isMobile ? 'calc(100dvh - 160px)' : 'calc(100vh - 220px)';
@@ -3232,7 +3279,7 @@ export const PokerGamePage = ({
       </div>
     </div>
   ) : null;
-  const nextHandTray = localReadyBetweenHands ? (
+  const nextHandTray = !USE_NAKAMA_BACKEND && localReadyBetweenHands ? (
     <div
       style={{
         borderRadius: 8,
@@ -3251,7 +3298,7 @@ export const PokerGamePage = ({
       </div>
       <button
         type="button"
-        onClick={() => send({ type: 'nextHand' })}
+        onClick={sendReadyForNextHand}
         style={turnActionStyle(true, {
           border: 'rgba(94,234,212,0.78)',
           background: 'rgba(20,184,166,0.28)',
@@ -5091,11 +5138,17 @@ export const PokerGamePage = ({
                   }}
                 />
                 {!localNeedsRebuy ? (
-                  <NextHandCountdown
-                    seconds={showdownCountdownSeconds}
-                    durationMs={showdownAutoAdvanceMs}
-                    isPhone={isPhone}
-                  />
+                  betweenHandActive ? (
+                    <NextHandCountdown
+                      seconds={betweenHandCountdownSeconds}
+                      minSeconds={betweenHandMinSeconds}
+                      durationMs={betweenHandDurationMs}
+                      ready={readyForNextHand}
+                      canReady={canReadyForNextHand}
+                      isPhone={isPhone}
+                      onReady={sendReadyForNextHand}
+                    />
+                  ) : null
                 ) : null}
               </>
             ) : null}

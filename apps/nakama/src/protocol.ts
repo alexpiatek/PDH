@@ -91,6 +91,8 @@ export function isClientMessage(value: unknown): value is ClientMessage {
       return hasValidOptionalSequence(value);
     case 'readyForHand':
       return typeof value.ready === 'boolean';
+    case 'readyForNextHand':
+      return typeof value.ready === 'boolean';
     case 'reaction':
       return (
         typeof value.emoji === 'string' &&

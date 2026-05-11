@@ -91,6 +91,11 @@ const readyForHandClientMessageSchema = versionedMessage({
   ready: z.boolean(),
 });
 
+const readyForNextHandClientMessageSchema = versionedMessage({
+  type: z.literal('readyForNextHand'),
+  ready: z.boolean(),
+});
+
 const reactionClientMessageSchema = versionedMessage({
   type: z.literal('reaction'),
   emoji: tableReactionSchema,
@@ -114,6 +119,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   rebuyClientMessageSchema,
   sitOutClientMessageSchema,
   readyForHandClientMessageSchema,
+  readyForNextHandClientMessageSchema,
   reactionClientMessageSchema,
   chatClientMessageSchema,
   requestStateClientMessageSchema,
@@ -153,6 +159,10 @@ const publicStateSchema = z
       .optional(),
     stateVersion: z.number().int().nonnegative().optional(),
     serverTimeMs: z.number().int().nonnegative().optional(),
+    betweenHandStartedAtMs: z.number().int().nonnegative().nullable().optional(),
+    betweenHandMinUntilMs: z.number().int().nonnegative().nullable().optional(),
+    betweenHandAutoStartAtMs: z.number().int().nonnegative().nullable().optional(),
+    readyForNextHandPlayerIds: z.array(z.string().min(1)).optional(),
     you: z.object({
       playerId: z.string().min(1),
     }),

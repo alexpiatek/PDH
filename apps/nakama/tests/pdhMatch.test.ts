@@ -110,6 +110,48 @@ function setupThreePlayerMatch() {
   return { nk, dispatcher, state, presences, presenceById, broadcastMessage };
 }
 
+function forceShowdown(state: any) {
+  expect(state.table.hand).toBeTruthy();
+  state.table.hand.phase = 'showdown';
+  state.table.hand.street = 'showdown';
+  state.table.hand.actionOnSeat = -1;
+  state.table.hand.actionDeadline = null;
+  state.table.hand.pendingNextPhaseAt = null;
+  state.table.hand.discardPending = [];
+  state.table.hand.discardDeadline = null;
+}
+
+function enterBetweenHand(nk: any, dispatcher: any, state: any, now = 100_000, tick = 10) {
+  forceShowdown(state);
+  const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(now);
+  try {
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, tick, state, []);
+  } finally {
+    nowSpy.mockRestore();
+  }
+  expect(state.betweenHand).toBeTruthy();
+  return state.betweenHand;
+}
+
+function sendReadyForNextHand(
+  nk: any,
+  dispatcher: any,
+  state: any,
+  sender: any,
+  now: number,
+  tick: number,
+  payload: any = { type: 'readyForNextHand', ready: true }
+) {
+  const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(now);
+  try {
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, tick, state, [
+      { opCode: 1, sender, data: encode(payload) },
+    ]);
+  } finally {
+    nowSpy.mockRestore();
+  }
+}
+
 describe('pdhMatchHandler', () => {
   it('rejects fractional authoritative match configuration', () => {
     const nk = makeNakamaMock();
@@ -828,6 +870,153 @@ describe('pdhMatchHandler', () => {
     expect(latest.stateVersion).toBe(state.stateVersion);
     expect(Number.isInteger(latest.serverTimeMs)).toBe(true);
     expect(latest.serverTimeMs).toBeGreaterThan(0);
+  });
+
+  it('enters server-owned between-hand state after showdown settlement', () => {
+    const { nk, dispatcher, state, broadcastMessage } = setupThreePlayerMatch();
+    const versionBefore = state.stateVersion;
+    const between = enterBetweenHand(nk, dispatcher, state, 100_000);
+
+    expect(between.startedAtMs).toBe(100_000);
+    expect(between.minUntilMs).toBe(106_000);
+    expect(between.autoStartAtMs).toBe(112_000);
+    expect(between.readyPlayerIds).toEqual([]);
+    expect(state.table.hand.phase).toBe('showdown');
+    expect(state.stateVersion).toBeGreaterThan(versionBefore);
+
+    const stateMessages = stateMessagesFrom(broadcastMessage);
+    const latest = stateMessages[stateMessages.length - 1]?.state;
+    expect(latest.betweenHandStartedAtMs).toBe(100_000);
+    expect(latest.betweenHandMinUntilMs).toBe(106_000);
+    expect(latest.betweenHandAutoStartAtMs).toBe(112_000);
+    expect(latest.readyForNextHandPlayerIds).toEqual([]);
+  });
+
+  it('treats nextHand before the minimum reveal window as readiness only', () => {
+    const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
+    const between = enterBetweenHand(nk, dispatcher, state, 100_000);
+    const handId = state.table.hand.handId;
+    const versionBeforeReady = state.stateVersion;
+
+    sendReadyForNextHand(nk, dispatcher, state, presenceById.get('u1'), between.minUntilMs - 1, 11, {
+      type: 'nextHand',
+      seq: 1,
+    });
+
+    expect(state.table.hand.handId).toBe(handId);
+    expect(state.table.hand.phase).toBe('showdown');
+    expect(state.betweenHand.readyPlayerIds).toEqual(['u1']);
+    expect(state.stateVersion).toBeGreaterThan(versionBeforeReady);
+  });
+
+  it('starts the next hand after the minimum window once all eligible players are ready', () => {
+    const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
+    const between = enterBetweenHand(nk, dispatcher, state, 100_000);
+    const handId = state.table.hand.handId;
+
+    sendReadyForNextHand(nk, dispatcher, state, presenceById.get('u1'), 101_000, 11);
+    sendReadyForNextHand(nk, dispatcher, state, presenceById.get('u2'), between.minUntilMs + 1, 12);
+    expect(state.table.hand.handId).toBe(handId);
+
+    sendReadyForNextHand(nk, dispatcher, state, presenceById.get('u3'), between.minUntilMs + 2, 13);
+
+    expect(state.betweenHand).toBeNull();
+    expect(state.table.hand).toBeTruthy();
+    expect(state.table.hand.handId).not.toBe(handId);
+    expect(state.table.hand.phase).toBe('betting');
+  });
+
+  it('auto-starts after the maximum between-hand timeout when not all players are ready', () => {
+    const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
+    const between = enterBetweenHand(nk, dispatcher, state, 100_000);
+    const handId = state.table.hand.handId;
+
+    sendReadyForNextHand(nk, dispatcher, state, presenceById.get('u1'), 101_000, 11);
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(between.autoStartAtMs + 1);
+    try {
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 12, state, []);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(state.betweenHand).toBeNull();
+    expect(state.table.hand).toBeTruthy();
+    expect(state.table.hand.handId).not.toBe(handId);
+    expect(state.table.hand.phase).toBe('betting');
+  });
+
+  it('moves to waiting state instead of starting when fewer than two eligible players remain', () => {
+    const { nk, dispatcher, state } = setupThreePlayerMatch();
+    const between = enterBetweenHand(nk, dispatcher, state, 100_000);
+
+    state.table.seats[1].stack = 0;
+    state.table.seats[1].status = 'busted';
+    state.table.seats[1].sittingOut = true;
+    state.table.seats[2].stack = 0;
+    state.table.seats[2].status = 'busted';
+    state.table.seats[2].sittingOut = true;
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(between.minUntilMs + 1);
+    try {
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 11, state, []);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(state.betweenHand).toBeNull();
+    expect(state.table.hand).toBeNull();
+    expect(state.table.startGate).toBeNull();
+  });
+
+  it('increments stateVersion on between-hand start, readiness changes, and next-hand start', () => {
+    const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
+    const versionBeforeBetween = state.stateVersion;
+    const between = enterBetweenHand(nk, dispatcher, state, 100_000);
+    const versionAfterBetween = state.stateVersion;
+
+    sendReadyForNextHand(nk, dispatcher, state, presenceById.get('u1'), 101_000, 11);
+    const versionAfterReady = state.stateVersion;
+    sendReadyForNextHand(nk, dispatcher, state, presenceById.get('u2'), between.minUntilMs + 1, 12);
+    sendReadyForNextHand(nk, dispatcher, state, presenceById.get('u3'), between.minUntilMs + 2, 13);
+
+    expect(versionAfterBetween).toBeGreaterThan(versionBeforeBetween);
+    expect(versionAfterReady).toBeGreaterThan(versionAfterBetween);
+    expect(state.stateVersion).toBeGreaterThan(versionAfterReady);
+  });
+
+  it('preserves reconnect grace during between-hand state', () => {
+    const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
+    const between = enterBetweenHand(nk, dispatcher, state, 100_000);
+    const handId = state.table.hand.handId;
+
+    let nowSpy = vi.spyOn(Date, 'now').mockReturnValue(101_000);
+    try {
+      pdhMatchHandler.matchLeave({}, logger, nk, dispatcher, 11, state, [presenceById.get('u1')]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(connectionFor(state, 'u1')).toMatchObject({
+      status: 'reconnecting',
+      graceDeadlineMs: 116_000,
+    });
+    expect(state.table.hand.handId).toBe(handId);
+    expect(state.betweenHand.handId).toBe(between.handId);
+
+    nowSpy = vi.spyOn(Date, 'now').mockReturnValue(104_000);
+    try {
+      pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 12, state, [
+        { userId: 'u1', sessionId: 'u1-reconnected' },
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(connectionFor(state, 'u1').status).toBe('connected');
+    expect(connectionFor(state, 'u1').graceDeadlineMs).toBeNull();
+    expect(state.table.hand.handId).toBe(handId);
+    expect(state.betweenHand.handId).toBe(between.handId);
   });
 
   it('auto-acts timed-out betting turns in match loop', () => {
