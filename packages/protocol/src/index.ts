@@ -141,6 +141,8 @@ const publicStateSchema = z
       .nullable(),
     hand: z.any().nullable(),
     log: z.array(z.any()),
+    stateVersion: z.number().int().nonnegative().optional(),
+    serverTimeMs: z.number().int().nonnegative().optional(),
     you: z.object({
       playerId: z.string().min(1),
     }),

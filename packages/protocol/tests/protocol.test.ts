@@ -80,11 +80,18 @@ describe('protocol schemas', () => {
         },
         hand: null,
         log: [],
+        stateVersion: 3,
+        serverTimeMs: 123_456,
         you: { playerId: 'p1' },
       },
     });
 
     expect(parsed.v).toBe(PDH_PROTOCOL_VERSION);
+    if (parsed.type !== 'state') {
+      throw new Error('Expected state message');
+    }
+    expect(parsed.state.stateVersion).toBe(3);
+    expect(parsed.state.serverTimeMs).toBe(123_456);
   });
 
   it('rejects unsupported reaction token', () => {

@@ -11,7 +11,6 @@ import {
   withProtocolVersion,
 } from './protocol';
 
-const AUTO_DISCARD_INTERVAL_MS = 500;
 const REACTION_COOLDOWN_MS = 2500;
 const CHAT_COOLDOWN_MS = 800;
 export const DEFAULT_TABLE_ID = 'main';
@@ -63,6 +62,7 @@ const replayByMatch = new Map<string, ReplayEvent[]>();
 interface MatchState {
   matchId: string;
   table: TableState;
+  stateVersion: number;
   tableBuyIn: number;
   maxPlayers: number;
   presences: Record<string, nkruntime.Presence>;
@@ -70,9 +70,13 @@ interface MatchState {
   lastReactionAtByPlayer: Record<string, number>;
   lastChatAtByPlayer: Record<string, number>;
   replay: ReplayState;
-  lastAutoDiscardMs: number;
   terminateRequested: boolean;
   terminateReason: string | null;
+}
+
+interface TableMutationResult<T> {
+  result: T;
+  changed: boolean;
 }
 
 interface EnsurePdhMatchInput {
@@ -213,6 +217,38 @@ function hydrateTable(tableState: TableState): PokerTable {
   return table;
 }
 
+function tableSnapshot(table: PokerTable) {
+  return JSON.stringify(table.state);
+}
+
+function bumpStateVersion(state: MatchState) {
+  state.stateVersion += 1;
+}
+
+function commitTableMutation<T>(
+  state: MatchState,
+  table: PokerTable,
+  mutate: () => T
+): TableMutationResult<T> {
+  const before = tableSnapshot(table);
+  const result = mutate();
+  const changed = tableSnapshot(table) !== before;
+  if (changed) {
+    bumpStateVersion(state);
+  }
+  return { result, changed };
+}
+
+function stateSnapshotForPresence(state: MatchState, table: PokerTable, playerId: string) {
+  const publicState = table.getPublicState(playerId);
+  return {
+    ...publicState,
+    stateVersion: state.stateVersion,
+    serverTimeMs: Date.now(),
+    you: { playerId },
+  };
+}
+
 function sendToPresence(
   dispatcher: nkruntime.MatchDispatcher,
   presence: nkruntime.Presence,
@@ -250,10 +286,9 @@ function broadcastState(dispatcher: nkruntime.MatchDispatcher, state: MatchState
   const presences = Object.values(state.presences);
   for (const presence of presences) {
     const playerId = presence.userId;
-    const publicState = table.getPublicState(playerId);
     const msg: ServerMessage = {
       type: 'state',
-      state: { ...publicState, you: { playerId } },
+      state: stateSnapshotForPresence(state, table, playerId),
     };
     dispatcher.broadcastMessage(
       MatchOpCode.ServerMessage,
@@ -572,6 +607,7 @@ function matchInit(ctx, logger, nk, params) {
   const state: MatchState = {
     matchId,
     table: table.state,
+    stateVersion: 0,
     tableBuyIn,
     maxPlayers,
     presences: {},
@@ -579,7 +615,6 @@ function matchInit(ctx, logger, nk, params) {
     lastReactionAtByPlayer: {},
     lastChatAtByPlayer: {},
     replay: { maxEvents: REPLAY_MAX_EVENTS, events: [] },
-    lastAutoDiscardMs: 0,
     terminateRequested: false,
     terminateReason: null,
   };
@@ -612,7 +647,7 @@ function matchJoin(ctx, logger, nk, dispatcher, tick, state, presences) {
   const table = hydrateTable(state.table);
   for (const presence of presences) {
     state.presences[presence.userId] = presence;
-    table.setSittingOut(presence.userId, false);
+    commitTableMutation(state, table, () => table.setSittingOut(presence.userId, false));
     logStructured(logger, 'info', 'match.join', {
       matchId: state.matchId,
       tableId: table.state.id,
@@ -626,7 +661,7 @@ function matchJoin(ctx, logger, nk, dispatcher, tick, state, presences) {
       tableId: table.state.id,
     });
   }
-  table.beginNextHandIfReady();
+  commitTableMutation(state, table, () => table.beginNextHandIfReady());
   state.table = table.state;
   broadcastState(dispatcher, state);
   return { state };
@@ -638,7 +673,7 @@ function matchLeave(ctx, logger, nk, dispatcher, tick, state, presences) {
     delete state.presences[presence.userId];
     delete state.lastReactionAtByPlayer[presence.userId];
     delete state.lastChatAtByPlayer[presence.userId];
-    table.handleDisconnect(presence.userId);
+    commitTableMutation(state, table, () => table.handleDisconnect(presence.userId));
     logStructured(logger, 'info', 'match.leave', {
       matchId: state.matchId,
       tableId: table.state.id,
@@ -650,6 +685,83 @@ function matchLeave(ctx, logger, nk, dispatcher, tick, state, presences) {
   state.table = table.state;
   broadcastState(dispatcher, state);
   return { state };
+}
+
+function applyExpiredTableTimers(
+  logger: nkruntime.Logger,
+  state: MatchState,
+  table: PokerTable,
+  tick: number,
+  now: number
+) {
+  let shouldBroadcast = false;
+
+  const startGateMutation = commitTableMutation(state, table, () => table.advanceStartGate(now));
+  if (startGateMutation.changed) {
+    logStructured(logger, 'info', 'match.start_gate.updated', {
+      matchId: state.matchId,
+      tableId: table.state.id,
+      tick,
+      handId: table.state.hand?.handId ?? null,
+      started: startGateMutation.result,
+      stateVersion: state.stateVersion,
+    });
+    shouldBroadcast = true;
+  }
+
+  const phaseMutation = commitTableMutation(state, table, () => table.advancePendingPhase(now));
+  if (phaseMutation.result || phaseMutation.changed) {
+    const hand = table.state.hand;
+    logStructured(logger, 'info', 'match.phase_advanced', {
+      matchId: state.matchId,
+      tableId: table.state.id,
+      tick,
+      handId: hand?.handId ?? null,
+      street: hand?.street ?? null,
+      phase: hand?.phase ?? null,
+      stateVersion: state.stateVersion,
+    });
+    shouldBroadcast = true;
+  }
+
+  const autoActionMutation = commitTableMutation(state, table, () => table.autoAction(now));
+  if (autoActionMutation.result) {
+    const hand = table.state.hand;
+    logStructured(logger, 'info', 'match.auto_action', {
+      matchId: state.matchId,
+      tableId: table.state.id,
+      tick,
+      handId: hand?.handId ?? null,
+      action: autoActionMutation.result.action,
+      userId: autoActionMutation.result.playerId,
+      stateVersion: state.stateVersion,
+    });
+    shouldBroadcast = true;
+  } else if (autoActionMutation.changed) {
+    shouldBroadcast = true;
+  }
+
+  const autoDiscardMutation = commitTableMutation(state, table, () => table.autoDiscard(now));
+  if (autoDiscardMutation.changed) {
+    const hand = table.state.hand;
+    logStructured(logger, 'info', 'match.auto_discard', {
+      matchId: state.matchId,
+      tableId: table.state.id,
+      tick,
+      handId: hand?.handId ?? null,
+      stateVersion: state.stateVersion,
+    });
+    shouldBroadcast = true;
+  }
+
+  if (!table.state.hand) {
+    const nextHandMutation = commitTableMutation(state, table, () => table.beginNextHandIfReady());
+    if (nextHandMutation.changed) {
+      shouldBroadcast = true;
+    }
+  }
+
+  return shouldBroadcast;
 }
 
 function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
@@ -665,6 +777,8 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
 
   const table = hydrateTable(state.table);
   let shouldBroadcast = false;
+  shouldBroadcast =
+    applyExpiredTableTimers(logger, state, table, tick, Date.now()) || shouldBroadcast;
 
   for (const message of messages) {
     if (message.opCode !== MatchOpCode.ClientMessage) continue;
@@ -753,68 +867,80 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
 
       switch (data.type) {
         case 'join': {
-          seatPlayer(table, presence.userId, data.name, state.tableBuyIn, data.seat);
-          table.setSittingOut(presence.userId, false);
+          const mutation = commitTableMutation(state, table, () => {
+            seatPlayer(table, presence.userId, data.name, state.tableBuyIn, data.seat);
+            table.setSittingOut(presence.userId, false);
+          });
           sendToPresence(dispatcher, presence, {
             type: 'welcome',
             playerId: presence.userId,
             tableId: table.state.id,
           });
-          shouldBroadcast = true;
+          shouldBroadcast = mutation.changed || shouldBroadcast;
           break;
         }
         case 'reconnect': {
           if (data.playerId !== presence.userId) {
             throw new Error('Reconnect identity mismatch');
           }
-          table.setSittingOut(presence.userId, false);
-          table.beginNextHandIfReady();
+          const mutation = commitTableMutation(state, table, () => {
+            table.setSittingOut(presence.userId, false);
+            table.beginNextHandIfReady();
+          });
           sendToPresence(dispatcher, presence, {
             type: 'welcome',
             playerId: presence.userId,
             tableId: table.state.id,
           });
-          shouldBroadcast = true;
+          shouldBroadcast = mutation.changed || shouldBroadcast;
           break;
         }
         case 'action': {
           ensureBettingTurn(table, presence.userId);
-          table.applyAction(presence.userId, {
-            type: data.action as any,
-            amount: data.amount,
-          });
-          shouldBroadcast = true;
+          const mutation = commitTableMutation(state, table, () =>
+            table.applyAction(presence.userId, {
+              type: data.action as any,
+              amount: data.amount,
+            })
+          );
+          shouldBroadcast = mutation.changed || shouldBroadcast;
           break;
         }
         case 'discard': {
           ensureDiscardTurn(table, presence.userId);
-          table.applyDiscard(presence.userId, data.index);
-          shouldBroadcast = true;
+          const mutation = commitTableMutation(state, table, () =>
+            table.applyDiscard(presence.userId, data.index)
+          );
+          shouldBroadcast = mutation.changed || shouldBroadcast;
           break;
         }
         case 'nextHand': {
           ensureCanAdvanceHand(table, presence.userId);
-          table.advanceToNextHand();
-          shouldBroadcast = true;
+          const mutation = commitTableMutation(state, table, () => table.advanceToNextHand());
+          shouldBroadcast = mutation.changed || shouldBroadcast;
           break;
         }
         case 'rebuy': {
           ensurePlayerSeated(table, presence.userId);
-          table.rebuy(presence.userId, state.tableBuyIn);
-          shouldBroadcast = true;
+          const mutation = commitTableMutation(state, table, () =>
+            table.rebuy(presence.userId, state.tableBuyIn)
+          );
+          shouldBroadcast = mutation.changed || shouldBroadcast;
           break;
         }
         case 'sitOut': {
           ensurePlayerSeated(table, presence.userId);
-          table.sitOut(presence.userId);
-          shouldBroadcast = true;
+          const mutation = commitTableMutation(state, table, () => table.sitOut(presence.userId));
+          shouldBroadcast = mutation.changed || shouldBroadcast;
           break;
         }
         case 'readyForHand': {
           ensurePlayerSeated(table, presence.userId);
-          table.setReadyForHand(presence.userId, data.ready);
-          table.advanceStartGate();
-          shouldBroadcast = true;
+          const mutation = commitTableMutation(state, table, () => {
+            table.setReadyForHand(presence.userId, data.ready);
+            table.advanceStartGate();
+          });
+          shouldBroadcast = mutation.changed || shouldBroadcast;
           break;
         }
         case 'reaction': {
@@ -860,10 +986,9 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
           break;
         }
         case 'requestState': {
-          const publicState = table.getPublicState(presence.userId);
           sendToPresence(dispatcher, presence, {
             type: 'state',
-            state: { ...publicState, you: { playerId: presence.userId } },
+            state: stateSnapshotForPresence(state, table, presence.userId),
           });
           break;
         }
@@ -908,6 +1033,7 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
           phaseAfter: event.phaseAfter,
           streetBefore: event.streetBefore,
           streetAfter: event.streetAfter,
+          stateVersion: state.stateVersion,
         });
       }
     } catch (err: any) {
@@ -950,6 +1076,7 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
           phaseAfter: event.phaseAfter,
           streetBefore: event.streetBefore,
           streetAfter: event.streetAfter,
+          stateVersion: state.stateVersion,
         });
       }
       sendToPresence(dispatcher, presence, {
@@ -959,74 +1086,8 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
     }
   }
 
-  const now = Date.now();
-  const startGateBefore = JSON.stringify(table.state.startGate);
-  const startedFromGate = table.advanceStartGate(now);
-  const startGateAfter = JSON.stringify(table.state.startGate);
-  if (startedFromGate || startGateBefore !== startGateAfter) {
-    logStructured(logger, 'info', 'match.start_gate.updated', {
-      matchId: state.matchId,
-      tableId: table.state.id,
-      tick,
-      handId: table.state.hand?.handId ?? null,
-      started: startedFromGate,
-    });
-    shouldBroadcast = true;
-  }
-
-  const advanced = table.advancePendingPhase(now);
-  if (advanced) {
-    const hand = table.state.hand;
-    logStructured(logger, 'info', 'match.phase_advanced', {
-      matchId: state.matchId,
-      tableId: table.state.id,
-      tick,
-      handId: hand?.handId ?? null,
-      street: hand?.street ?? null,
-      phase: hand?.phase ?? null,
-    });
-    shouldBroadcast = true;
-  }
-
-  const autoAction = table.autoAction(now);
-  if (autoAction) {
-    const hand = table.state.hand;
-    logStructured(logger, 'info', 'match.auto_action', {
-      matchId: state.matchId,
-      tableId: table.state.id,
-      tick,
-      handId: hand?.handId ?? null,
-      action: autoAction.action,
-      userId: autoAction.playerId,
-    });
-    shouldBroadcast = true;
-  }
-
-  if (!state.lastAutoDiscardMs) state.lastAutoDiscardMs = now;
-  if (now - state.lastAutoDiscardMs >= AUTO_DISCARD_INTERVAL_MS) {
-    const before = JSON.stringify(table.state.hand?.discardPending ?? []);
-    table.autoDiscard(now);
-    const after = JSON.stringify(table.state.hand?.discardPending ?? []);
-    if (before !== after) {
-      const hand = table.state.hand;
-      logStructured(logger, 'info', 'match.auto_discard', {
-        matchId: state.matchId,
-        tableId: table.state.id,
-        tick,
-        handId: hand?.handId ?? null,
-      });
-      shouldBroadcast = true;
-    }
-    if (!table.state.hand) {
-      const beforeStartGate = JSON.stringify(table.state.startGate);
-      table.beginNextHandIfReady();
-      const afterStartGate = JSON.stringify(table.state.startGate);
-      if (table.state.hand || beforeStartGate !== afterStartGate) {
-        shouldBroadcast = true;
-      }
-    }
-    state.lastAutoDiscardMs = now;
-  }
+  shouldBroadcast =
+    applyExpiredTableTimers(logger, state, table, tick, Date.now()) || shouldBroadcast;
 
   state.table = table.state;
   if (shouldBroadcast) {

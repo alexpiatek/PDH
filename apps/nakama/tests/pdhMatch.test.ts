@@ -39,6 +39,19 @@ function errorMessagesFrom(broadcastMessage: ReturnType<typeof vi.fn>) {
     .filter((msg): msg is string => Boolean(msg));
 }
 
+function stateMessagesFrom(broadcastMessage: ReturnType<typeof vi.fn>) {
+  return broadcastMessage.mock.calls
+    .map((call) => {
+      try {
+        const parsed = JSON.parse(call[1] as string);
+        return parsed.type === 'state' ? parsed : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter((msg): msg is { type: 'state'; state: any } => Boolean(msg));
+}
+
 function actionPayloadFor(hand: any, playerId: string, seq: number) {
   const player = hand.players.find((p: any) => p.id === playerId);
   const toCall = hand.currentBet - player.betThisStreet;
@@ -561,6 +574,125 @@ describe('pdhMatchHandler', () => {
     expect(replay.matchId).toBe(state.matchId);
     expect(replay.count).toBe(1);
     expect(replay.events[0].outcome).toBe('rejected');
+  });
+
+  it('applies an expired betting timer before processing a late player action', () => {
+    const { nk, dispatcher, state, presenceById, broadcastMessage } = setupThreePlayerMatch();
+    const hand = state.table.hand;
+    const actor = hand.players.find((p: any) => p.seat === hand.actionOnSeat);
+    const sender = presenceById.get(actor.id);
+    const deadline = 1_000_000;
+    hand.actionDeadline = deadline;
+    const versionBefore = state.stateVersion;
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(deadline + 1);
+    try {
+      broadcastMessage.mockClear();
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+        {
+          opCode: 1,
+          sender,
+          data: encode({ type: 'action', action: 'call', seq: 1 }),
+        },
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    const updatedActor = state.table.hand.players.find((p: any) => p.id === actor.id);
+    expect(updatedActor.status).toBe('folded');
+    expect(
+      state.table.hand.log.some((entry: any) => entry.message === `${actor.name} called 800`)
+    ).toBe(false);
+    expect(
+      state.table.hand.log.some((entry: any) => entry.message.includes('auto-folded (timeout)'))
+    ).toBe(true);
+    expect(errorMessagesFrom(broadcastMessage)).toContain('Not your turn');
+    expect(state.stateVersion).toBeGreaterThan(versionBefore);
+  });
+
+  it('accepts a valid betting action before the action deadline', () => {
+    const { nk, dispatcher, state, presenceById, broadcastMessage } = setupThreePlayerMatch();
+    const hand = state.table.hand;
+    const actor = hand.players.find((p: any) => p.seat === hand.actionOnSeat);
+    const sender = presenceById.get(actor.id);
+    const versionBefore = state.stateVersion;
+    const committedBefore = actor.totalCommitted;
+    hand.actionDeadline = 1_000_000;
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(999_999);
+    try {
+      broadcastMessage.mockClear();
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+        {
+          opCode: 1,
+          sender,
+          data: encode({ type: 'action', action: 'call', seq: 1 }),
+        },
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    const updatedActor = state.table.hand.players.find((p: any) => p.id === actor.id);
+    expect(errorMessagesFrom(broadcastMessage)).toEqual([]);
+    expect(updatedActor.status).not.toBe('folded');
+    expect(updatedActor.totalCommitted).toBeGreaterThan(committedBefore);
+    expect(state.stateVersion).toBeGreaterThan(versionBefore);
+  });
+
+  it('auto-discards before processing a late discard message', () => {
+    const { nk, dispatcher, state, presenceById, broadcastMessage } = setupThreePlayerMatch();
+    const hand = state.table.hand;
+    hand.phase = 'discard';
+    hand.street = 'flop';
+    hand.actionOnSeat = -1;
+    hand.actionDeadline = null;
+    hand.pendingNextPhaseAt = null;
+    hand.discardPending = hand.players.map((p: any) => p.id);
+    hand.discardDeadline = 1_000_000;
+    const playerId = hand.discardPending[0];
+    const playerBefore = hand.players.find((p: any) => p.id === playerId);
+    const cardsBefore = playerBefore.holeCards.length;
+    const versionBefore = state.stateVersion;
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000_001);
+    try {
+      broadcastMessage.mockClear();
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+        {
+          opCode: 1,
+          sender: presenceById.get(playerId),
+          data: encode({ type: 'discard', index: 0, seq: 1 }),
+        },
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    const playerAfter = state.table.hand.players.find((p: any) => p.id === playerId);
+    expect(playerAfter.holeCards.length).toBe(cardsBefore - 1);
+    expect(errorMessagesFrom(broadcastMessage)).toContain('Not in discard phase');
+    expect(state.stateVersion).toBeGreaterThan(versionBefore);
+  });
+
+  it('includes state version and server time in authoritative state snapshots', () => {
+    const { nk, dispatcher, state, presenceById, broadcastMessage } = setupThreePlayerMatch();
+    const hand = state.table.hand;
+    const actor = hand.players.find((p: any) => p.seat === hand.actionOnSeat);
+    const sender = presenceById.get(actor.id);
+
+    broadcastMessage.mockClear();
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+      { opCode: 1, sender, data: encode(actionPayloadFor(hand, actor.id, 1)) },
+    ]);
+
+    const stateMessages = stateMessagesFrom(broadcastMessage);
+    expect(stateMessages.length).toBeGreaterThan(0);
+    const latest = stateMessages[stateMessages.length - 1].state;
+    expect(latest.stateVersion).toBe(state.stateVersion);
+    expect(Number.isInteger(latest.serverTimeMs)).toBe(true);
+    expect(latest.serverTimeMs).toBeGreaterThan(0);
   });
 
   it('auto-acts timed-out betting turns in match loop', () => {

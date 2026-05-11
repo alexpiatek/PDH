@@ -9,6 +9,10 @@ import { BondiPokerLogo } from './BondiPokerLogo';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
 import { getPlayerInitials } from '../lib/playerInitials';
+import {
+  nextAppliedStateVersion,
+  shouldApplyStateSnapshot,
+} from '../lib/stateVersion';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000';
 
@@ -1274,6 +1278,8 @@ export const PokerGamePage = ({
   const discardTimerRef = useRef<number | null>(null);
   const holeDealTimerRef = useRef<number | null>(null);
   const joinTimeoutRef = useRef<number | null>(null);
+  const latestAppliedStateVersionRef = useRef<number | null>(null);
+  const serverTimeOffsetMsRef = useRef(0);
   const tableRef = useRef<HTMLDivElement | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -1312,6 +1318,8 @@ export const PokerGamePage = ({
   const rebuyNextHandSentRef = useRef(false);
   const rebuyStateRef = useRef<'idle' | 'pending' | 'confirmed'>('idle');
   const [hasReceivedState, setHasReceivedState] = useState(false);
+
+  const serverClockNow = () => Date.now() + serverTimeOffsetMsRef.current;
 
   const updateRebuyState = (next: 'idle' | 'pending' | 'confirmed') => {
     rebuyStateRef.current = next;
@@ -1468,6 +1476,17 @@ export const PokerGamePage = ({
         }
       }
       if (msg.type === 'state') {
+        if (!shouldApplyStateSnapshot(latestAppliedStateVersionRef.current, msg.state)) {
+          return;
+        }
+        latestAppliedStateVersionRef.current = nextAppliedStateVersion(
+          latestAppliedStateVersionRef.current,
+          msg.state
+        );
+        if (typeof msg.state.serverTimeMs === 'number' && Number.isFinite(msg.state.serverTimeMs)) {
+          serverTimeOffsetMsRef.current = msg.state.serverTimeMs - Date.now();
+          setClockNowMs(serverClockNow());
+        }
         setHasReceivedState(true);
         const statePlayerId = playerIdFromState(msg.state);
         if (statePlayerId) {
@@ -2220,9 +2239,9 @@ export const PokerGamePage = ({
     ) {
       return;
     }
-    setClockNowMs(Date.now());
+    setClockNowMs(serverClockNow());
     const intervalId = window.setInterval(() => {
-      setClockNowMs(Date.now());
+      setClockNowMs(serverClockNow());
     }, 250);
     return () => window.clearInterval(intervalId);
   }, [hand?.handId, hand?.phase, hand?.actionDeadline, hand?.discardDeadline, startGate?.startsAt]);
