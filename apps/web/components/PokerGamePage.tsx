@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { MoreHorizontal, Trophy } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, MoreHorizontal, Trophy } from 'lucide-react';
 import { Client as NakamaClient } from '@heroiclabs/nakama-js';
 import type { Match, Session, Socket as NakamaSocket } from '@heroiclabs/nakama-js';
 import { Card, HandState, PlayerInHand, ShowdownPotResult, ShowdownWinner } from '@pdh/engine';
@@ -51,7 +51,8 @@ const UI_STORAGE_KEYS = {
 const REACTION_COOLDOWN_MS = 2500;
 const REACTION_VISIBLE_MS = 2200;
 const CHAT_HISTORY_LIMIT = 50;
-const SHOWDOWN_AUTO_ADVANCE_MS = 6000;
+const SHOWDOWN_AUTO_ADVANCE_MS = 5000;
+const EXTENDED_SHOWDOWN_AUTO_ADVANCE_MS = 8000;
 
 const textDecoder = new TextDecoder();
 
@@ -307,18 +308,127 @@ const formatHandTitle = (label?: string) =>
     })
     .join(' ');
 
-const formatShowdownHandPhrase = (label?: string) => {
-  const title = formatHandTitle(label);
-  if (!title) return 'at showdown';
-  if (title === 'Uncontested') return 'uncontested';
-  if (title === 'Win By Fold') return 'by fold';
-  if (title === 'Two Pair' || title === 'High Card' || title === 'One Pair') {
-    return `with ${title}`;
+const formatChips = (amount: number) => new Intl.NumberFormat('en-US').format(amount);
+
+const formatCompactChips = (amount: number) => {
+  if (Math.abs(amount) >= 1000 && amount % 1000 === 0) {
+    return `${amount / 1000}k`;
   }
-  return `with a ${title}`;
+  return formatChips(amount);
 };
 
-const formatChips = (amount: number) => new Intl.NumberFormat('en-US').format(amount);
+const formatSignedChips = (amount: number) =>
+  amount > 0 ? `+${formatChips(amount)}` : amount < 0 ? `-${formatChips(Math.abs(amount))}` : '0';
+
+const RANK_WORDS: Record<Card['rank'], string> = {
+  '2': 'Two',
+  '3': 'Three',
+  '4': 'Four',
+  '5': 'Five',
+  '6': 'Six',
+  '7': 'Seven',
+  '8': 'Eight',
+  '9': 'Nine',
+  T: 'Ten',
+  J: 'Jack',
+  Q: 'Queen',
+  K: 'King',
+  A: 'Ace',
+};
+
+const RANK_PLURALS: Record<Card['rank'], string> = {
+  '2': 'Twos',
+  '3': 'Threes',
+  '4': 'Fours',
+  '5': 'Fives',
+  '6': 'Sixes',
+  '7': 'Sevens',
+  '8': 'Eights',
+  '9': 'Nines',
+  T: 'Tens',
+  J: 'Jacks',
+  Q: 'Queens',
+  K: 'Kings',
+  A: 'Aces',
+};
+
+const SUIT_WORDS: Record<Card['suit'], string> = {
+  H: 'Heart',
+  D: 'Diamond',
+  C: 'Club',
+  S: 'Spade',
+};
+
+const rankOrder: Record<Card['rank'], number> = {
+  '2': 2,
+  '3': 3,
+  '4': 4,
+  '5': 5,
+  '6': 6,
+  '7': 7,
+  '8': 8,
+  '9': 9,
+  T: 10,
+  J: 11,
+  Q: 12,
+  K: 13,
+  A: 14,
+};
+
+const describeShowdownHand = (label?: string, bestFive?: Card[]) => {
+  const title = formatHandTitle(label);
+  if (!title) return 'Winning hand';
+  const visibleBestFive = (bestFive ?? []).filter((card) => !isHiddenCard(card));
+  const highCard = visibleBestFive.reduce<Card | null>((best, card) => {
+    if (!best || rankOrder[card.rank] > rankOrder[best.rank]) return card;
+    return best;
+  }, null);
+
+  if ((title === 'Flush' || title === 'Straight Flush') && visibleBestFive.length >= 5) {
+    const suit = visibleBestFive[0]?.suit;
+    const sameSuit = suit && visibleBestFive.every((card) => card.suit === suit);
+    if (highCard && sameSuit) {
+      return `${RANK_WORDS[highCard.rank]}-high ${SUIT_WORDS[suit]} ${title}`;
+    }
+  }
+
+  if (title === 'Straight' && highCard) {
+    return `${RANK_WORDS[highCard.rank]}-high Straight`;
+  }
+
+  if (title === 'One Pair' && visibleBestFive.length) {
+    const pairRank = visibleBestFive.find(
+      (card) => visibleBestFive.filter((other) => other.rank === card.rank).length === 2
+    )?.rank;
+    return pairRank ? `Pair of ${RANK_PLURALS[pairRank]}` : title;
+  }
+
+  return title;
+};
+
+const compactPotLabel = (label: string) => {
+  const normalized = label.replace(/\s+pot\b/i, '').trim();
+  if (/^main$/i.test(normalized)) return 'Main';
+  const sideMatch = normalized.match(/^side\s*(\d+)?$/i);
+  if (sideMatch) return sideMatch[1] ? `Side ${sideMatch[1]}` : 'Side';
+  return normalized || label;
+};
+
+const formatPotMeta = (pots: ShowdownPotView[]) => {
+  const sidePotCount = pots.filter((pot) => /^side/i.test(pot.label)).length;
+  return pots
+    .map((pot) => {
+      const label = compactPotLabel(pot.label);
+      const displayLabel = sidePotCount === 1 && label === 'Side 1' ? 'Side' : label;
+      return `${displayLabel} ${formatChips(pot.amount)}`;
+    })
+    .join(' • ');
+};
+
+const formatRecapActionMessage = (message: string) =>
+  message
+    .replace(/\s+\([^)]*\)\s*$/, '')
+    .replace(/\b(\d{4,})\b/g, (match) => formatCompactChips(Number(match)));
 
 const joinPlayerNames = (names: string[]) => {
   if (names.length <= 1) return names[0] ?? '';
@@ -643,6 +753,7 @@ type ShowdownWinnerView = ShowdownWinner & {
   name: string;
   handTitle: string;
   cardLine: string;
+  holeCards: Card[];
 };
 
 type ShowdownPotView = Omit<ShowdownPotResult, 'winners'> & {
@@ -654,6 +765,12 @@ type ShowdownResultView = {
   pots: ShowdownPotView[];
   hasSplitPot: boolean;
   hasSidePots: boolean;
+};
+
+type LastHandRecapLine = {
+  street: string;
+  text: string;
+  tone?: 'winner' | 'danger';
 };
 
 const formatPotWinnerText = (pot: ShowdownPotView) => {
@@ -671,246 +788,419 @@ const formatPotWinnerText = (pot: ShowdownPotView) => {
   return `${pot.label}: ${names} ${winners.length === 1 ? 'wins' : 'win'} ${amountCopy}${handCopy}`;
 };
 
-const ShowdownResultOverlay = ({
+const ShowdownResultBanner = ({
   result,
   isPhone,
-  isMobile,
-  countdownSeconds,
-  onNextHand,
+  onViewDetails,
 }: {
   result: ShowdownResultView;
   isPhone: boolean;
-  isMobile: boolean;
-  countdownSeconds: number | null;
-  onNextHand: () => void;
+  onViewDetails: () => void;
 }) => {
-  const { winners, pots, hasSplitPot, hasSidePots } = result;
-  const primaryWinner = winners[0];
+  const { winners, pots, hasSplitPot } = result;
+  const primaryWinner = [...winners].sort((a, b) => b.amount - a.amount)[0] ?? winners[0];
   const sameAmount =
     winners.length > 1 && new Set(winners.map((winner) => winner.amount)).size === 1;
-  const title = hasSplitPot ? 'Split Pot' : 'Showdown Result';
-  const mainLine = hasSidePots
-    ? 'Side pots awarded'
-    : hasSplitPot
-      ? `Split pot: ${joinPlayerNames(winners.map((winner) => winner.name))} win ${
-          sameAmount
-            ? `${formatChips(winners[0]?.amount ?? 0)} each`
-            : winners.map((winner) => `${formatChips(winner.amount)}`).join(' / ')
-        }`
-      : `${primaryWinner.name} wins ${formatChips(primaryWinner.amount)}`;
-  const subLine = hasSidePots
-    ? 'Main and side pots settled below'
-    : primaryWinner.handLabel
-      ? formatShowdownHandPhrase(primaryWinner.handLabel)
-      : 'best hand at showdown';
-  const detailWinners = hasSidePots ? winners : winners.slice(0, hasSplitPot ? 3 : 1);
+  const splitNames = hasSplitPot ? joinPlayerNames(winners.map((winner) => winner.name)) : '';
+  const mainLine = hasSplitPot
+    ? sameAmount
+      ? `Split pot • ${formatChips(winners[0]?.amount ?? 0)} each`
+      : 'Split pot awarded'
+    : `${primaryWinner.name} wins ${formatChips(primaryWinner.amount)}`;
+  const subLine = hasSplitPot
+    ? `${splitNames} • ${primaryWinner.handTitle || 'Winning hand'}`
+    : primaryWinner.handTitle || 'Winning hand';
+  const potMeta = formatPotMeta(pots);
+  const visibleHoleCards = primaryWinner.holeCards
+    .filter((card) => !isHiddenCard(card))
+    .slice(0, 2);
 
   return (
     <div
       role="status"
       aria-live="assertive"
-      data-testid="showdown-result-overlay"
+      data-testid="showdown-result-banner"
       style={{
-        position: 'fixed',
-        zIndex: 80,
-        left: isPhone ? 10 : '50%',
-        right: isPhone ? 10 : undefined,
-        top: isPhone ? '50%' : '50%',
-        transform: isPhone ? 'translateY(-50%)' : 'translate(-50%, -50%)',
-        width: isPhone ? 'auto' : isMobile ? 'min(520px, calc(100% - 44px))' : 560,
-        maxWidth: 'calc(100% - 20px)',
-        maxHeight: isPhone ? 'calc(100dvh - 24px)' : 'calc(100dvh - 32px)',
-        overflow: 'hidden',
-        borderRadius: isPhone ? 16 : 18,
-        border: '1px solid rgba(251,191,36,0.62)',
+        width: isPhone ? 352 : 620,
+        maxWidth: 'calc(100vw - 24px)',
+        borderRadius: 12,
+        border: '1px solid rgba(251,191,36,0.56)',
         background:
-          'linear-gradient(180deg, rgba(9,18,20,0.96), rgba(2,7,9,0.94)), radial-gradient(circle at 50% 0%, rgba(251,191,36,0.16), transparent 48%)',
+          'linear-gradient(135deg, rgba(8,16,18,0.94), rgba(2,7,9,0.9)), radial-gradient(circle at 5% 0%, rgba(251,191,36,0.16), transparent 34%), radial-gradient(circle at 100% 100%, rgba(20,184,166,0.16), transparent 38%)',
         boxShadow:
-          '0 24px 70px rgba(0,0,0,0.58), 0 0 0 1px rgba(34,197,94,0.16), 0 0 46px rgba(251,191,36,0.16)',
+          '0 18px 42px rgba(0,0,0,0.45), 0 0 0 1px rgba(94,234,212,0.12), inset 0 1px 0 rgba(255,255,255,0.08)',
         color: TABLE_THEME.text,
-        padding: isPhone ? '12px 12px 11px' : '16px 18px',
+        padding: isPhone ? '8px 10px' : '10px 12px',
         fontFamily: TABLE_THEME.fontSans,
         animation: 'showdown-pop 220ms ease-out both',
+        pointerEvents: 'auto',
       }}
     >
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-          color: TABLE_THEME.amber,
-          fontSize: isPhone ? 11 : 12,
+          justifyContent: 'space-between',
+          gap: isPhone ? 8 : 12,
+          minWidth: 0,
+        }}
+      >
+        <div
+          aria-label={`${primaryWinner.name} hole cards`}
+          style={{
+            flex: '0 0 auto',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+          }}
+        >
+          {visibleHoleCards.length ? (
+            visibleHoleCards.map((card, idx) => (
+              <CardView
+                key={`${primaryWinner.playerId}-banner-hole-${idx}-${card.rank}${card.suit}`}
+                card={card}
+                size={isPhone ? 'medium' : 'medium'}
+                highlight
+              />
+            ))
+          ) : (
+            <div
+              style={{
+                width: 54,
+                height: 42,
+                borderRadius: 999,
+                border: '1px solid rgba(251,191,36,0.48)',
+                color: TABLE_THEME.amber,
+                display: 'grid',
+                placeItems: 'center',
+              }}
+            >
+              <Trophy size={19} strokeWidth={2.5} />
+            </div>
+          )}
+        </div>
+        <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+          <div
+            style={{
+              fontFamily: TABLE_THEME.fontDisplay,
+              fontSize: isPhone ? 17 : 21,
+              fontWeight: 900,
+              lineHeight: 1.08,
+              color: '#f8fafc',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {mainLine}
+          </div>
+          <div
+            style={{
+              marginTop: 3,
+              color: '#dcfce7',
+              fontSize: isPhone ? 12 : 14,
+              fontWeight: 800,
+              lineHeight: 1.15,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {subLine}
+          </div>
+          {potMeta ? (
+            <div
+              style={{
+                marginTop: 5,
+                color: TABLE_THEME.muted,
+                fontSize: isPhone ? 10 : 12,
+                fontWeight: 700,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {potMeta}
+            </div>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={onViewDetails}
+          style={{
+            flex: '0 0 auto',
+            border: 'none',
+            background: 'transparent',
+            color: '#ccfbf1',
+            padding: isPhone ? '6px 0 6px 4px' : '6px 0 6px 8px',
+            fontSize: isPhone ? 11 : 12,
+            fontWeight: 900,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
+          }}
+        >
+          {isPhone ? 'Details' : 'View hand details'}
+          <ChevronRight size={isPhone ? 14 : 15} strokeWidth={2.7} />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const LastHandRecap = ({
+  lines,
+  fullLog,
+  potSummaries,
+  isCollapsed,
+  showDetails,
+  isPhone,
+  onToggleCollapsed,
+  onViewDetails,
+}: {
+  lines: LastHandRecapLine[];
+  fullLog: Array<{ message?: string }>;
+  potSummaries: string[];
+  isCollapsed: boolean;
+  showDetails: boolean;
+  isPhone: boolean;
+  onToggleCollapsed: () => void;
+  onViewDetails: () => void;
+}) => {
+  const compactLines = lines.slice(0, 4);
+  const detailRows = fullLog
+    .map((entry) => entry.message)
+    .filter((message): message is string => Boolean(message));
+
+  return (
+    <section
+      aria-label="Last hand recap"
+      data-testid="last-hand-recap"
+      style={{
+        position: 'fixed',
+        zIndex: 46,
+        left: isPhone ? 10 : 24,
+        right: isPhone ? 10 : undefined,
+        bottom: isPhone ? 96 : 26,
+        width: isPhone ? 'auto' : 392,
+        maxHeight: isPhone ? '34dvh' : '38dvh',
+        borderRadius: 8,
+        border: `1px solid ${TABLE_THEME.border}`,
+        background:
+          'linear-gradient(180deg, rgba(8,13,17,0.93), rgba(2,7,9,0.88)), radial-gradient(circle at 0% 0%, rgba(94,234,212,0.1), transparent 32%)',
+        boxShadow: '0 18px 42px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06)',
+        color: TABLE_THEME.text,
+        fontFamily: TABLE_THEME.fontSans,
+        overflow: 'hidden',
+        pointerEvents: 'auto',
+      }}
+    >
+      <button
+        type="button"
+        aria-expanded={!isCollapsed}
+        onClick={onToggleCollapsed}
+        style={{
+          width: '100%',
+          border: 'none',
+          borderBottom: isCollapsed ? 'none' : `1px solid ${TABLE_THEME.border}`,
+          background: 'transparent',
+          color: TABLE_THEME.text,
+          padding: isPhone ? '9px 10px' : '10px 12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          cursor: 'pointer',
+          fontFamily: TABLE_THEME.fontDisplay,
+          fontSize: isPhone ? 12 : 13,
           fontWeight: 900,
-          letterSpacing: 0.7,
+          letterSpacing: 0.45,
           textTransform: 'uppercase',
         }}
       >
-        <Trophy size={isPhone ? 15 : 17} strokeWidth={2.6} />
-        {title}
-      </div>
+        <span>Last Hand Recap</span>
+        {isCollapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+      {!isCollapsed ? (
+        <div
+          style={{
+            padding: isPhone ? '8px 10px 10px' : '10px 12px 12px',
+            overflowY: showDetails ? 'auto' : 'hidden',
+            maxHeight: isPhone ? 'calc(34dvh - 38px)' : 'calc(38dvh - 42px)',
+          }}
+        >
+          <div style={{ display: 'grid', gap: isPhone ? 5 : 7 }}>
+            {compactLines.map((line) => (
+              <div
+                key={`${line.street}-${line.text}`}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: isPhone ? '58px minmax(0, 1fr)' : '72px minmax(0, 1fr)',
+                  gap: 8,
+                  alignItems: 'baseline',
+                  fontSize: isPhone ? 11 : 12,
+                  lineHeight: 1.25,
+                }}
+              >
+                <span style={{ color: TABLE_THEME.muted, fontWeight: 900 }}>{line.street}:</span>
+                <span
+                  style={{
+                    minWidth: 0,
+                    color: line.tone === 'winner' ? '#86efac' : TABLE_THEME.text,
+                    fontWeight: line.tone === 'winner' ? 800 : 700,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {line.text}
+                </span>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={onViewDetails}
+            style={{
+              marginTop: isPhone ? 8 : 10,
+              border: 'none',
+              background: 'transparent',
+              color: '#5eead4',
+              padding: 0,
+              fontSize: isPhone ? 11 : 12,
+              fontWeight: 900,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            View hand details
+            <ChevronRight size={14} strokeWidth={2.7} />
+          </button>
+          {showDetails ? (
+            <div
+              data-testid="last-hand-detail-log"
+              style={{
+                marginTop: 10,
+                paddingTop: 9,
+                borderTop: `1px solid ${TABLE_THEME.border}`,
+                display: 'grid',
+                gap: 5,
+              }}
+            >
+              {potSummaries.map((summary) => (
+                <div
+                  key={summary}
+                  style={{
+                    fontSize: isPhone ? 10 : 11,
+                    lineHeight: 1.3,
+                    color: '#ccfbf1',
+                    fontWeight: 800,
+                  }}
+                >
+                  {summary}
+                </div>
+              ))}
+              {detailRows.map((message, idx) => (
+                <div
+                  key={`${idx}-${message}`}
+                  style={{
+                    fontSize: isPhone ? 10 : 11,
+                    lineHeight: 1.3,
+                    color: 'rgba(226,232,240,0.84)',
+                  }}
+                >
+                  {formatRecapActionMessage(message)}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+};
+
+const NextHandCountdown = ({
+  seconds,
+  durationMs,
+  isPhone,
+}: {
+  seconds: number | null;
+  durationMs: number;
+  isPhone: boolean;
+}) => {
+  const totalSeconds = Math.max(1, Math.ceil(durationMs / 1000));
+  const displaySeconds = seconds ?? totalSeconds;
+  const progress = Math.max(0, Math.min(1, displaySeconds / totalSeconds));
+
+  return (
+    <div
+      role="timer"
+      aria-live="polite"
+      data-testid="next-hand-countdown"
+      style={{
+        position: 'fixed',
+        zIndex: 46,
+        right: isPhone ? 10 : 24,
+        bottom: isPhone ? 18 : 26,
+        width: isPhone ? 214 : 260,
+        borderRadius: 8,
+        border: `1px solid ${TABLE_THEME.border}`,
+        background:
+          'linear-gradient(180deg, rgba(8,13,17,0.9), rgba(2,7,9,0.84)), radial-gradient(circle at 100% 0%, rgba(94,234,212,0.1), transparent 34%)',
+        boxShadow: '0 18px 42px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.06)',
+        padding: isPhone ? '10px 11px' : '12px 14px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        color: TABLE_THEME.text,
+        fontFamily: TABLE_THEME.fontSans,
+        pointerEvents: 'none',
+      }}
+    >
       <div
         style={{
-          marginTop: isPhone ? 6 : 8,
-          textAlign: 'center',
-          fontFamily: TABLE_THEME.fontDisplay,
-          fontSize: isPhone ? 25 : 34,
-          fontWeight: 900,
-          lineHeight: 1.05,
-          color: '#fef3c7',
-          textShadow: '0 8px 28px rgba(0,0,0,0.55)',
-        }}
-      >
-        {mainLine}
-      </div>
-      <div
-        style={{
-          marginTop: 6,
-          textAlign: 'center',
-          color: '#dcfce7',
-          fontSize: isPhone ? 15 : 18,
+          color: TABLE_THEME.muted,
+          fontSize: isPhone ? 12 : 13,
           fontWeight: 800,
           lineHeight: 1.25,
         }}
       >
-        {subLine}
+        Next hand starts
+        <br />
+        automatically
       </div>
       <div
         style={{
-          marginTop: isPhone ? 9 : 12,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: isPhone ? 7 : 9,
+          width: isPhone ? 50 : 58,
+          height: isPhone ? 50 : 58,
+          borderRadius: '50%',
+          padding: 4,
+          background: `conic-gradient(${TABLE_THEME.teal} ${Math.round(
+            progress * 360
+          )}deg, rgba(148,163,184,0.22) 0deg)`,
+          boxShadow: '0 0 18px rgba(94,234,212,0.18)',
         }}
       >
-        {detailWinners.map((winner) => (
-          <div
-            key={winner.playerId}
-            style={{
-              borderRadius: 12,
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: 'rgba(255,255,255,0.045)',
-              padding: isPhone ? '8px 9px' : '10px 11px',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                gap: 10,
-                alignItems: 'center',
-                color: TABLE_THEME.text,
-                fontSize: isPhone ? 13 : 14,
-                fontWeight: 900,
-                lineHeight: 1.2,
-              }}
-            >
-              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {winner.name}
-              </span>
-              <span style={{ color: TABLE_THEME.amber, whiteSpace: 'nowrap' }}>
-                +{formatChips(winner.amount)}
-              </span>
-            </div>
-            <div
-              style={{
-                marginTop: 3,
-                color: TABLE_THEME.muted,
-                fontSize: isPhone ? 12 : 13,
-                fontWeight: 700,
-              }}
-            >
-              {winner.handTitle || 'Winning hand'}
-              {winner.cardLine ? ` using ${winner.cardLine}` : ''}
-            </div>
-            {winner.bestFive?.length ? (
-              <div
-                aria-label={`${winner.name} winning five cards`}
-                style={{
-                  marginTop: 8,
-                  display: 'flex',
-                  justifyContent: 'center',
-                  gap: isPhone ? 5 : 7,
-                }}
-              >
-                {winner.bestFive.map((card, idx) => (
-                  <CardView
-                    key={`${winner.playerId}-showdown-card-${idx}-${card.rank}${card.suit}`}
-                    card={card}
-                    size={isPhone ? 'medium' : 'large'}
-                    highlight
-                  />
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ))}
-      </div>
-      {hasSidePots ? (
         <div
           style={{
-            marginTop: isPhone ? 8 : 10,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 5,
-            color: '#d1fae5',
-            fontSize: isPhone ? 11 : 12,
-            fontWeight: 800,
-            lineHeight: 1.25,
-          }}
-        >
-          {pots.map((pot) => (
-            <div
-              key={pot.potId}
-              style={{
-                borderRadius: 999,
-                border: '1px solid rgba(94,234,212,0.22)',
-                background: 'rgba(20,184,166,0.08)',
-                padding: '5px 8px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: isPhone ? 'normal' : 'nowrap',
-              }}
-            >
-              {formatPotWinnerText(pot)}
-            </div>
-          ))}
-        </div>
-      ) : null}
-      <div
-        style={{
-          marginTop: isPhone ? 10 : 12,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 10,
-          color: TABLE_THEME.dim,
-          fontSize: isPhone ? 11 : 12,
-          fontWeight: 700,
-        }}
-      >
-        <span>
-          {countdownSeconds !== null
-            ? `Next hand starting in ${countdownSeconds}s`
-            : 'Next hand starting soon'}
-        </span>
-        <button
-          type="button"
-          onClick={onNextHand}
-          style={{
-            border: '1px solid rgba(94,234,212,0.62)',
-            background: 'rgba(20,184,166,0.22)',
-            color: '#ccfbf1',
-            borderRadius: 999,
-            padding: isPhone ? '7px 10px' : '8px 12px',
-            fontSize: isPhone ? 12 : 13,
+            width: '100%',
+            height: '100%',
+            borderRadius: '50%',
+            background: 'rgba(3,8,11,0.96)',
+            display: 'grid',
+            placeItems: 'center',
+            color: '#99f6e4',
+            fontSize: isPhone ? 18 : 22,
             fontWeight: 900,
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
           }}
         >
-          Continue
-        </button>
+          {displaySeconds}s
+        </div>
       </div>
     </div>
   );
@@ -1013,6 +1303,8 @@ export const PokerGamePage = ({
   const [mutedChatPlayerIds, setMutedChatPlayerIds] = useState<string[]>([]);
   const [clockNowMs, setClockNowMs] = useState(() => Date.now());
   const [showdownStartedAtMs, setShowdownStartedAtMs] = useState<number | null>(null);
+  const [lastHandRecapCollapsed, setLastHandRecapCollapsed] = useState(false);
+  const [showLastHandDetails, setShowLastHandDetails] = useState(false);
   const resolvedForcedMatchId = forcedMatchId?.trim() || '';
   const hasLoggedTableJoinedRef = useRef(false);
   const hasLoggedFirstActionRef = useRef(false);
@@ -1493,13 +1785,39 @@ export const PokerGamePage = ({
     if (!hand || !playerId) return null;
     return hand.players.find((p: PlayerInHand) => p.id === playerId);
   }, [hand, playerId]);
-  const winnersById = useMemo(() => {
-    const map = new Map<string, { amount: number; bestFive?: Card[]; handLabel?: string }>();
+  const showdownDeltasById = useMemo(() => {
+    const payouts = new Map<string, number>();
     for (const w of hand?.showdownWinners ?? []) {
-      map.set(w.playerId, { amount: w.amount, bestFive: w.bestFive, handLabel: w.handLabel });
+      payouts.set(w.playerId, (payouts.get(w.playerId) ?? 0) + w.amount);
+    }
+    const map = new Map<string, { net: number; payout: number; committed: number }>();
+    for (const player of hand?.players ?? []) {
+      const payout = payouts.get(player.id) ?? 0;
+      const committed = player.totalCommitted ?? 0;
+      const net = payout - committed;
+      if (net !== 0 || payout > 0 || committed > 0) {
+        map.set(player.id, { net, payout, committed });
+      }
     }
     return map;
-  }, [hand?.showdownWinners]);
+  }, [hand?.showdownWinners, hand?.players]);
+  const winnersById = useMemo(() => {
+    const map = new Map<
+      string,
+      { amount: number; net: number; bestFive?: Card[]; handLabel?: string }
+    >();
+    for (const w of hand?.showdownWinners ?? []) {
+      const existing = map.get(w.playerId);
+      const nextAmount = (existing?.amount ?? 0) + w.amount;
+      map.set(w.playerId, {
+        amount: nextAmount,
+        net: showdownDeltasById.get(w.playerId)?.net ?? nextAmount,
+        bestFive: w.bestFive ?? existing?.bestFive,
+        handLabel: w.handLabel ?? existing?.handLabel,
+      });
+    }
+    return map;
+  }, [hand?.showdownWinners, showdownDeltasById]);
   const seated = useMemo(() => {
     if (!playerId) return false;
     return Boolean(state?.seats?.some((s: any) => s && s.id === playerId));
@@ -1650,15 +1968,26 @@ export const PokerGamePage = ({
     }
     return Math.max(0, Math.ceil((startGate.startsAt - clockNowMs) / 1000));
   }, [startGate?.startsAt, clockNowMs]);
+  const showdownAutoAdvanceMs = useMemo(() => {
+    if (hand?.phase !== 'showdown') return SHOWDOWN_AUTO_ADVANCE_MS;
+    const allInPlayers = hand.players.filter(
+      (player) =>
+        player.totalCommitted > 0 &&
+        (player.status === 'allIn' || player.status === 'busted' || player.stack === 0)
+    ).length;
+    return (hand.showdownPots?.length ?? 0) > 1 || allInPlayers >= 3
+      ? EXTENDED_SHOWDOWN_AUTO_ADVANCE_MS
+      : SHOWDOWN_AUTO_ADVANCE_MS;
+  }, [hand?.phase, hand?.players, hand?.showdownPots]);
   const showdownCountdownSeconds = useMemo(() => {
     if (hand?.phase !== 'showdown' || showdownStartedAtMs === null) {
       return null;
     }
     return Math.max(
       0,
-      Math.ceil((showdownStartedAtMs + SHOWDOWN_AUTO_ADVANCE_MS - clockNowMs) / 1000)
+      Math.ceil((showdownStartedAtMs + showdownAutoAdvanceMs - clockNowMs) / 1000)
     );
-  }, [hand?.phase, showdownStartedAtMs, clockNowMs]);
+  }, [hand?.phase, showdownAutoAdvanceMs, showdownStartedAtMs, clockNowMs]);
   const startGateReadyIds = useMemo(
     () => new Set<string>(startGate?.readyPlayerIds ?? []),
     [startGate?.readyPlayerIds]
@@ -1791,6 +2120,8 @@ export const PokerGamePage = ({
   useEffect(() => {
     if (hand?.phase === 'showdown') {
       setShowdownStartedAtMs(Date.now());
+      setLastHandRecapCollapsed(false);
+      setShowLastHandDetails(false);
       return;
     }
     setShowdownStartedAtMs(null);
@@ -1806,9 +2137,9 @@ export const PokerGamePage = ({
     if (localNeedsRebuy) {
       return;
     }
-    const timeoutId = window.setTimeout(() => send({ type: 'nextHand' }), SHOWDOWN_AUTO_ADVANCE_MS);
+    const timeoutId = window.setTimeout(() => send({ type: 'nextHand' }), showdownAutoAdvanceMs);
     return () => window.clearTimeout(timeoutId);
-  }, [hand?.phase, hand?.handId, localNeedsRebuy]);
+  }, [hand?.phase, hand?.handId, localNeedsRebuy, showdownAutoAdvanceMs]);
 
   useEffect(() => {
     if (rebuyState === 'idle') {
@@ -2277,17 +2608,20 @@ export const PokerGamePage = ({
     if (!hand?.showdownWinners?.length) return null;
 
     const winnerById = new Map(hand.showdownWinners.map((winner) => [winner.playerId, winner]));
+    const playerById = new Map(hand.players.map((player) => [player.id, player]));
     const toWinnerView = (winner: ShowdownWinner): ShowdownWinnerView => {
       const aggregate = winnerById.get(winner.playerId);
       const bestFive = winner.bestFive ?? aggregate?.bestFive;
       const handLabel = winner.handLabel ?? aggregate?.handLabel;
+      const holeCards = playerById.get(winner.playerId)?.holeCards ?? [];
       return {
         ...winner,
         bestFive,
         handLabel,
         name: playerNameById.get(winner.playerId) ?? winner.playerId,
-        handTitle: formatHandTitle(handLabel),
+        handTitle: describeShowdownHand(handLabel, bestFive),
         cardLine: bestFive?.map(cardText).join(' ') ?? '',
+        holeCards,
       };
     };
 
@@ -2315,14 +2649,78 @@ export const PokerGamePage = ({
       hasSplitPot: pots.some((pot) => pot.winners.length > 1),
       hasSidePots: pots.length > 1,
     };
-  }, [hand?.showdownPots, hand?.showdownWinners, playerNameById]);
-  const showdownSummary = useMemo(() => {
-    if (!hand?.showdownWinners?.length) return null;
-    const topWinner = hand.showdownWinners[0];
-    const winnerSeat = hand.players.find((p) => p.id === topWinner.playerId);
-    const label = topWinner.handLabel ? ` ${formatShowdownHandPhrase(topWinner.handLabel)}` : '';
-    return `${winnerSeat?.name ?? topWinner.playerId} wins ${formatChips(topWinner.amount)}${label}`;
-  }, [hand?.showdownWinners, hand?.players]);
+  }, [hand?.players, hand?.showdownPots, hand?.showdownWinners, playerNameById]);
+  const lastHandRecapLines = useMemo<LastHandRecapLine[]>(() => {
+    if (!hand) return [];
+    const streetOrder = ['Pre-flop', 'Flop', 'Turn'] as const;
+    const actionsByStreet = new Map<(typeof streetOrder)[number], string[]>(
+      streetOrder.map((street) => [street, []])
+    );
+    let currentStreet: (typeof streetOrder)[number] = 'Pre-flop';
+    for (const entry of hand.log ?? []) {
+      const message = entry.message;
+      if (!message) continue;
+      if (/^Starting betting on flop$/i.test(message) || /^Flop:/i.test(message)) {
+        currentStreet = 'Flop';
+        continue;
+      }
+      if (/^Starting betting on turn$/i.test(message) || /^Turn:/i.test(message)) {
+        currentStreet = 'Turn';
+        continue;
+      }
+      if (/^Starting betting on river$/i.test(message) || /^River:/i.test(message)) {
+        continue;
+      }
+      if (
+        /^Hand started$/i.test(message) ||
+        /^Discard phase started/i.test(message) ||
+        /posts (small|big) blind/i.test(message) ||
+        /\bwins\b/i.test(message) ||
+        /: \d+ -> \d+$/.test(message) ||
+        /is out of chips$/i.test(message)
+      ) {
+        continue;
+      }
+      if (
+        /(folded|checked|called|raised|bet|all-in|auto-folded|auto-checked|discarded)/i.test(
+          message
+        )
+      ) {
+        actionsByStreet.get(currentStreet)?.push(message);
+      }
+    }
+
+    const lines: LastHandRecapLine[] = [];
+    for (const street of streetOrder) {
+      const actions = actionsByStreet.get(street) ?? [];
+      if (!actions.length) continue;
+      const allInActions = actions.filter((message) => /all-in/i.test(message));
+      const text =
+        allInActions.length >= 2
+          ? allInActions.length === 2
+            ? 'both players all-in'
+            : 'multiple players all-in'
+          : formatRecapActionMessage(actions[actions.length - 1]);
+      lines.push({ street, text });
+    }
+
+    if (showdownResult?.winners.length) {
+      const winner =
+        [...showdownResult.winners].sort((a, b) => b.amount - a.amount)[0] ??
+        showdownResult.winners[0];
+      const resultStreet = hand.board.length >= 5 ? 'River' : formatStreetLabel(hand.street);
+      const winnerNames = joinPlayerNames(showdownResult.winners.map((entry) => entry.name));
+      lines.push({
+        street: resultStreet === 'Preflop' ? 'Pre-flop' : resultStreet,
+        text: showdownResult.hasSplitPot
+          ? `${winnerNames} split${winner.handTitle ? ` with ${winner.handTitle}` : ''}`
+          : `${winner.name} wins${winner.handTitle ? ` with ${winner.handTitle}` : ''}`,
+        tone: 'winner',
+      });
+    }
+
+    return lines.slice(-4);
+  }, [hand, showdownResult]);
 
   const seatingPositions = isPortraitPhone
     ? [
@@ -2560,8 +2958,8 @@ export const PokerGamePage = ({
   const actionTrayStakeLine =
     hand && hand.phase === 'betting'
       ? toCall > 0
-        ? `To call ${toCall} \u00b7 Pot ${potAmount}`
-        : `Check available \u00b7 Pot ${potAmount}`
+        ? `To call ${formatChips(toCall)} \u00b7 Pot ${formatChips(potAmount)}`
+        : `Check available \u00b7 Pot ${formatChips(potAmount)}`
       : '';
   const discardLimit = 1;
   const selectedDiscardCount = selectedDiscardIndex === null ? 0 : 1;
@@ -2613,6 +3011,7 @@ export const PokerGamePage = ({
       : 'rgba(226,232,240,0.72)';
   const youDisplayName = you?.name || localPlayerName || 'You';
   const youWinnerInfo = you ? winnersById.get(you.id) : undefined;
+  const youSeatDelta = you ? showdownDeltasById.get(you.id) : undefined;
   const youShowDiscardState = Boolean(
     hand?.phase === 'discard' &&
     you &&
@@ -2642,6 +3041,23 @@ export const PokerGamePage = ({
         : youShowDiscardState && youHasDiscardedThisStreet
           ? '#86efac'
           : TABLE_THEME.dim;
+  const showYouSeatDelta = Boolean(
+    isShowdown &&
+    youSeatDelta &&
+    youSeatDelta.net !== 0 &&
+    (youWinnerInfo ||
+      you?.status === 'allIn' ||
+      youBusted ||
+      (you?.status !== 'folded' && youSeatDelta.committed > 0))
+  );
+  const youDisplayStatusLabel =
+    isShowdown && youSeatDelta && youSeatDelta.net < 0 && (you?.status === 'allIn' || youBusted)
+      ? 'ALL-IN'
+      : youSeatStatusLabel;
+  const youDisplayStatusColor =
+    isShowdown && youSeatDelta && youSeatDelta.net < 0 && (you?.status === 'allIn' || youBusted)
+      ? '#fecaca'
+      : youSeatStatusColor;
   const utilityEnabledCount =
     Number(soundEnabled) + Number(showActivityFeed) + Number(showTableChat);
   const rebuyButtonDisabled = rebuyState !== 'idle';
@@ -3079,7 +3495,7 @@ export const PokerGamePage = ({
             >
               {tableLabel}
               {hand ? ` \u00b7 ${currentStreetLabel}` : ''}
-              {!isPhone && hand ? ` \u00b7 Pot ${potAmount}` : ''}
+              {!isPhone && hand ? ` \u00b7 Pot ${formatChips(potAmount)}` : ''}
             </div>
             <span data-testid="street-indicator" style={{ display: 'none' }}>
               {hand ? `${hand.street} / ${hand.phase}` : 'waiting / idle'}
@@ -3777,7 +4193,9 @@ export const PokerGamePage = ({
                   position: 'absolute',
                   top: '40%',
                   left: '50%',
-                  transform: 'translate(-50%, -50%) translateY(calc(-19px - 2.1cm))',
+                  transform: isShowdown
+                    ? 'translate(-50%, -50%) translateY(calc(-19px - 3.75cm))'
+                    : 'translate(-50%, -50%) translateY(calc(-19px - 2.1cm))',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -3799,7 +4217,7 @@ export const PokerGamePage = ({
                     letterSpacing: 0.2,
                   }}
                 >
-                  Pot {potAmount}
+                  Pot {formatChips(potAmount)}
                 </div>
                 <div
                   style={{
@@ -3817,6 +4235,28 @@ export const PokerGamePage = ({
                   {currentStreetLabel}
                 </div>
               </div>
+              {isShowdown && showdownResult ? (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '40%',
+                    left: '50%',
+                    transform: isPhone
+                      ? 'translate(-50%, -50%) translateY(calc(-19px - 2.55cm))'
+                      : 'translate(-50%, -50%) translateY(calc(-19px - 2.8cm))',
+                    zIndex: 18,
+                  }}
+                >
+                  <ShowdownResultBanner
+                    result={showdownResult}
+                    isPhone={isPhone}
+                    onViewDetails={() => {
+                      setLastHandRecapCollapsed(false);
+                      setShowLastHandDetails(true);
+                    }}
+                  />
+                </div>
+              ) : null}
               <div
                 style={{
                   position: 'absolute',
@@ -3912,6 +4352,30 @@ export const PokerGamePage = ({
                         ? '#86efac'
                         : TABLE_THEME.dim;
                 const displayName = p.name || 'Player';
+                const seatDelta = showdownDeltasById.get(p.id);
+                const showSeatDelta = Boolean(
+                  isShowdown &&
+                  seatDelta &&
+                  seatDelta.net !== 0 &&
+                  (winner ||
+                    p.status === 'allIn' ||
+                    playerBusted ||
+                    (p.status !== 'folded' && seatDelta.committed > 0))
+                );
+                const displayStatusLabel =
+                  isShowdown &&
+                  seatDelta &&
+                  seatDelta.net < 0 &&
+                  (p.status === 'allIn' || playerBusted)
+                    ? 'ALL-IN'
+                    : statusLabel;
+                const displayStatusColor =
+                  isShowdown &&
+                  seatDelta &&
+                  seatDelta.net < 0 &&
+                  (p.status === 'allIn' || playerBusted)
+                    ? '#fecaca'
+                    : statusColor;
                 return (
                   <div
                     key={p.id}
@@ -3999,7 +4463,7 @@ export const PokerGamePage = ({
                                   boxShadow: '0 8px 18px rgba(0,0,0,0.34)',
                                 }}
                               >
-                                Winner +{formatChips(winnerInfo?.amount ?? 0)}
+                                {formatSignedChips(winnerInfo?.net ?? winnerInfo?.amount ?? 0)}
                               </div>
                             ) : null}
                             <PlayerIdentityBadge
@@ -4057,11 +4521,11 @@ export const PokerGamePage = ({
                                     marginTop: 4,
                                     fontSize: 10,
                                     letterSpacing: 0.2,
-                                    color: statusColor,
+                                    color: displayStatusColor,
                                     textTransform: 'uppercase',
                                   }}
                                 >
-                                  {statusLabel}
+                                  {displayStatusLabel}
                                 </div>
                               ) : showDiscardState ? (
                                 <div
@@ -4069,10 +4533,10 @@ export const PokerGamePage = ({
                                     marginTop: 4,
                                     fontSize: 10,
                                     letterSpacing: 0.2,
-                                    color: statusColor,
+                                    color: displayStatusColor,
                                   }}
                                 >
-                                  {statusLabel}
+                                  {displayStatusLabel}
                                 </div>
                               ) : null}
                               {isTurn ? (
@@ -4081,21 +4545,24 @@ export const PokerGamePage = ({
                                     marginTop: 4,
                                     fontSize: 10,
                                     letterSpacing: 0.3,
-                                    color: statusColor,
+                                    color: displayStatusColor,
                                     textTransform: 'uppercase',
                                     animation: 'turn-pulse 1.2s ease-in-out infinite',
                                   }}
                                 >
-                                  {statusLabel}
+                                  {displayStatusLabel}
                                 </div>
                               ) : null}
-                              {statusLabel && !playerBusted && !showDiscardState && !isTurn ? (
+                              {displayStatusLabel &&
+                              !playerBusted &&
+                              !showDiscardState &&
+                              !isTurn ? (
                                 <div
                                   style={{
                                     marginTop: 4,
                                     fontSize: isPhone ? 9 : 10,
                                     letterSpacing: 0.35,
-                                    color: statusColor,
+                                    color: displayStatusColor,
                                     textTransform: 'uppercase',
                                     lineHeight: 1.1,
                                     overflow: 'hidden',
@@ -4103,7 +4570,20 @@ export const PokerGamePage = ({
                                     whiteSpace: 'nowrap',
                                   }}
                                 >
-                                  {statusLabel}
+                                  {displayStatusLabel}
+                                </div>
+                              ) : null}
+                              {showSeatDelta && !winner ? (
+                                <div
+                                  style={{
+                                    marginTop: 3,
+                                    fontSize: isPhone ? 10 : 11,
+                                    fontWeight: 900,
+                                    lineHeight: 1.1,
+                                    color: (seatDelta?.net ?? 0) > 0 ? '#86efac' : '#f87171',
+                                  }}
+                                >
+                                  {formatSignedChips(seatDelta?.net ?? 0)}
                                 </div>
                               ) : null}
                             </div>
@@ -4122,13 +4602,14 @@ export const PokerGamePage = ({
                           {[0, 1].map((cardIdx) => {
                             const rot = cardIdx === 0 ? -18 : 16;
                             const margin = cardIdx === 0 ? -24 : 0;
+                            const hasVisibleHoleCards = p.holeCards.some(
+                              (card) => !isHiddenCard(card)
+                            );
                             const reveal =
                               isShowdown &&
                               hasContestedShowdown &&
                               p.status !== 'folded' &&
-                              p.status !== 'out' &&
-                              p.status !== 'busted' &&
-                              p.status !== 'sitting_out' &&
+                              hasVisibleHoleCards &&
                               p.holeCards.length >= 2;
                             const card = p.holeCards[cardIdx];
                             return (
@@ -4309,7 +4790,7 @@ export const PokerGamePage = ({
                               boxShadow: '0 8px 18px rgba(0,0,0,0.34)',
                             }}
                           >
-                            Winner +{formatChips(youWinnerInfo.amount)}
+                            {formatSignedChips(youWinnerInfo.net)}
                           </div>
                         ) : null}
                         <PlayerIdentityBadge
@@ -4363,11 +4844,11 @@ export const PokerGamePage = ({
                                 marginTop: 4,
                                 fontSize: 10,
                                 letterSpacing: 0.2,
-                                color: youSeatStatusColor,
+                                color: youDisplayStatusColor,
                                 textTransform: 'uppercase',
                               }}
                             >
-                              {youSeatStatusLabel}
+                              {youDisplayStatusLabel}
                             </div>
                           ) : null}
                           {isMyTurn ? (
@@ -4376,21 +4857,21 @@ export const PokerGamePage = ({
                                 marginTop: 4,
                                 fontSize: 10,
                                 letterSpacing: 0.3,
-                                color: youSeatStatusColor,
+                                color: youDisplayStatusColor,
                                 textTransform: 'uppercase',
                                 animation: 'turn-pulse 1.2s ease-in-out infinite',
                               }}
                             >
-                              {youSeatStatusLabel}
+                              {youDisplayStatusLabel}
                             </div>
                           ) : null}
-                          {youSeatStatusLabel && !youBusted && !isMyTurn ? (
+                          {youDisplayStatusLabel && !youBusted && !isMyTurn ? (
                             <div
                               style={{
                                 marginTop: 4,
                                 fontSize: isPhone ? 9 : 10,
                                 letterSpacing: 0.35,
-                                color: youSeatStatusColor,
+                                color: youDisplayStatusColor,
                                 textTransform: 'uppercase',
                                 lineHeight: 1.1,
                                 overflow: 'hidden',
@@ -4398,7 +4879,20 @@ export const PokerGamePage = ({
                                 whiteSpace: 'nowrap',
                               }}
                             >
-                              {youSeatStatusLabel}
+                              {youDisplayStatusLabel}
+                            </div>
+                          ) : null}
+                          {showYouSeatDelta && !youWinnerInfo ? (
+                            <div
+                              style={{
+                                marginTop: 3,
+                                fontSize: isPhone ? 10 : 11,
+                                fontWeight: 900,
+                                lineHeight: 1.1,
+                                color: (youSeatDelta?.net ?? 0) > 0 ? '#86efac' : '#f87171',
+                              }}
+                            >
+                              {formatSignedChips(youSeatDelta?.net ?? 0)}
                             </div>
                           ) : null}
                         </div>
@@ -4438,6 +4932,7 @@ export const PokerGamePage = ({
                         const discardSelected = discardSelectable && selectedDiscardIndex === idx;
                         return (
                           <div
+                            data-testid={`hero-hole-card-${idx}`}
                             key={`${dealAnimationKey}-hole-${idx}`}
                             style={
                               (animateHoleDeal
@@ -4492,13 +4987,28 @@ export const PokerGamePage = ({
               )}
             </div>
             {isShowdown && showdownResult ? (
-              <ShowdownResultOverlay
-                result={showdownResult}
-                isPhone={isPhone}
-                isMobile={isMobile}
-                countdownSeconds={showdownCountdownSeconds}
-                onNextHand={() => send({ type: 'nextHand' })}
-              />
+              <>
+                <LastHandRecap
+                  lines={lastHandRecapLines}
+                  fullLog={hand?.log ?? []}
+                  potSummaries={showdownResult.pots.map(formatPotWinnerText)}
+                  isCollapsed={lastHandRecapCollapsed}
+                  showDetails={showLastHandDetails}
+                  isPhone={isPhone}
+                  onToggleCollapsed={() => setLastHandRecapCollapsed((previous) => !previous)}
+                  onViewDetails={() => {
+                    setLastHandRecapCollapsed(false);
+                    setShowLastHandDetails(true);
+                  }}
+                />
+                {!localNeedsRebuy ? (
+                  <NextHandCountdown
+                    seconds={showdownCountdownSeconds}
+                    durationMs={showdownAutoAdvanceMs}
+                    isPhone={isPhone}
+                  />
+                ) : null}
+              </>
             ) : null}
           </div>
           {(you || localNeedsRebuy) && (
@@ -4570,6 +5080,7 @@ export const PokerGamePage = ({
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
                     <button
+                      data-testid="confirm-discard"
                       type="button"
                       onClick={confirmDiscardSelection}
                       disabled={!canConfirmDiscard}
@@ -4878,46 +5389,6 @@ export const PokerGamePage = ({
                   ) : (
                     hiddenBettingActionButtons
                   )}
-                </div>
-              ) : null}
-              {isRevealPhase ? (
-                <div
-                  style={{
-                    borderRadius: 8,
-                    border: `1px solid ${TABLE_THEME.tealBorder}`,
-                    background: TABLE_THEME.panelStrong,
-                    padding: isPhone ? '9px 10px' : '10px 12px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: 10,
-                  }}
-                >
-                  <div
-                    style={{
-                      minWidth: 0,
-                      fontSize: isPhone ? 13 : 14,
-                      fontWeight: 800,
-                      color: '#dcfce7',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {showdownSummary ?? 'Showdown in progress'}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => send({ type: 'nextHand' })}
-                    style={turnActionStyle(true, {
-                      border: 'rgba(94,234,212,0.78)',
-                      background: 'rgba(20,184,166,0.28)',
-                      color: '#ccfbf1',
-                      glow: 'rgba(20,184,166,0.3)',
-                    })}
-                  >
-                    Next Hand
-                  </button>
                 </div>
               ) : null}
             </div>
