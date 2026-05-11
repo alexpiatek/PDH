@@ -41,6 +41,7 @@ export interface JoinByCodeRpcRequest {
 
 export interface JoinByCodeRpcResponse {
   matchId: string;
+  error?: string;
 }
 
 export interface QuickPlayRpcRequest {
@@ -379,7 +380,14 @@ export async function createLobbyTable(input: CreateTableRpcRequest): Promise<Cr
 }
 
 export async function resolveLobbyCode(input: JoinByCodeRpcRequest): Promise<JoinByCodeRpcResponse> {
-  return callNakamaRpc<JoinByCodeRpcResponse>(LOBBY_RPC_JOIN_BY_CODE, input);
+  const result = await callNakamaRpc<JoinByCodeRpcResponse>(LOBBY_RPC_JOIN_BY_CODE, input);
+  if (typeof result.error === 'string' && result.error.trim()) {
+    throw new Error(result.error);
+  }
+  if (!result.matchId) {
+    throw new Error('We could not find a table with that code.');
+  }
+  return result;
 }
 
 export async function quickPlayLobby(

@@ -188,9 +188,31 @@ describe('poker lobby RPCs', () => {
 
     setMatchSize(created.matchId, 2);
 
-    expect(() =>
-      rpcJoinByCode({}, logger as any, nk as any, JSON.stringify({ code: created.code }))
-    ).toThrow(/already full/i);
+    const joinResponse = rpcJoinByCode(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ code: created.code })
+    );
+
+    expect(JSON.parse(joinResponse)).toEqual({
+      error: 'This table is already full.',
+    });
+  });
+
+  it('returns a client-safe error when a table code is not found', () => {
+    const { nk } = makeNakamaMock();
+
+    const joinResponse = rpcJoinByCode(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ code: 'ABC234' })
+    );
+
+    expect(JSON.parse(joinResponse)).toEqual({
+      error: 'We could not find a table with that code.',
+    });
   });
 
   it('quick play selects an existing public table when seats are available', () => {

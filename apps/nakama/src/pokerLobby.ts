@@ -66,6 +66,10 @@ interface JoinByCodeResult {
   matchId: string;
 }
 
+interface JoinByCodeErrorResult {
+  error: string;
+}
+
 interface LobbyTableSummary {
   code: string;
   matchId: string;
@@ -751,16 +755,19 @@ export function rpcJoinByCode(
 
   const stored = readTableByCode(runtimeNakama, input.code);
   if (!stored) {
-    throw new Error('We could not find a table with that code.');
+    const result: JoinByCodeErrorResult = { error: 'We could not find a table with that code.' };
+    return JSON.stringify(result);
   }
 
   const snapshot = resolveMatchSnapshot(runtimeNakama, stored.matchId);
   if (snapshot.found === false) {
-    throw new Error('This table is no longer active.');
+    const result: JoinByCodeErrorResult = { error: 'This table is no longer active.' };
+    return JSON.stringify(result);
   }
 
   if (snapshot.size !== null && snapshot.size >= stored.maxPlayers) {
-    throw new Error('This table is already full.');
+    const result: JoinByCodeErrorResult = { error: 'This table is already full.' };
+    return JSON.stringify(result);
   }
 
   logger.info('Resolved table code=%v to matchId=%v', input.code, stored.matchId);
