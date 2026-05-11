@@ -89,6 +89,8 @@ export function isClientMessage(value: unknown): value is ClientMessage {
       );
     case 'sitOut':
       return hasValidOptionalSequence(value);
+    case 'readyForHand':
+      return typeof value.ready === 'boolean';
     case 'reaction':
       return (
         typeof value.emoji === 'string' &&

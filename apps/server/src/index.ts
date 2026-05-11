@@ -16,12 +16,9 @@ const table = new PokerTable('main');
 const clients = new Map<WebSocket, { playerId: string }>();
 const lastReactionAtByPlayer = new Map<string, number>();
 const lastChatAtByPlayer = new Map<string, number>();
-const START_COUNTDOWN_MS = 8000;
 const REACTION_COOLDOWN_MS = 2500;
 const CHAT_COOLDOWN_MS = 800;
 const DEFAULT_LEGACY_BUY_IN = 10000;
-let startCountdownTimer: NodeJS.Timeout | null = null;
-let startCountdownUntil: number | null = null;
 
 const server = createServer((req, res) => {
   if (!req.url) {
@@ -99,46 +96,13 @@ function broadcast() {
   }
 }
 
-function seatedReadyCount() {
-  return table.state.seats.filter(
-    (s) => s && s.stack > 0 && !s.sittingOut && s.status !== 'busted' && s.status !== 'sitting_out'
-  ).length;
-}
-
-function clearStartCountdown() {
-  if (startCountdownTimer) {
-    clearTimeout(startCountdownTimer);
-    startCountdownTimer = null;
-  }
-  startCountdownUntil = null;
-}
-
-function scheduleStartCountdown() {
-  clearStartCountdown();
-  startCountdownUntil = Date.now() + START_COUNTDOWN_MS;
-  startCountdownTimer = setTimeout(() => {
-    startCountdownTimer = null;
-    startCountdownUntil = null;
-    if (!table.state.hand && seatedReadyCount() >= 2) {
-      table.startHand();
-      broadcast();
-    }
-  }, START_COUNTDOWN_MS);
-}
-
 function seatPlayer(name: string, desiredSeat?: number) {
   const playerId = randomUUID();
   const seatIndex =
     desiredSeat !== undefined ? desiredSeat : table.state.seats.findIndex((s) => s === null);
   if (seatIndex === -1) throw new Error('No open seats');
   table.seatPlayer(seatIndex, { id: playerId, name, stack: DEFAULT_LEGACY_BUY_IN });
-  if (!table.state.hand) {
-    if (seatedReadyCount() >= 2) {
-      scheduleStartCountdown();
-    } else {
-      clearStartCountdown();
-    }
-  }
+  table.beginNextHandIfReady();
   return { playerId, seatIndex };
 }
 
@@ -210,6 +174,13 @@ function handleMessage(ws: WebSocket, raw: ClientMessage) {
       case 'sitOut': {
         if (!ctx) throw new Error('Join first');
         table.sitOut(ctx.playerId);
+        broadcast();
+        break;
+      }
+      case 'readyForHand': {
+        if (!ctx) throw new Error('Join first');
+        table.setReadyForHand(ctx.playerId, raw.ready);
+        table.advanceStartGate();
         broadcast();
         break;
       }
@@ -287,12 +258,15 @@ wss.on('connection', (ws) => {
 });
 
 setInterval(() => {
+  const startGateBefore = JSON.stringify(table.state.startGate);
+  const startedFromGate = table.advanceStartGate();
   const advanced = table.advancePendingPhase();
   const autoAction = table.autoAction();
   const before = JSON.stringify(table.state.hand?.discardPending ?? []);
   table.autoDiscard();
   const after = JSON.stringify(table.state.hand?.discardPending ?? []);
-  if (advanced || autoAction || before !== after) {
+  const startGateAfter = JSON.stringify(table.state.startGate);
+  if (startedFromGate || startGateBefore !== startGateAfter || advanced || autoAction || before !== after) {
     broadcast();
   }
 }, 500);

@@ -55,6 +55,38 @@ describe('protocol schemas', () => {
     expect(server.v).toBe(PDH_PROTOCOL_VERSION);
   });
 
+  it('accepts ready-for-hand client payloads', () => {
+    const parsed = parseClientMessagePayload({
+      type: 'readyForHand',
+      ready: true,
+    });
+
+    expect(parsed.v).toBe(PDH_PROTOCOL_VERSION);
+  });
+
+  it('accepts public state payloads with a start gate', () => {
+    const parsed = parseServerMessagePayload({
+      type: 'state',
+      state: {
+        id: 'ABC234',
+        seats: [],
+        buttonSeat: -1,
+        startGate: {
+          openedAt: 100,
+          startsAt: 12_100,
+          earlyStartAt: 5_100,
+          minPlayers: 2,
+          readyPlayerIds: ['p1'],
+        },
+        hand: null,
+        log: [],
+        you: { playerId: 'p1' },
+      },
+    });
+
+    expect(parsed.v).toBe(PDH_PROTOCOL_VERSION);
+  });
+
   it('rejects unsupported reaction token', () => {
     expect(() =>
       parseClientMessagePayload({

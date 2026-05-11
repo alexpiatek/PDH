@@ -85,6 +85,11 @@ const sitOutClientMessageSchema = versionedMessage({
   seq: seqSchema.optional(),
 });
 
+const readyForHandClientMessageSchema = versionedMessage({
+  type: z.literal('readyForHand'),
+  ready: z.boolean(),
+});
+
 const reactionClientMessageSchema = versionedMessage({
   type: z.literal('reaction'),
   emoji: tableReactionSchema,
@@ -107,6 +112,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   nextHandClientMessageSchema,
   rebuyClientMessageSchema,
   sitOutClientMessageSchema,
+  readyForHandClientMessageSchema,
   reactionClientMessageSchema,
   chatClientMessageSchema,
   requestStateClientMessageSchema,
@@ -124,6 +130,15 @@ const publicStateSchema = z
     id: z.string().min(1),
     seats: z.array(z.any().nullable()),
     buttonSeat: z.number().int(),
+    startGate: z
+      .object({
+        openedAt: z.number().int().nonnegative(),
+        startsAt: z.number().int().nonnegative(),
+        earlyStartAt: z.number().int().nonnegative(),
+        minPlayers: z.number().int().positive(),
+        readyPlayerIds: z.array(z.string().min(1)),
+      })
+      .nullable(),
     hand: z.any().nullable(),
     log: z.array(z.any()),
     you: z.object({

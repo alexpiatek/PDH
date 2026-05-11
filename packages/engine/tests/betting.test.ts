@@ -368,6 +368,7 @@ describe('betting rules', () => {
     expect(table.state.log.some((entry) => entry.message === 'P1 rebought for 10000')).toBe(true);
 
     table.advanceToNextHand();
+    table.advanceStartGate(table.state.startGate!.startsAt + 1);
 
     expect(table.state.hand?.players.map((player) => player.id).sort()).toEqual(['p0', 'p1']);
   });

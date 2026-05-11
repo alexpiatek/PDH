@@ -50,11 +50,28 @@ export class AppErrorBoundary extends React.Component<
           }}
         >
           <div>
-            <h1 style={{ marginBottom: 10, fontSize: 24 }}>Something went wrong</h1>
+            <h1 style={{ marginBottom: 10, fontSize: 24 }}>Table screen had a problem</h1>
             <p style={{ margin: 0, opacity: 0.85 }}>
-              The client hit an unexpected error. Reload the page and check browser logs for
-              `ui.error_boundary`.
+              Reload the page, or return to the lobby and rejoin the table.
             </p>
+            <a
+              href="/play"
+              style={{
+                display: 'inline-flex',
+                marginTop: 18,
+                minHeight: 42,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 6,
+                border: '1px solid rgba(94,234,212,0.68)',
+                padding: '0 16px',
+                color: '#ccfbf1',
+                textDecoration: 'none',
+                fontWeight: 700,
+              }}
+            >
+              Back to Lobby
+            </a>
           </div>
         </main>
       );

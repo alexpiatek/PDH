@@ -49,6 +49,16 @@ function actionPayloadFor(hand: any, playerId: string, seq: number) {
   };
 }
 
+function expireStartGate(nk: any, dispatcher: any, state: any, tick = 3) {
+  expect(state.table.startGate).toBeTruthy();
+  const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(state.table.startGate.startsAt + 1);
+  try {
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, tick, state, []);
+  } finally {
+    nowSpy.mockRestore();
+  }
+}
+
 function setupThreePlayerMatch() {
   const nk = makeNakamaMock();
   const broadcastMessage = vi.fn();
@@ -69,6 +79,8 @@ function setupThreePlayerMatch() {
       { opCode: 1, sender: p, data: encode({ type: 'join', name: p.userId, buyIn: 5000 }) },
     ]);
   }
+
+  expireStartGate(nk, dispatcher, state);
 
   expect(state.table.hand).toBeTruthy();
   expect(state.table.hand.phase).toBe('betting');
@@ -239,6 +251,85 @@ describe('pdhMatchHandler', () => {
     expect(state.table.seats.filter(Boolean).map((seat: any) => seat.id)).toEqual(['u1', 'u2']);
   });
 
+  it('stages the first hand and starts early once three seated players are ready', () => {
+    const nk = makeNakamaMock();
+    const broadcastMessage = vi.fn();
+    const dispatcher = { broadcastMessage };
+    const init = pdhMatchHandler.matchInit({}, logger, nk, {
+      tableId: 'quick',
+      buyIn: 5000,
+      maxPlayers: 6,
+    });
+    const state = init.state as any;
+    const presences = [
+      { userId: 'u1', sessionId: 's1' },
+      { userId: 'u2', sessionId: 's2' },
+      { userId: 'u3', sessionId: 's3' },
+    ];
+
+    pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 1, state, presences);
+    for (const presence of presences) {
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 2, state, [
+        {
+          opCode: 1,
+          sender: presence,
+          data: encode({ type: 'join', name: presence.userId, buyIn: 5000 }),
+        },
+      ]);
+      expect(state.table.hand).toBeNull();
+    }
+
+    expect(state.table.startGate).toBeTruthy();
+
+    for (const presence of presences) {
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+        {
+          opCode: 1,
+          sender: presence,
+          data: encode({ type: 'readyForHand', ready: true }),
+        },
+      ]);
+    }
+
+    expect(state.table.startGate).toBeNull();
+    expect(state.table.hand).toBeTruthy();
+    expect(state.table.hand.players.map((player: any) => player.id)).toEqual(['u1', 'u2', 'u3']);
+  });
+
+  it('starts the first hand when the start gate countdown expires', () => {
+    const nk = makeNakamaMock();
+    const broadcastMessage = vi.fn();
+    const dispatcher = { broadcastMessage };
+    const init = pdhMatchHandler.matchInit({}, logger, nk, {
+      tableId: 'countdown',
+      buyIn: 5000,
+      maxPlayers: 6,
+    });
+    const state = init.state as any;
+    const presences = [
+      { userId: 'u1', sessionId: 's1' },
+      { userId: 'u2', sessionId: 's2' },
+    ];
+
+    pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 1, state, presences);
+    for (const presence of presences) {
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 2, state, [
+        {
+          opCode: 1,
+          sender: presence,
+          data: encode({ type: 'join', name: presence.userId, buyIn: 5000 }),
+        },
+      ]);
+    }
+
+    expect(state.table.hand).toBeNull();
+    expireStartGate(nk, dispatcher, state);
+
+    expect(state.table.startGate).toBeNull();
+    expect(state.table.hand).toBeTruthy();
+    expect(state.table.hand.players.map((player: any) => player.id)).toEqual(['u1', 'u2']);
+  });
+
   it('advances queued betting phase in match loop ticks', () => {
     const nk = makeNakamaMock();
     const broadcastMessage = vi.fn();
@@ -260,6 +351,8 @@ describe('pdhMatchHandler', () => {
         { opCode: 1, sender: p, data: encode({ type: 'join', name: p.userId, buyIn: 5000 }) },
       ]);
     }
+
+    expireStartGate(nk, dispatcher, state);
 
     expect(state.table.hand).toBeTruthy();
     expect(state.table.hand.phase).toBe('betting');

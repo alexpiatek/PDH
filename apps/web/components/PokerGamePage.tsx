@@ -171,6 +171,50 @@ const errorMessage = (error: unknown) => {
   }
 };
 
+const friendlyStatus = (message: string | null | undefined) => {
+  const raw = (message ?? '').trim();
+  const lower = raw.toLowerCase();
+
+  if (!raw) {
+    return null;
+  }
+  if (/http\s*500|internal server error/.test(lower)) {
+    return {
+      title: 'Table service had a problem',
+      detail: 'The table server returned an error. Try again, or go back to the lobby.',
+    };
+  }
+  if (lower.includes('player not pending discard') || lower.includes('not in discard phase')) {
+    return {
+      title: 'Discard not received',
+      detail: 'Choose a card again. The table state has refreshed.',
+    };
+  }
+  if (lower.includes('connection failed') || lower.includes('socket error')) {
+    return {
+      title: 'Connection problem',
+      detail: raw,
+    };
+  }
+  if (lower.includes('join timed out')) {
+    return {
+      title: 'Could not take a seat',
+      detail: raw,
+    };
+  }
+  if (lower.includes('duplicate or stale action sequence')) {
+    return {
+      title: 'Action already handled',
+      detail: 'The table ignored a repeated action. The latest table state is loading.',
+    };
+  }
+
+  return {
+    title: lower.includes('error') || lower.includes('failed') ? 'Table problem' : 'Table notice',
+    detail: raw,
+  };
+};
+
 const startupSanityError = () => {
   if (!USE_NAKAMA_BACKEND) return null;
   if (typeof window === 'undefined') return null;
@@ -551,6 +595,7 @@ export const PokerGamePage = ({
   const [nameError, setNameError] = useState<string | null>(null);
   const [tableScale, setTableScale] = useState(1);
   const [viewportWidth, setViewportWidth] = useState(1280);
+  const [viewportHeight, setViewportHeight] = useState(800);
   const buyIn = 10000;
   const [state, setState] = useState<any>(null);
   const [status, setStatus] = useState<string>('Disconnected');
@@ -576,6 +621,31 @@ export const PokerGamePage = ({
   const hasLoggedFirstActionRef = useRef(false);
   const autoJoinAttemptedRef = useRef(false);
   const [hasReceivedState, setHasReceivedState] = useState(false);
+
+  const requestFreshState = () => {
+    const msg: ClientMessage = { type: 'requestState' };
+    if (!connectionRef.current) {
+      pendingMessagesRef.current.push(msg);
+      return;
+    }
+    if (legacySocketRef.current && legacySocketRef.current.readyState !== WebSocket.OPEN) {
+      pendingMessagesRef.current.push(msg);
+      return;
+    }
+    connectionRef.current.send(msg);
+  };
+
+  const recoverDiscardSubmission = (message = 'Discard not received. Choose a card again.') => {
+    if (discardTimerRef.current) {
+      window.clearTimeout(discardTimerRef.current);
+      discardTimerRef.current = null;
+    }
+    setDiscardSubmitted(false);
+    setDiscardFlashIndex(null);
+    setSelectedDiscardIndex(null);
+    setStatus(message);
+    requestFreshState();
+  };
 
   useEffect(() => {
     const storedName = readStoredPlayerName();
@@ -711,13 +781,25 @@ export const PokerGamePage = ({
           }
           if (stateHasSeatedPlayer(msg.state, statePlayerId)) {
             clearJoinTimeout();
+            setStatus((previous) =>
+              previous === 'Joining table...' || previous === 'Connecting to table...'
+                ? 'Connected'
+                : previous
+            );
           }
         }
         setState(msg.state);
       }
       if (msg.type === 'error') {
         clearJoinTimeout();
-        setStatus(msg.message);
+        if (
+          msg.message.toLowerCase().includes('player not pending discard') ||
+          msg.message.toLowerCase().includes('not in discard phase')
+        ) {
+          recoverDiscardSubmission('Discard not received. Choose a card again.');
+        } else {
+          setStatus(msg.message);
+        }
       }
       if (msg.type === 'reaction') {
         const reactionId = `${msg.playerId}-${msg.ts}-${Math.floor(Math.random() * 1_000_000)}`;
@@ -770,7 +852,15 @@ export const PokerGamePage = ({
             pendingMessagesRef.current.push(msg);
             return;
           }
-          ws.send(JSON.stringify(msg));
+          try {
+            ws.send(JSON.stringify(msg));
+          } catch (error) {
+            if (msg.type === 'discard') {
+              recoverDiscardSubmission('Discard not received. Choose a card again.');
+            } else {
+              setStatus(`Send failed: ${errorMessage(error)}`);
+            }
+          }
         },
         close: () => {
           ws.close();
@@ -897,7 +987,11 @@ export const PokerGamePage = ({
             .sendMatchState(match.match_id, MatchOpCode.ClientMessage, JSON.stringify(msg))
             .catch((error) => {
               if (!disposed) {
-                setStatus(`Send failed: ${errorMessage(error)}`);
+                if (msg.type === 'discard') {
+                  recoverDiscardSubmission('Discard not received. Choose a card again.');
+                } else {
+                  setStatus(`Send failed: ${errorMessage(error)}`);
+                }
               }
             });
         },
@@ -958,10 +1052,21 @@ export const PokerGamePage = ({
   };
 
   const hand: HandState | null = state?.hand ?? null;
+  const startGate = state?.startGate ?? null;
   const localSeat = useMemo(() => {
     if (!playerId || !Array.isArray(state?.seats)) return null;
     return (state.seats.find((s: any) => s && s.id === playerId) as any) ?? null;
   }, [state?.seats, playerId]);
+  const seatedPlayers = useMemo(() => {
+    return (state?.seats ?? []).filter(
+      (seat: any) =>
+        seat &&
+        seat.stack > 0 &&
+        !seat.sittingOut &&
+        seat.status !== 'busted' &&
+        seat.status !== 'sitting_out'
+    );
+  }, [state?.seats]);
   const you = useMemo(() => {
     if (!hand || !playerId) return null;
     return hand.players.find((p: PlayerInHand) => p.id === playerId);
@@ -1000,7 +1105,7 @@ export const PokerGamePage = ({
       hand.phase === 'showdown')
   );
   const localReadyBetweenHands = Boolean(
-    seated && localSeat && !hand && localSeatStack > 0 && localSeatStatus === 'active'
+    seated && localSeat && !hand && !startGate && localSeatStack > 0 && localSeatStatus === 'active'
   );
   useEffect(() => {
     if (!seated) {
@@ -1110,6 +1215,34 @@ export const PokerGamePage = ({
     }
     return Math.max(0, Math.ceil((hand.discardDeadline - clockNowMs) / 1000));
   }, [hand?.phase, hand?.discardDeadline, clockNowMs]);
+  const startGateSecondsLeft = useMemo(() => {
+    if (!startGate?.startsAt) {
+      return null;
+    }
+    return Math.max(0, Math.ceil((startGate.startsAt - clockNowMs) / 1000));
+  }, [startGate?.startsAt, clockNowMs]);
+  const startGateReadyIds = useMemo(
+    () => new Set<string>(startGate?.readyPlayerIds ?? []),
+    [startGate?.readyPlayerIds]
+  );
+  const startGateAllReady = Boolean(
+    startGate &&
+      seatedPlayers.length >= startGate.minPlayers &&
+      seatedPlayers.every((seat: any) => startGateReadyIds.has(seat.id))
+  );
+  const startGateCanEarlyStart = Boolean(
+    startGateAllReady &&
+      (seatedPlayers.length >= 3 ||
+        (startGate?.earlyStartAt !== undefined && clockNowMs >= startGate.earlyStartAt))
+  );
+  const localReadyForStart = Boolean(playerId && startGateReadyIds.has(playerId));
+  const isMobile = viewportWidth <= 900;
+  const isPhone = viewportWidth <= 640;
+  const isPortraitPhone = isPhone && viewportHeight > viewportWidth;
+  const isLandscapePhone = isMobile && viewportHeight <= 520 && viewportWidth > viewportHeight;
+  const pinActionTray = isMobile && !isLandscapePhone;
+  const layoutTableWidth = isPortraitPhone ? 430 : isLandscapePhone ? 780 : isMobile ? BASE_TABLE_WIDTH : 920;
+  const layoutTableHeight = isPortraitPhone ? 640 : isLandscapePhone ? 300 : isMobile ? BASE_TABLE_HEIGHT : 480;
   const tableTimerSeconds =
     hand?.phase === 'betting'
       ? actionSecondsLeft
@@ -1120,12 +1253,10 @@ export const PokerGamePage = ({
   const isDiscardPhase = hand?.phase === 'discard';
   const isRevealPhase = hand?.phase === 'showdown';
   const tableLabel = useMemo(() => {
-    const sourceId =
-      (resolvedForcedMatchId && resolvedForcedMatchId.trim()) ||
-      (typeof state?.matchId === 'string' ? state.matchId : '');
+    const sourceId = typeof state?.id === 'string' && state.id.trim() ? state.id.trim() : '';
     if (!sourceId) return `Table ${NAKAMA_TABLE_ID}`;
-    return `Table ${sourceId.slice(0, 6)}`;
-  }, [resolvedForcedMatchId, state?.matchId]);
+    return `Table ${sourceId}`;
+  }, [state?.id]);
   const latestActionLine = useMemo(() => {
     const lines: Array<{ message?: string }> = state?.log ?? [];
     for (let idx = lines.length - 1; idx >= 0; idx -= 1) {
@@ -1255,7 +1386,7 @@ export const PokerGamePage = ({
   }, [hand?.handId]);
 
   useEffect(() => {
-    if (!hand || (hand.phase !== 'betting' && hand.phase !== 'discard')) {
+    if (!startGate && (!hand || (hand.phase !== 'betting' && hand.phase !== 'discard'))) {
       return;
     }
     setClockNowMs(Date.now());
@@ -1263,7 +1394,7 @@ export const PokerGamePage = ({
       setClockNowMs(Date.now());
     }, 250);
     return () => window.clearInterval(intervalId);
-  }, [hand?.handId, hand?.phase, hand?.actionDeadline, hand?.discardDeadline]);
+  }, [hand?.handId, hand?.phase, hand?.actionDeadline, hand?.discardDeadline, startGate?.startsAt]);
 
   useEffect(() => {
     if (!liveReactions.length) {
@@ -1295,7 +1426,7 @@ export const PokerGamePage = ({
     const updateScale = () => {
       const rect = el.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
-      const nextScale = Math.min(rect.width / BASE_TABLE_WIDTH, rect.height / BASE_TABLE_HEIGHT);
+      const nextScale = Math.min(rect.width / layoutTableWidth, rect.height / layoutTableHeight);
       setTableScale((prev) => (Math.abs(prev - nextScale) < 0.001 ? prev : nextScale));
     };
     updateScale();
@@ -1306,7 +1437,7 @@ export const PokerGamePage = ({
     const observer = new ResizeObserver(updateScale);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [layoutTableWidth, layoutTableHeight]);
 
   useEffect(() => {
     return () => {
@@ -1319,10 +1450,17 @@ export const PokerGamePage = ({
 
   useIsomorphicLayoutEffect(() => {
     if (typeof window === 'undefined') return;
-    const updateViewportWidth = () => setViewportWidth(window.innerWidth);
-    updateViewportWidth();
-    window.addEventListener('resize', updateViewportWidth);
-    return () => window.removeEventListener('resize', updateViewportWidth);
+    const updateViewportSize = () => {
+      setViewportWidth(window.innerWidth);
+      setViewportHeight(window.innerHeight);
+    };
+    updateViewportSize();
+    window.addEventListener('resize', updateViewportSize);
+    window.addEventListener('orientationchange', updateViewportSize);
+    return () => {
+      window.removeEventListener('resize', updateViewportSize);
+      window.removeEventListener('orientationchange', updateViewportSize);
+    };
   }, []);
 
   useEffect(() => {
@@ -1435,6 +1573,16 @@ export const PokerGamePage = ({
     send({ type: 'sitOut' });
   };
 
+  const toggleReadyForHand = () => {
+    logClientEvent('table_ready_for_hand_click', {
+      tableId: state?.id ?? null,
+      ready: !localReadyForStart,
+      seatedPlayers: seatedPlayers.length,
+      secondsLeft: startGateSecondsLeft,
+    });
+    send({ type: 'readyForHand', ready: !localReadyForStart });
+  };
+
   const discard = (idx: number) => {
     send({ type: 'discard', index: idx });
   };
@@ -1445,14 +1593,14 @@ export const PokerGamePage = ({
     setDiscardSubmitted(true);
     setDiscardFlashIndex(idx);
     setSelectedDiscardIndex(null);
+    discard(idx);
     if (discardTimerRef.current) {
       window.clearTimeout(discardTimerRef.current);
     }
     discardTimerRef.current = window.setTimeout(() => {
       setDiscardFlashIndex(null);
       discardTimerRef.current = null;
-      discard(idx);
-    }, 500);
+    }, 450);
   };
 
   const handleDiscardClick = (idx: number) => {
@@ -1669,24 +1817,44 @@ export const PokerGamePage = ({
     return `${winnerSeat?.name ?? topWinner.playerId} wins ${topWinner.amount}${label}`;
   }, [hand?.showdownWinners, hand?.players]);
 
-  const seatingPositions = [
-    { left: '50%', top: '82%' },
-    { left: '14%', top: '22%' },
-    { left: '86%', top: '22%' },
-    { left: '92%', top: '52%' },
-    { left: '8%', top: '52%' },
-    { left: '80%', top: '78%' },
-    { left: '20%', top: '78%' },
-  ];
-  const seatBetOffsets: React.CSSProperties[] = [
-    { left: '50%', top: -30, transform: 'translate(-50%, -100%)' },
-    { left: '58%', top: 'calc(100% + 6px)', transform: 'translate(-50%, 0)' },
-    { left: '42%', top: 'calc(100% + 6px)', transform: 'translate(-50%, 0)' },
-    { left: -8, top: '50%', transform: 'translate(-100%, -50%)' },
-    { left: 'calc(100% + 8px)', top: '50%', transform: 'translate(0, -50%)' },
-    { left: '44%', top: -30, transform: 'translate(-50%, -100%)' },
-    { left: '56%', top: -30, transform: 'translate(-50%, -100%)' },
-  ];
+  const seatingPositions = isPortraitPhone
+    ? [
+        { left: '50%', top: '76%' },
+        { left: '18%', top: '22%' },
+        { left: '82%', top: '22%' },
+        { left: '84%', top: '50%' },
+        { left: '16%', top: '50%' },
+        { left: '76%', top: '70%' },
+        { left: '24%', top: '70%' },
+      ]
+    : [
+        { left: '50%', top: '82%' },
+        { left: '14%', top: '22%' },
+        { left: '86%', top: '22%' },
+        { left: '92%', top: '52%' },
+        { left: '8%', top: '52%' },
+        { left: '80%', top: '78%' },
+        { left: '20%', top: '78%' },
+      ];
+  const seatBetOffsets: React.CSSProperties[] = isPortraitPhone
+    ? [
+        { left: '50%', top: -24, transform: 'translate(-50%, -100%)' },
+        { left: '58%', top: 'calc(100% + 4px)', transform: 'translate(-50%, 0)' },
+        { left: '42%', top: 'calc(100% + 4px)', transform: 'translate(-50%, 0)' },
+        { left: -6, top: '50%', transform: 'translate(-100%, -50%)' },
+        { left: 'calc(100% + 6px)', top: '50%', transform: 'translate(0, -50%)' },
+        { left: '44%', top: -24, transform: 'translate(-50%, -100%)' },
+        { left: '56%', top: -24, transform: 'translate(-50%, -100%)' },
+      ]
+    : [
+        { left: '50%', top: -30, transform: 'translate(-50%, -100%)' },
+        { left: '58%', top: 'calc(100% + 6px)', transform: 'translate(-50%, 0)' },
+        { left: '42%', top: 'calc(100% + 6px)', transform: 'translate(-50%, 0)' },
+        { left: -8, top: '50%', transform: 'translate(-100%, -50%)' },
+        { left: 'calc(100% + 8px)', top: '50%', transform: 'translate(0, -50%)' },
+        { left: '44%', top: -30, transform: 'translate(-50%, -100%)' },
+        { left: '56%', top: -30, transform: 'translate(-50%, -100%)' },
+      ];
   const orderedPlayers = hand
     ? [...(you ? [you] : []), ...hand.players.filter((p) => p.id !== playerId)]
     : [];
@@ -1769,8 +1937,6 @@ export const PokerGamePage = ({
     animation: 'ellipsis-blink 1.2s infinite',
     animationDelay: `${delayMs}ms`,
   });
-  const isMobile = viewportWidth <= 900;
-  const isPhone = viewportWidth <= 640;
   const hasBottomActionTray = Boolean(
     localNeedsRebuy ||
     localReadyBetweenHands ||
@@ -1787,16 +1953,42 @@ export const PokerGamePage = ({
         : 100
       : 128;
   const heroCardsBottomOffset = isPhone
-    ? hasBottomActionTray
-      ? 30
-      : 24
+    ? isLandscapePhone
+      ? hasBottomActionTray
+        ? 78
+        : 46
+      : hasBottomActionTray
+        ? 30
+        : 24
     : isMobile
       ? hasBottomActionTray
         ? 28
         : 22
       : 20;
   const actionBarReserve = !isMobile && you && isBettingPhase ? (showRaiseDrawer ? 220 : 150) : 0;
-  const tableOuterWidth = `min(${BASE_TABLE_WIDTH}px, calc(100vw - ${isPhone ? 16 : 36}px))`;
+  const tableHorizontalPadding = isPhone ? 16 : isMobile ? 28 : 64;
+  const tableVerticalReserve = isMobile
+    ? hasBottomActionTray
+      ? isPortraitPhone
+        ? 178
+        : isLandscapePhone
+          ? 198
+          : 122
+      : 74
+    : 152 + actionBarReserve;
+  const tableAspectRatio = layoutTableWidth / layoutTableHeight;
+  const tableAvailableWidth = Math.max(280, viewportWidth - tableHorizontalPadding);
+  const tableRawWidth = Math.min(
+    layoutTableWidth,
+    tableAvailableWidth,
+    (viewportHeight - tableVerticalReserve) * tableAspectRatio
+  );
+  const tableMinimumWidth = Math.min(
+    tableAvailableWidth,
+    isPortraitPhone ? 320 : isLandscapePhone ? 330 : 360
+  );
+  const tableOuterWidthPx = Math.floor(Math.max(tableMinimumWidth, tableRawWidth));
+  const tableOuterWidth = `${tableOuterWidthPx}px`;
   const tableOuterBorder = isPhone ? 6 : isMobile ? 8 : 10;
   const actionButtonBaseStyle: React.CSSProperties = {
     padding: isPhone ? '10px 12px' : '10px 16px',
@@ -2016,6 +2208,132 @@ export const PokerGamePage = ({
       </button>
     </div>
   ) : null;
+  const startGateTray = startGate && seated ? (
+    <div
+      data-testid="start-gate"
+      style={{
+        width: isMobile ? 'auto' : 'min(680px, 100%)',
+        margin: isMobile ? 0 : '0 auto',
+        borderRadius: 8,
+        border: `1px solid ${TABLE_THEME.tealBorder}`,
+        background: TABLE_THEME.panelStrong,
+        padding: isPhone ? '12px' : '14px 16px',
+        boxShadow: '0 16px 34px rgba(2,6,23,0.42)',
+        display: 'grid',
+        gap: 12,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 12,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: isPhone ? 14 : 15,
+              fontWeight: 900,
+              color: TABLE_THEME.text,
+            }}
+          >
+            Waiting for players
+          </div>
+          <div
+            style={{
+              marginTop: 3,
+              fontSize: 12,
+              color: TABLE_THEME.muted,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {tableLabel} - {seatedPlayers.length} seated
+          </div>
+        </div>
+        <div
+          data-testid="start-gate-countdown"
+          style={{
+            minWidth: 58,
+            borderRadius: 999,
+            border: `1px solid ${TABLE_THEME.border}`,
+            background: 'rgba(255,255,255,0.045)',
+            color: startGateSecondsLeft !== null && startGateSecondsLeft <= 3 ? '#fecaca' : '#ccfbf1',
+            padding: '5px 9px',
+            textAlign: 'center',
+            fontSize: 12,
+            fontWeight: 900,
+          }}
+        >
+          {startGateSecondsLeft !== null ? `${startGateSecondsLeft}s` : '--'}
+        </div>
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 8,
+        }}
+      >
+        {seatedPlayers.map((seat: any) => {
+          const ready = startGateReadyIds.has(seat.id);
+          return (
+            <div
+              key={seat.id}
+              data-testid="start-gate-player"
+              style={{
+                borderRadius: 999,
+                border: `1px solid ${ready ? TABLE_THEME.tealBorder : TABLE_THEME.border}`,
+                background: ready ? 'rgba(20,184,166,0.18)' : 'rgba(255,255,255,0.04)',
+                color: ready ? '#ccfbf1' : TABLE_THEME.text,
+                padding: '6px 10px',
+                fontSize: 12,
+                fontWeight: 800,
+                maxWidth: '100%',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {seat.name} {ready ? 'ready' : 'waiting'}
+            </div>
+          );
+        })}
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: isPhone ? '1fr' : '1fr auto',
+          gap: 10,
+          alignItems: 'center',
+        }}
+      >
+        <div style={{ fontSize: 12, color: TABLE_THEME.muted }}>
+          {startGateCanEarlyStart
+            ? 'Starting now.'
+            : startGateAllReady
+              ? 'Everyone is ready. Starting when the quick-entry window closes.'
+              : 'The hand starts when the timer ends, or earlier when everyone is ready.'}
+        </div>
+        <button
+          data-testid="ready-for-hand"
+          type="button"
+          onClick={toggleReadyForHand}
+          style={turnActionStyle(true, {
+            border: localReadyForStart ? 'rgba(148,163,184,0.65)' : 'rgba(94,234,212,0.78)',
+            background: localReadyForStart ? 'rgba(255,255,255,0.045)' : 'rgba(20,184,166,0.28)',
+            color: localReadyForStart ? '#e2e8f0' : '#ccfbf1',
+            glow: localReadyForStart ? 'rgba(148,163,184,0.18)' : 'rgba(20,184,166,0.3)',
+          })}
+        >
+          {localReadyForStart ? 'Ready' : 'Ready for Hand'}
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   useEffect(() => {
     if (!seated || !hand || hand.phase !== 'betting') {
@@ -2136,6 +2454,7 @@ export const PokerGamePage = ({
       />
     </>
   );
+  const statusDisplay = friendlyStatus(status);
 
   return (
     <div
@@ -2637,6 +2956,37 @@ export const PokerGamePage = ({
           ) : null}
         </div>
       ) : null}
+      {seated && statusDisplay && !status.startsWith('Connected') ? (
+        <div
+          style={{
+            position: 'fixed',
+            left: isPhone ? 10 : '50%',
+            right: isPhone ? 10 : undefined,
+            top: isPhone ? 78 : 88,
+            transform: isPhone ? 'none' : 'translateX(-50%)',
+            zIndex: 60,
+            maxWidth: isPhone ? undefined : 520,
+            borderRadius: 8,
+            border:
+              status.toLowerCase().includes('error') ||
+              status.toLowerCase().includes('failed') ||
+              status.toLowerCase().includes('500')
+                ? '1px solid rgba(248,113,113,0.45)'
+                : `1px solid ${TABLE_THEME.border}`,
+            background: 'rgba(2,7,9,0.92)',
+            boxShadow: '0 18px 36px rgba(0,0,0,0.38)',
+            color: TABLE_THEME.text,
+            padding: '10px 12px',
+            fontFamily: TABLE_THEME.fontSans,
+            pointerEvents: 'none',
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 900 }}>{statusDisplay.title}</div>
+          <div style={{ marginTop: 3, fontSize: 12, color: TABLE_THEME.muted }}>
+            {statusDisplay.detail}
+          </div>
+        </div>
+      ) : null}
       {!seated && (
         <div
           style={{
@@ -2774,20 +3124,27 @@ export const PokerGamePage = ({
             >
               Waiting for hand...
             </div>
-            {status && !status.startsWith('Connected') && (
+            {statusDisplay && status && !status.startsWith('Connected') && (
               <div
                 style={{
-                  fontSize: 12,
                   fontFamily: TABLE_THEME.fontSans,
-                  color:
+                  borderRadius: 8,
+                  border:
                     status.toLowerCase().includes('error') ||
-                    status.toLowerCase().includes('failed')
-                      ? '#fca5a5'
-                      : '#e2e8f0',
+                    status.toLowerCase().includes('failed') ||
+                    status.toLowerCase().includes('500')
+                      ? '1px solid rgba(248,113,113,0.45)'
+                      : `1px solid ${TABLE_THEME.border}`,
+                  background: 'rgba(2,7,9,0.58)',
+                  color: TABLE_THEME.text,
+                  padding: '9px 10px',
                   textAlign: 'center',
                 }}
               >
-                {status}
+                <div style={{ fontSize: 12, fontWeight: 900 }}>{statusDisplay.title}</div>
+                <div style={{ marginTop: 3, fontSize: 12, color: TABLE_THEME.muted }}>
+                  {statusDisplay.detail}
+                </div>
               </div>
             )}
           </div>
@@ -2805,17 +3162,34 @@ export const PokerGamePage = ({
           }}
         >
           <div
+            data-testid="table-felt"
             ref={tableRef}
             style={{
               position: 'relative',
               width: tableOuterWidth,
-              maxWidth: BASE_TABLE_WIDTH,
-              aspectRatio: `${BASE_TABLE_WIDTH} / ${BASE_TABLE_HEIGHT}`,
+              maxWidth: layoutTableWidth,
+              aspectRatio: `${layoutTableWidth} / ${layoutTableHeight}`,
               height: 'auto',
-              minHeight: isPhone ? (hasBottomActionTray ? 326 : 292) : isMobile ? 336 : 330,
+              minHeight: isPortraitPhone
+                ? hasBottomActionTray
+                  ? 500
+                  : 540
+                : isPhone
+                  ? hasBottomActionTray
+                    ? isLandscapePhone
+                      ? 172
+                      : 248
+                    : isLandscapePhone
+                      ? 164
+                      : 236
+                  : isMobile
+                    ? isLandscapePhone
+                      ? 172
+                      : 286
+                    : 360,
               margin: '0 auto',
               marginTop: isMobile ? 2 : 14,
-              borderRadius: isPhone ? 120 : 999,
+              borderRadius: isPortraitPhone ? 180 : isPhone ? 110 : 999,
               background:
                 'radial-gradient(circle at 50% 44%, rgba(20,184,166,0.24) 0%, rgba(13,74,57,0.95) 48%, rgba(6,43,32,0.98) 100%)',
               border: `${tableOuterBorder}px solid rgba(251,191,36,0.34)`,
@@ -2828,8 +3202,8 @@ export const PokerGamePage = ({
                 position: 'absolute',
                 top: '50%',
                 left: '50%',
-                width: BASE_TABLE_WIDTH,
-                height: BASE_TABLE_HEIGHT,
+                width: layoutTableWidth,
+                height: layoutTableHeight,
                 transform: `translate(-50%, -50%) scale(${tableScale})`,
                 transformOrigin: 'center',
               }}
@@ -3028,11 +3402,13 @@ export const PokerGamePage = ({
                             <div
                               style={{
                                 position: 'absolute',
-                                top: -8,
-                                right: -8,
+                                top: -26,
+                                right: 4,
+                                zIndex: 12,
                                 display: 'flex',
                                 gap: 4,
                                 transform: 'none',
+                                pointerEvents: 'none',
                               }}
                             >
                               {roleChips.map((chip, chipIdx) => (
@@ -3261,11 +3637,13 @@ export const PokerGamePage = ({
                         <div
                           style={{
                             position: 'absolute',
-                            top: -8,
-                            right: -8,
+                            top: -26,
+                            right: 4,
+                            zIndex: 12,
                             display: 'flex',
                             gap: 4,
                             transform: 'none',
+                            pointerEvents: 'none',
                           }}
                         >
                           {(roleChipsBySeat.get(you.seat) ?? []).map((chip, chipIdx) => (
@@ -3447,22 +3825,22 @@ export const PokerGamePage = ({
           {(you || localNeedsRebuy) && (
             <div
               style={{
-                position: isMobile ? 'fixed' : 'static',
-                left: isMobile ? (isPhone ? 8 : 16) : undefined,
-                right: isMobile ? (isPhone ? 8 : 16) : undefined,
-                bottom: isMobile
+                position: pinActionTray ? 'fixed' : 'static',
+                left: pinActionTray ? (isPhone ? 8 : 16) : undefined,
+                right: pinActionTray ? (isPhone ? 8 : 16) : undefined,
+                bottom: pinActionTray
                   ? `calc(${isPhone ? 8 : 12}px + env(safe-area-inset-bottom))`
                   : undefined,
-                zIndex: isMobile ? 35 : 'auto',
-                width: isMobile ? 'auto' : 'min(620px, 100%)',
-                margin: isMobile ? 0 : '0 auto',
+                zIndex: pinActionTray ? 35 : 'auto',
+                width: pinActionTray ? 'auto' : 'min(820px, 100%)',
+                margin: pinActionTray ? 0 : '0 auto',
                 background: 'transparent',
                 border: 'none',
                 borderRadius: 0,
                 padding: 0,
                 display: 'flex',
                 flexDirection: 'column',
-                gap: isMobile ? 8 : 10,
+                gap: isLandscapePhone ? 6 : isMobile ? 8 : 10,
                 alignItems: 'stretch',
               }}
             >
@@ -3847,44 +4225,55 @@ export const PokerGamePage = ({
               paddingBottom: 'clamp(0px, 6vh, 2cm)',
             }}
           >
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                transform: isMobile ? 'none' : 'translateY(-7cm)',
-              }}
-            >
+            {startGateTray ? (
               <div
                 style={{
-                  fontFamily: TABLE_THEME.fontSans,
-                  fontSize: 16,
-                  fontWeight: 700,
-                  opacity: 0.85,
-                  marginTop: '0.6cm',
+                  width: isMobile ? '100%' : 'min(720px, 100%)',
+                  transform: isMobile ? 'none' : 'translateY(-3cm)',
                 }}
               >
-                Waiting for next hand
-                <span style={{ display: 'inline-flex', marginLeft: 4 }}>
-                  <span style={ellipsisDotStyle(0)}>.</span>
-                  <span style={ellipsisDotStyle(200)}>.</span>
-                  <span style={ellipsisDotStyle(400)}>.</span>
-                </span>
+                {startGateTray}
               </div>
-            </div>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  transform: isMobile ? 'none' : 'translateY(-7cm)',
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: TABLE_THEME.fontSans,
+                    fontSize: 16,
+                    fontWeight: 700,
+                    opacity: 0.85,
+                    marginTop: '0.6cm',
+                  }}
+                >
+                  Waiting for next hand
+                  <span style={{ display: 'inline-flex', marginLeft: 4 }}>
+                    <span style={ellipsisDotStyle(0)}>.</span>
+                    <span style={ellipsisDotStyle(200)}>.</span>
+                    <span style={ellipsisDotStyle(400)}>.</span>
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
           {rebuyTray || nextHandTray ? (
             <div
               style={{
-                position: isMobile ? 'fixed' : 'static',
-                left: isMobile ? (isPhone ? 8 : 16) : undefined,
-                right: isMobile ? (isPhone ? 8 : 16) : undefined,
-                bottom: isMobile
+                position: pinActionTray ? 'fixed' : 'static',
+                left: pinActionTray ? (isPhone ? 8 : 16) : undefined,
+                right: pinActionTray ? (isPhone ? 8 : 16) : undefined,
+                bottom: pinActionTray
                   ? `calc(${isPhone ? 8 : 12}px + env(safe-area-inset-bottom))`
                   : undefined,
-                zIndex: isMobile ? 35 : 'auto',
-                width: isMobile ? 'auto' : 'min(620px, 100%)',
-                margin: isMobile ? 0 : '0 auto',
+                zIndex: pinActionTray ? 35 : 'auto',
+                width: pinActionTray ? 'auto' : 'min(820px, 100%)',
+                margin: pinActionTray ? 0 : '0 auto',
               }}
             >
               {rebuyTray ?? nextHandTray}
@@ -4176,6 +4565,7 @@ const CardView = ({
 
   return (
     <div
+      data-testid="role-chip"
       style={{
         width: sizing.width,
         height: sizing.height,

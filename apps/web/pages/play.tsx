@@ -37,6 +37,38 @@ const LEGACY_FALLBACK_MATCH_ID = 'main';
 
 type LoadingMode = 'quick_play' | 'join_code' | `recent:${string}` | null;
 
+const friendlyLobbyError = (message: string) => {
+  const lower = message.toLowerCase();
+  if (/http\s*500|internal server error/.test(lower)) {
+    return {
+      title: 'Table service had a problem',
+      detail: 'Quick Play could not reach the table service. Try again in a moment.',
+    };
+  }
+  if (lower.includes('already full')) {
+    return {
+      title: 'Table is full',
+      detail: 'Choose Quick Play or enter another table code.',
+    };
+  }
+  if (lower.includes('could not find') || lower.includes('no longer active')) {
+    return {
+      title: 'Table not found',
+      detail: message,
+    };
+  }
+  if (lower.includes('valid 6-character')) {
+    return {
+      title: 'Check the table code',
+      detail: message,
+    };
+  }
+  return {
+    title: lower.includes('http') || lower.includes('error') ? 'Lobby problem' : 'Lobby notice',
+    detail: message,
+  };
+};
+
 const PlayLobbyPage: NextPage = () => {
   const router = useRouter();
   const [name, setName] = useState('');
@@ -51,6 +83,7 @@ const PlayLobbyPage: NextPage = () => {
   }, []);
 
   const loading = loadingMode !== null;
+  const errorDisplay = error ? friendlyLobbyError(error) : null;
 
   const preparePlayerName = () => {
     const normalized = normalizePlayerName(name);
@@ -377,10 +410,11 @@ const PlayLobbyPage: NextPage = () => {
               )}
             </div>
 
-            {error ? (
-              <p className="mt-5 rounded-md border border-rose-300/45 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
-                {error}
-              </p>
+            {errorDisplay ? (
+              <div className="mt-5 rounded-md border border-rose-300/45 bg-rose-500/10 px-3 py-3 text-rose-100">
+                <div className="text-sm font-semibold">{errorDisplay.title}</div>
+                <p className="mt-1 text-sm leading-5 text-rose-100/85">{errorDisplay.detail}</p>
+              </div>
             ) : null}
           </section>
         </div>

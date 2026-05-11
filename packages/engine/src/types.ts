@@ -80,6 +80,16 @@ export interface TableConfig {
   bigBlind: number;
   actionTimeoutMs: number | null;
   discardTimeoutMs: number | null;
+  firstHandStartCountdownMs: number;
+  firstHandEarlyStartMs: number;
+}
+
+export interface StartGateState {
+  openedAt: number;
+  startsAt: number;
+  earlyStartAt: number;
+  minPlayers: number;
+  readyPlayerIds: string[];
 }
 
 export interface TableState {
@@ -88,6 +98,7 @@ export interface TableState {
   seats: (Seat | null)[];
   buttonSeat: number;
   hand: HandState | null;
+  startGate: StartGateState | null;
   log: HandLogEntry[];
   auditLog?: HandLogEntry[];
   auditHands?: AuditHandLog[];

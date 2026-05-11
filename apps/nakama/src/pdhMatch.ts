@@ -810,6 +810,12 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
           shouldBroadcast = true;
           break;
         }
+        case 'readyForHand': {
+          ensurePlayerSeated(table, presence.userId);
+          table.setReadyForHand(presence.userId, data.ready);
+          shouldBroadcast = true;
+          break;
+        }
         case 'reaction': {
           ensurePlayerSeated(table, presence.userId);
           const reactionTs = Date.now();
@@ -953,6 +959,20 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
   }
 
   const now = Date.now();
+  const startGateBefore = JSON.stringify(table.state.startGate);
+  const startedFromGate = table.advanceStartGate(now);
+  const startGateAfter = JSON.stringify(table.state.startGate);
+  if (startedFromGate || startGateBefore !== startGateAfter) {
+    logStructured(logger, 'info', 'match.start_gate.updated', {
+      matchId: state.matchId,
+      tableId: table.state.id,
+      tick,
+      handId: table.state.hand?.handId ?? null,
+      started: startedFromGate,
+    });
+    shouldBroadcast = true;
+  }
+
   const advanced = table.advancePendingPhase(now);
   if (advanced) {
     const hand = table.state.hand;
@@ -997,8 +1017,10 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
       shouldBroadcast = true;
     }
     if (!table.state.hand) {
+      const beforeStartGate = JSON.stringify(table.state.startGate);
       table.beginNextHandIfReady();
-      if (table.state.hand) {
+      const afterStartGate = JSON.stringify(table.state.startGate);
+      if (table.state.hand || beforeStartGate !== afterStartGate) {
         shouldBroadcast = true;
       }
     }

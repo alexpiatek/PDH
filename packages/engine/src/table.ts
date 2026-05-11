@@ -13,6 +13,7 @@ import {
   Seat,
   ShowdownWinner,
   Street,
+  StartGateState,
   TableConfig,
   TableState,
 } from './types';
@@ -22,7 +23,11 @@ const DEFAULT_CONFIG: TableConfig = {
   bigBlind: 800,
   actionTimeoutMs: 30_000,
   discardTimeoutMs: 30_000,
+  firstHandStartCountdownMs: 12_000,
+  firstHandEarlyStartMs: 5_000,
 };
+
+const FIRST_HAND_MIN_PLAYERS = 2;
 
 function nowTs() {
   return Date.now();
@@ -151,6 +156,7 @@ export class PokerTable {
       seats,
       buttonSeat: -1,
       hand: null,
+      startGate: null,
       log: [],
       auditLog: [],
       auditHands: [],
@@ -223,6 +229,87 @@ export class PokerTable {
     logPush(this.state.log, `${seat.name} sits out`);
   }
 
+  private readySeats(): Seat[] {
+    return this.state.seats.filter(isReadySeat);
+  }
+
+  private isFirstHandPending(): boolean {
+    return !this.state.hand && this.state.buttonSeat === -1;
+  }
+
+  private syncStartGateReadyPlayers(gate: StartGateState, readySeats: Seat[]) {
+    const readySeatIds = new Set(readySeats.map((seat) => seat.id));
+    gate.readyPlayerIds = gate.readyPlayerIds.filter((id) => readySeatIds.has(id));
+  }
+
+  ensureStartGate(now: number = nowTs()) {
+    if (!this.isFirstHandPending()) {
+      this.state.startGate = null;
+      return null;
+    }
+
+    const readySeats = this.readySeats();
+    if (readySeats.length < FIRST_HAND_MIN_PLAYERS) {
+      this.state.startGate = null;
+      return null;
+    }
+
+    if (!this.state.startGate) {
+      this.state.startGate = {
+        openedAt: now,
+        startsAt: now + this.state.config.firstHandStartCountdownMs,
+        earlyStartAt: now + this.state.config.firstHandEarlyStartMs,
+        minPlayers: FIRST_HAND_MIN_PLAYERS,
+        readyPlayerIds: [],
+      };
+      return this.state.startGate;
+    }
+
+    this.state.startGate.minPlayers = FIRST_HAND_MIN_PLAYERS;
+    this.syncStartGateReadyPlayers(this.state.startGate, readySeats);
+    return this.state.startGate;
+  }
+
+  setReadyForHand(playerId: string, ready: boolean, now: number = nowTs()) {
+    const seat = this.state.seats.find((s) => s?.id === playerId);
+    if (!seat) throw new Error('Player not seated');
+    const gate = this.ensureStartGate(now);
+    if (!gate || !isReadySeat(seat)) return false;
+
+    const readyIds = new Set(gate.readyPlayerIds);
+    if (ready) {
+      readyIds.add(playerId);
+    } else {
+      readyIds.delete(playerId);
+    }
+    gate.readyPlayerIds = [...readyIds];
+    return true;
+  }
+
+  advanceStartGate(now: number = nowTs()) {
+    const gate = this.ensureStartGate(now);
+    if (!gate) return false;
+
+    const readySeats = this.readySeats();
+    if (readySeats.length < gate.minPlayers) {
+      this.state.startGate = null;
+      return false;
+    }
+
+    const readyIds = new Set(gate.readyPlayerIds);
+    const allReady = readySeats.every((seat) => readyIds.has(seat.id));
+    const canStartEarly = allReady && (readySeats.length >= 3 || now >= gate.earlyStartAt);
+    const countdownElapsed = now >= gate.startsAt;
+
+    if (canStartEarly || countdownElapsed) {
+      this.state.startGate = null;
+      this.startHand();
+      return true;
+    }
+
+    return false;
+  }
+
   removePlayer(seat: number) {
     const existing = this.state.seats[seat];
     if (existing) {
@@ -235,6 +322,7 @@ export class PokerTable {
     if (this.state.hand) throw new Error('Hand already in progress');
     const seatsIn = this.state.seats.filter(isReadySeat);
     if (seatsIn.length < 2) throw new Error('Need at least two players to start');
+    this.state.startGate = null;
     const button =
       this.state.buttonSeat === -1
         ? seatsIn[0].seat
@@ -922,10 +1010,20 @@ export class PokerTable {
 
   beginNextHandIfReady() {
     if (this.state.hand) return;
-    const ready = this.state.seats.filter(isReadySeat);
-    if (ready.length >= 2) {
-      this.startHand();
+    const ready = this.readySeats();
+    if (ready.length < FIRST_HAND_MIN_PLAYERS) {
+      if (this.isFirstHandPending()) {
+        this.state.startGate = null;
+      }
+      return;
     }
+
+    if (this.isFirstHandPending()) {
+      this.ensureStartGate();
+      return;
+    }
+
+    this.startHand();
   }
 
   advanceToNextHand() {
@@ -965,6 +1063,12 @@ export class PokerTable {
       id: this.state.id,
       seats: this.state.seats,
       buttonSeat: this.state.buttonSeat,
+      startGate: this.state.startGate
+        ? {
+            ...this.state.startGate,
+            readyPlayerIds: [...this.state.startGate.readyPlayerIds],
+          }
+        : null,
       hand: hand
         ? (() => {
             const { auditLog, showdownRevealIds: _showdownRevealIds, ...handPublic } = hand;
