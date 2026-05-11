@@ -2000,7 +2000,7 @@ export const PokerGamePage = ({
     addChip(bbSeat, { label: 'BB', tone: 'blind' });
     return map;
   }, [hand, state?.seats]);
-  const infoAvatarSize = 36;
+  const infoAvatarSize = 32;
   const playerInfoOffsetY = -30 + 38;
   const heroAreaOffsetPx = 38 - 33;
   const youAvatarStyle = useMemo(() => {
@@ -2018,7 +2018,7 @@ export const PokerGamePage = ({
       justifyContent: 'center',
       fontFamily: TABLE_THEME.fontSans,
       fontWeight: 800,
-      fontSize: 18,
+      fontSize: 16,
     };
   }, [you, winnersById, infoAvatarSize]);
   const youAvatarSuit = useMemo(() => avatarSuitForId(you?.id), [you?.id]);
@@ -3513,7 +3513,7 @@ export const PokerGamePage = ({
                   justifyContent: 'center',
                   fontFamily: TABLE_THEME.fontSans,
                   fontWeight: 800,
-                  fontSize: 18,
+                  fontSize: 16,
                   color: avatarColor,
                 };
                 return (
@@ -3524,7 +3524,7 @@ export const PokerGamePage = ({
                       left: pos.left,
                       top: pos.top,
                       transform: `translate(-50%, -50%) translateY(${playerInfoOffsetY}px)`,
-                      width: 170,
+                      width: 150,
                       textAlign: 'center',
                     }}
                   >
@@ -3556,8 +3556,8 @@ export const PokerGamePage = ({
                           <div
                             style={{
                               position: 'relative',
-                              padding: '6px 10px 6px 60px',
-                              borderRadius: 10,
+                              padding: '5px 8px 5px 52px',
+                              borderRadius: 8,
                               background: infoDimmed ? 'rgba(3,8,11,0.58)' : 'rgba(3,8,11,0.82)',
                               border: isTurn
                                 ? `2px solid ${TABLE_THEME.teal}`
@@ -3581,7 +3581,7 @@ export const PokerGamePage = ({
                               style={{
                                 position: 'absolute',
                                 top: '50%',
-                                left: 12,
+                                left: 10,
                                 transform: 'translateY(-50%)',
                                 overflow: 'hidden',
                                 ...avatarStyle,
@@ -3593,17 +3593,17 @@ export const PokerGamePage = ({
                               style={{
                                 fontWeight: 700,
                                 fontFamily: TABLE_THEME.fontSans,
-                                fontSize: 12,
+                                fontSize: 11,
                               }}
                             >
                               {p.name}
                             </div>
                             {p.id !== playerId && (
-                              <div style={{ fontSize: 12, fontFamily: TABLE_THEME.fontSans }}>
+                              <div style={{ fontSize: 11, fontFamily: TABLE_THEME.fontSans }}>
                                 <span
-                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
                                 >
-                                  <StackChipsIcon size={14} />
+                                  <StackChipsIcon size={12} />
                                   {p.stack}
                                 </span>
                               </div>
@@ -3791,8 +3791,8 @@ export const PokerGamePage = ({
                       )}
                       <div
                         style={{
-                          padding: '6px 10px 6px 60px',
-                          borderRadius: 10,
+                          padding: '5px 8px 5px 52px',
+                          borderRadius: 8,
                           background: youInfoDimmed ? 'rgba(3,8,11,0.58)' : 'rgba(3,8,11,0.82)',
                           border: isMyTurn
                             ? `2px solid ${TABLE_THEME.teal}`
@@ -3818,7 +3818,7 @@ export const PokerGamePage = ({
                             style={{
                               position: 'absolute',
                               top: '50%',
-                              left: 12,
+                              left: 10,
                               transform: 'translateY(-50%)',
                               overflow: 'hidden',
                               color: youAvatarColor,
@@ -3832,17 +3832,17 @@ export const PokerGamePage = ({
                           style={{
                             fontWeight: 700,
                             fontFamily: TABLE_THEME.fontSans,
-                            fontSize: 12,
+                            fontSize: 11,
                           }}
                         >
                           {you.name}
                         </div>
                         <div
                           data-testid="hero-stack"
-                          style={{ fontSize: 12, fontFamily: TABLE_THEME.fontSans }}
+                          style={{ fontSize: 11, fontFamily: TABLE_THEME.fontSans }}
                         >
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            <StackChipsIcon size={14} />
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            <StackChipsIcon size={12} />
                             {you.stack}
                           </span>
                         </div>
