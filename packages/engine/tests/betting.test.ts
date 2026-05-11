@@ -61,6 +61,38 @@ describe('betting rules', () => {
     expect(hand.phase).toBe('betting');
   });
 
+  it('rejects raise actions when the player can only call all-in', () => {
+    const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
+    table.seatPlayer(0, { id: 'p0', name: 'UTG', stack: 5000 });
+    table.seatPlayer(1, { id: 'p1', name: 'SB', stack: 1200 });
+    table.seatPlayer(2, { id: 'p2', name: 'BB', stack: 5000 });
+    table.startHand(rng);
+    const hand = table.state.hand!;
+
+    table.applyAction('p0', { type: 'raise', amount: 2400 });
+    expect(hand.actionOnSeat).toBe(1);
+
+    const shortStack = hand.players.find((p) => p.id === 'p1')!;
+    expect(shortStack.stack).toBe(800);
+    expect(hand.currentBet).toBe(2400);
+    expect(hand.minRaise).toBe(1600);
+
+    expect(() => table.applyAction('p1', { type: 'raise', amount: 1200 })).toThrow(
+      'Raise must exceed current bet'
+    );
+    expect(() => table.applyAction('p1', { type: 'raise', amount: 4000 })).toThrow(
+      'Raise exceeds available stack'
+    );
+
+    table.applyAction('p1', { type: 'allIn' });
+
+    expect(shortStack.stack).toBe(0);
+    expect(shortStack.status).toBe('allIn');
+    expect(shortStack.betThisStreet).toBe(1200);
+    expect(hand.currentBet).toBe(2400);
+    expect(hand.log.some((entry) => entry.message === 'SB called all-in for 800')).toBe(true);
+  });
+
   it('does not mutate state when raise cap rejects a raise', () => {
     const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
     table.seatPlayer(0, { id: 'p0', name: 'UTG', stack: 10000 });

@@ -525,15 +525,21 @@ export class PokerTable {
       case 'bet': {
         if (hand.currentBet !== 0) throw new Error('Cannot bet, must raise');
         const amount = validActionAmount(action.amount);
+        if (amount > player.betThisStreet + player.stack) {
+          throw new Error('Bet exceeds available stack');
+        }
         if (amount < this.state.config.bigBlind) throw new Error('Bet below minimum');
         this.placeRaise(hand, player, amount, 'bet');
         break;
       }
       case 'raise': {
         const amount = validActionAmount(action.amount);
+        if (amount > player.betThisStreet + player.stack) {
+          throw new Error('Raise exceeds available stack');
+        }
         if (amount <= hand.currentBet) throw new Error('Raise must exceed current bet');
         const raiseBy = amount - hand.currentBet;
-        if (raiseBy < hand.minRaise && amount < player.betThisStreet + player.stack) {
+        if (raiseBy < hand.minRaise) {
           throw new Error('Raise below minimum');
         }
         this.placeRaise(hand, player, amount, 'raise');

@@ -11,6 +11,7 @@
     "dev:web": "./scripts/run-pnpm.sh -C apps/web dev --port 3001",
     "online": "./scripts/online.sh",
     "git": "./scripts/git.sh",
+    "ship": "./scripts/ship.sh",
     "stop": "true",
     "start": "true",
     "restart": "./scripts/restart.sh",

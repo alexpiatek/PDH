@@ -140,6 +140,12 @@ Push + deploy shortcut:
 pnpm git push:web
 ```
 
+Commit + push + full production deploy shortcut:
+
+```bash
+pnpm ship "Describe the change"
+```
+
 Remote git pull only:
 
 ```bash

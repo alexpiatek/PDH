@@ -624,6 +624,7 @@ export const PokerGamePage = ({
   const [showTopMenu, setShowTopMenu] = useState(false);
   const [showRaiseDrawer, setShowRaiseDrawer] = useState(false);
   const [confirmAllIn, setConfirmAllIn] = useState(false);
+  const [rebuyState, setRebuyState] = useState<'idle' | 'pending' | 'confirmed'>('idle');
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<TableChatMessage[]>([]);
   const [mutedChatPlayerIds, setMutedChatPlayerIds] = useState<string[]>([]);
@@ -632,7 +633,14 @@ export const PokerGamePage = ({
   const hasLoggedTableJoinedRef = useRef(false);
   const hasLoggedFirstActionRef = useRef(false);
   const autoJoinAttemptedRef = useRef(false);
+  const rebuyNextHandSentRef = useRef(false);
+  const rebuyStateRef = useRef<'idle' | 'pending' | 'confirmed'>('idle');
   const [hasReceivedState, setHasReceivedState] = useState(false);
+
+  const updateRebuyState = (next: 'idle' | 'pending' | 'confirmed') => {
+    rebuyStateRef.current = next;
+    setRebuyState(next);
+  };
 
   const requestFreshState = () => {
     const msg: ClientMessage = { type: 'requestState' };
@@ -804,6 +812,10 @@ export const PokerGamePage = ({
       }
       if (msg.type === 'error') {
         clearJoinTimeout();
+        if (rebuyStateRef.current !== 'idle') {
+          updateRebuyState('idle');
+          rebuyNextHandSentRef.current = false;
+        }
         if (
           msg.message.toLowerCase().includes('player not pending discard') ||
           msg.message.toLowerCase().includes('not in discard phase')
@@ -1001,6 +1013,10 @@ export const PokerGamePage = ({
               if (!disposed) {
                 if (msg.type === 'discard') {
                   recoverDiscardSubmission('Discard not received. Choose a card again.');
+                } else if (msg.type === 'rebuy') {
+                  updateRebuyState('idle');
+                  rebuyNextHandSentRef.current = false;
+                  setStatus(`Rebuy failed: ${errorMessage(error)}`);
                 } else {
                   setStatus(`Send failed: ${errorMessage(error)}`);
                 }
@@ -1382,6 +1398,45 @@ export const PokerGamePage = ({
   }, [hand?.phase, hand?.handId, localNeedsRebuy]);
 
   useEffect(() => {
+    if (rebuyState === 'idle') {
+      return;
+    }
+
+    const rebuyConfirmed = seated && !localNeedsRebuy && localSeatStack > 0;
+    if (!rebuyConfirmed) {
+      return;
+    }
+
+    if (rebuyState !== 'confirmed') {
+      updateRebuyState('confirmed');
+    }
+
+    if (rebuyNextHandSentRef.current) {
+      return;
+    }
+    if (hand && hand.phase !== 'showdown') {
+      return;
+    }
+
+    rebuyNextHandSentRef.current = true;
+    setStatus('Rebuy confirmed. Entering the next hand...');
+    send({ type: 'nextHand' });
+  }, [hand?.handId, hand?.phase, localNeedsRebuy, localSeatStack, rebuyState, seated]);
+
+  useEffect(() => {
+    if (rebuyState === 'idle') {
+      return;
+    }
+    if (localNeedsRebuy) {
+      return;
+    }
+    if (hand && hand.phase !== 'showdown') {
+      updateRebuyState('idle');
+      rebuyNextHandSentRef.current = false;
+    }
+  }, [hand?.handId, hand?.phase, localNeedsRebuy, rebuyState]);
+
+  useEffect(() => {
     if (!discardPending) {
       setDiscardFlashIndex(null);
       setDiscardSubmitted(false);
@@ -1585,11 +1640,17 @@ export const PokerGamePage = ({
   };
 
   const rebuy = () => {
+    if (rebuyState !== 'idle') {
+      return;
+    }
     logClientEvent('table_rebuy_click', {
       handId: hand?.handId ?? null,
       stack: localSeatStack,
       status: localSeatStatus,
     });
+    rebuyNextHandSentRef.current = false;
+    updateRebuyState('pending');
+    setStatus('Rebuy requested. Waiting for confirmation...');
     send({ type: 'rebuy', amount: 10000 });
   };
 
@@ -2041,6 +2102,18 @@ export const PokerGamePage = ({
     : null;
   const maxRaiseTo = you ? you.stack + you.betThisStreet : null;
   const normalizedBetAmount = Number.isFinite(betAmount) ? Math.max(0, Math.floor(betAmount)) : 0;
+  const isCallAllIn = Boolean(you && isMyTurn && toCall > 0 && you.stack <= toCall);
+  const allInTotal = maxRaiseTo;
+  const canShortOpenAllIn = Boolean(
+    isMyTurn &&
+      hand &&
+      hand.currentBet === 0 &&
+      you &&
+      you.stack > 0 &&
+      minRaiseTo !== null &&
+      maxRaiseTo !== null &&
+      maxRaiseTo < minRaiseTo
+  );
   const clampedRaiseTo =
     minRaiseTo !== null && maxRaiseTo !== null
       ? Math.min(maxRaiseTo, Math.max(minRaiseTo, normalizedBetAmount))
@@ -2054,21 +2127,29 @@ export const PokerGamePage = ({
     !raiseCapReached &&
     minRaiseTo !== null &&
     maxRaiseTo !== null &&
+    maxRaiseTo >= minRaiseTo &&
     clampedRaiseTo >= minRaiseTo &&
     clampedRaiseTo <= maxRaiseTo &&
     clampedRaiseTo > hand.currentBet
   );
   const canCheckOrCall = Boolean(isMyTurn);
   const canOpenRaiseDrawer = Boolean(
-    isMyTurn && minRaiseTo !== null && maxRaiseTo !== null && !raiseCapReached
+    isMyTurn &&
+      minRaiseTo !== null &&
+      maxRaiseTo !== null &&
+      maxRaiseTo >= minRaiseTo &&
+      !raiseCapReached
   );
   const raiseActionLabel = hand && hand.currentBet === 0 ? 'Bet' : 'Raise';
-  const checkOrCallLabel = toCall === 0 ? 'Check' : `Call ${toCall}`;
+  const checkOrCallLabel =
+    toCall === 0 ? 'Check' : isCallAllIn && you ? `All-in ${you.stack}` : `Call ${toCall}`;
   const raiseDisabledHint = (() => {
     if (!hand || hand.phase !== 'betting') return 'Betting controls unlock during betting rounds.';
     if (!isMyTurn) return 'Wait for your turn.';
+    if (isCallAllIn) return 'The bet covers your stack. Your only call is all-in.';
     if (raiseCapReached) return 'Raise cap reached on this street.';
     if (minRaiseTo === null || maxRaiseTo === null) return 'Raise amount unavailable.';
+    if (maxRaiseTo < minRaiseTo) return `Not enough chips to make the minimum ${raiseActionLabel.toLowerCase()}.`;
     if (clampedRaiseTo < minRaiseTo) return `Enter at least ${minRaiseTo}.`;
     if (clampedRaiseTo > maxRaiseTo) return `Max raise is ${maxRaiseTo} (all-in).`;
     return 'Raise available.';
@@ -2133,6 +2214,25 @@ export const PokerGamePage = ({
       : 'rgba(226,232,240,0.72)';
   const utilityEnabledCount =
     Number(soundEnabled) + Number(showActivityFeed) + Number(showTableChat);
+  const rebuyButtonDisabled = rebuyState !== 'idle';
+  const rebuyStatusCopy =
+    rebuyState === 'confirmed'
+      ? 'Rebuy confirmed'
+      : rebuyState === 'pending'
+        ? 'Confirming rebuy'
+        : 'You are out of chips';
+  const rebuyDetailCopy =
+    rebuyState === 'confirmed'
+      ? 'Your stack is restored. You will be seated when the next hand starts.'
+      : rebuyState === 'pending'
+        ? 'Waiting for the table to confirm your new stack.'
+        : `${localPlayerName} can rebuy before the next hand.`;
+  const rebuyButtonCopy =
+    rebuyState === 'confirmed'
+      ? 'Rebuy confirmed'
+      : rebuyState === 'pending'
+        ? 'Rebuy requested'
+        : 'Rebuy 10,000';
   const rebuyTray = localNeedsRebuy ? (
     <div
       style={{
@@ -2157,7 +2257,7 @@ export const PokerGamePage = ({
             color: '#fee2e2',
           }}
         >
-          You are out of chips
+          {rebuyStatusCopy}
         </div>
         <div
           style={{
@@ -2169,7 +2269,7 @@ export const PokerGamePage = ({
             whiteSpace: 'nowrap',
           }}
         >
-          {localPlayerName} can rebuy before the next hand.
+          {rebuyDetailCopy}
         </div>
       </div>
       <div
@@ -2181,20 +2281,23 @@ export const PokerGamePage = ({
       >
         <button
           type="button"
+          disabled={rebuyButtonDisabled}
           onClick={rebuy}
-          style={turnActionStyle(true, {
+          aria-live="polite"
+          style={turnActionStyle(!rebuyButtonDisabled, {
             border: 'rgba(94,234,212,0.78)',
             background: 'rgba(20,184,166,0.28)',
             color: '#ccfbf1',
             glow: 'rgba(20,184,166,0.3)',
           })}
         >
-          Rebuy 10,000
+          {rebuyButtonCopy}
         </button>
         <button
           type="button"
+          disabled={rebuyButtonDisabled}
           onClick={sitOut}
-          style={turnActionStyle(true, {
+          style={turnActionStyle(!rebuyButtonDisabled, {
             border: 'rgba(148,163,184,0.65)',
             background: 'rgba(255,255,255,0.045)',
             color: '#e2e8f0',
@@ -2399,7 +2502,7 @@ export const PokerGamePage = ({
         }
         if (canCall) {
           event.preventDefault();
-          act('call');
+          act(isCallAllIn ? 'allIn' : 'call');
           return;
         }
       }
@@ -2414,7 +2517,7 @@ export const PokerGamePage = ({
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [act, canCall, canCheck, canFold, canOpenRaiseDrawer, seated]);
+  }, [act, canCall, canCheck, canFold, canOpenRaiseDrawer, isCallAllIn, seated]);
 
   useEffect(() => {
     if (maxRaiseTo === null || clampedRaiseTo < maxRaiseTo) {
@@ -2439,7 +2542,7 @@ export const PokerGamePage = ({
       setConfirmAllIn(true);
       return;
     }
-    act(hand.currentBet === 0 ? 'bet' : 'raise', clampedRaiseTo);
+    act(isAllInRaise ? 'allIn' : hand.currentBet === 0 ? 'bet' : 'raise', clampedRaiseTo);
     setConfirmAllIn(false);
     setShowRaiseDrawer(false);
   };
@@ -3476,8 +3579,9 @@ export const PokerGamePage = ({
                             <div
                               style={{
                                 position: 'absolute',
-                                top: 'calc(6px - 0.15cm)',
-                                left: 'calc(8px - 0.2cm)',
+                                top: '50%',
+                                left: 12,
+                                transform: 'translateY(-50%)',
                                 overflow: 'hidden',
                                 ...avatarStyle,
                               }}
@@ -3712,8 +3816,9 @@ export const PokerGamePage = ({
                           <div
                             style={{
                               position: 'absolute',
-                              top: 'calc(6px - 0.15cm)',
-                              left: 'calc(8px - 0.2cm)',
+                              top: '50%',
+                              left: 12,
+                              transform: 'translateY(-50%)',
                               overflow: 'hidden',
                               color: youAvatarColor,
                               ...youAvatarStyle,
@@ -4018,14 +4123,24 @@ export const PokerGamePage = ({
                               act('check');
                               return;
                             }
-                            act('call');
+                            act(isCallAllIn ? 'allIn' : 'call');
                           }}
-                          style={turnActionStyle(canCheckOrCall, {
-                            border: 'rgba(94,234,212,0.78)',
-                            background: 'rgba(20,184,166,0.28)',
-                            color: '#e0f2fe',
-                            glow: 'rgba(20,184,166,0.3)',
-                          })}
+                          style={turnActionStyle(
+                            canCheckOrCall,
+                            isCallAllIn
+                              ? {
+                                  border: 'rgba(248,113,113,0.9)',
+                                  background: 'rgba(127,29,29,0.58)',
+                                  color: '#fee2e2',
+                                  glow: 'rgba(248,113,113,0.35)',
+                                }
+                              : {
+                                  border: 'rgba(94,234,212,0.78)',
+                                  background: 'rgba(20,184,166,0.28)',
+                                  color: '#e0f2fe',
+                                  glow: 'rgba(20,184,166,0.3)',
+                                }
+                          )}
                         >
                           {checkOrCallLabel}
                         </button>
@@ -4049,6 +4164,21 @@ export const PokerGamePage = ({
                         >
                           {showRaiseDrawer ? `Close ${raiseActionLabel}` : raiseActionLabel}
                         </button>
+                        {canShortOpenAllIn && allInTotal !== null ? (
+                          <button
+                            data-testid="action-allin"
+                            type="button"
+                            onClick={() => act('allIn', allInTotal)}
+                            style={turnActionStyle(true, {
+                              border: 'rgba(248,113,113,0.9)',
+                              background: 'rgba(127,29,29,0.58)',
+                              color: '#fee2e2',
+                              glow: 'rgba(248,113,113,0.35)',
+                            })}
+                          >
+                            All-in {you?.stack ?? allInTotal}
+                          </button>
+                        ) : null}
                       </div>
                       {showRaiseDrawer ? (
                         <div
@@ -4186,13 +4316,15 @@ export const PokerGamePage = ({
                           style={{ display: 'none' }}
                         />
                       ) : null}
-                      <button
-                        data-testid="action-allin"
-                        type="button"
-                        disabled
-                        aria-hidden="true"
-                        style={{ display: 'none' }}
-                      />
+                      {!canShortOpenAllIn ? (
+                        <button
+                          data-testid="action-allin"
+                          type="button"
+                          disabled
+                          aria-hidden="true"
+                          style={{ display: 'none' }}
+                        />
+                      ) : null}
                     </>
                   ) : (
                     hiddenBettingActionButtons
