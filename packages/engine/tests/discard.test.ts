@@ -8,6 +8,7 @@ describe('discard phase timeout', () => {
     const table = new PokerTable('t');
 
     expect(table.state.config.discardTimeoutMs).toBe(30_000);
+    expect(table.state.config.firstHandStartCountdownMs).toBe(30_000);
   });
 
   it('auto-discards leftmost card on timeout', () => {
@@ -99,22 +100,21 @@ describe('first hand start gate', () => {
       minPlayers: 2,
       readyPlayerIds: [],
     });
+    expect(table.state.startGate!.startsAt - table.state.startGate!.openedAt).toBe(30_000);
   });
 
-  it('starts early when all three seated players are ready', () => {
+  it('starts early when all seated players are ready', () => {
     const table = new PokerTable('t');
     table.seatPlayer(0, { id: 'p1', name: 'Alice', stack: 1000 });
     table.seatPlayer(1, { id: 'p2', name: 'Bob', stack: 1000 });
-    table.seatPlayer(2, { id: 'p3', name: 'Charlie', stack: 1000 });
     table.beginNextHandIfReady();
 
     table.setReadyForHand('p1', true);
     table.setReadyForHand('p2', true);
-    table.setReadyForHand('p3', true);
 
     expect(table.advanceStartGate()).toBe(true);
     expect(table.state.startGate).toBeNull();
-    expect(table.state.hand?.players.map((player) => player.id)).toEqual(['p1', 'p2', 'p3']);
+    expect(table.state.hand?.players.map((player) => player.id)).toEqual(['p1', 'p2']);
   });
 
   it('starts when the countdown expires without requiring ready clicks', () => {

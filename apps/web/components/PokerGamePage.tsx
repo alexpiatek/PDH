@@ -1275,11 +1275,7 @@ export const PokerGamePage = ({
       seatedPlayers.length >= startGate.minPlayers &&
       seatedPlayers.every((seat: any) => startGateReadyIds.has(seat.id))
   );
-  const startGateCanEarlyStart = Boolean(
-    startGateAllReady &&
-      (seatedPlayers.length >= 3 ||
-        (startGate?.earlyStartAt !== undefined && clockNowMs >= startGate.earlyStartAt))
-  );
+  const startGateCanEarlyStart = Boolean(startGateAllReady);
   const localReadyForStart = Boolean(playerId && startGateReadyIds.has(playerId));
   const isMobile = viewportWidth <= 900;
   const isPhone = viewportWidth <= 640;
@@ -2447,7 +2443,7 @@ export const PokerGamePage = ({
           {startGateCanEarlyStart
             ? 'Starting now.'
             : startGateAllReady
-              ? 'Everyone is ready. Starting when the quick-entry window closes.'
+              ? 'Everyone is ready. Starting now.'
               : 'The hand starts when the timer ends, or earlier when everyone is ready.'}
         </div>
         <button

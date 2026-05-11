@@ -251,7 +251,7 @@ describe('pdhMatchHandler', () => {
     expect(state.table.seats.filter(Boolean).map((seat: any) => seat.id)).toEqual(['u1', 'u2']);
   });
 
-  it('stages the first hand and starts early once three seated players are ready', () => {
+  it('stages the first hand and starts early once all seated players are ready', () => {
     const nk = makeNakamaMock();
     const broadcastMessage = vi.fn();
     const dispatcher = { broadcastMessage };
@@ -260,40 +260,39 @@ describe('pdhMatchHandler', () => {
       buyIn: 5000,
       maxPlayers: 6,
     });
-    const state = init.state as any;
+    let state = init.state as any;
     const presences = [
       { userId: 'u1', sessionId: 's1' },
       { userId: 'u2', sessionId: 's2' },
-      { userId: 'u3', sessionId: 's3' },
     ];
 
     pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 1, state, presences);
     for (const presence of presences) {
-      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 2, state, [
+      state = pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 2, state, [
         {
           opCode: 1,
           sender: presence,
           data: encode({ type: 'join', name: presence.userId, buyIn: 5000 }),
         },
-      ]);
+      ]).state as any;
       expect(state.table.hand).toBeNull();
     }
 
     expect(state.table.startGate).toBeTruthy();
 
     for (const presence of presences) {
-      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+      state = pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
         {
           opCode: 1,
           sender: presence,
           data: encode({ type: 'readyForHand', ready: true }),
         },
-      ]);
+      ]).state as any;
     }
 
     expect(state.table.startGate).toBeNull();
     expect(state.table.hand).toBeTruthy();
-    expect(state.table.hand.players.map((player: any) => player.id)).toEqual(['u1', 'u2', 'u3']);
+    expect(state.table.hand.players.map((player: any) => player.id)).toEqual(['u1', 'u2']);
   });
 
   it('starts the first hand when the start gate countdown expires', () => {

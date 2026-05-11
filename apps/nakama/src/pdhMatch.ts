@@ -813,6 +813,7 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
         case 'readyForHand': {
           ensurePlayerSeated(table, presence.userId);
           table.setReadyForHand(presence.userId, data.ready);
+          table.advanceStartGate();
           shouldBroadcast = true;
           break;
         }

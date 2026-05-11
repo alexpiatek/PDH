@@ -23,8 +23,8 @@ const DEFAULT_CONFIG: TableConfig = {
   bigBlind: 800,
   actionTimeoutMs: 30_000,
   discardTimeoutMs: 30_000,
-  firstHandStartCountdownMs: 12_000,
-  firstHandEarlyStartMs: 5_000,
+  firstHandStartCountdownMs: 30_000,
+  firstHandEarlyStartMs: 0,
 };
 
 const FIRST_HAND_MIN_PLAYERS = 2;
@@ -298,7 +298,7 @@ export class PokerTable {
 
     const readyIds = new Set(gate.readyPlayerIds);
     const allReady = readySeats.every((seat) => readyIds.has(seat.id));
-    const canStartEarly = allReady && (readySeats.length >= 3 || now >= gate.earlyStartAt);
+    const canStartEarly = allReady;
     const countdownElapsed = now >= gate.startsAt;
 
     if (canStartEarly || countdownElapsed) {

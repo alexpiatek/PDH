@@ -73,8 +73,8 @@ describe('protocol schemas', () => {
         buttonSeat: -1,
         startGate: {
           openedAt: 100,
-          startsAt: 12_100,
-          earlyStartAt: 5_100,
+          startsAt: 30_100,
+          earlyStartAt: 100,
           minPlayers: 2,
           readyPlayerIds: ['p1'],
         },
