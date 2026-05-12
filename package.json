@@ -22,7 +22,7 @@
     "nakama:up:oracle": "pnpm -C apps/nakama build && docker compose -f apps/nakama/docker-compose.oracle.yml up",
     "build": "./scripts/run-pnpm.sh -C packages/engine build && ./scripts/run-pnpm.sh -C apps/nakama build && ./scripts/run-pnpm.sh -C apps/web build",
     "typecheck": "node scripts/typecheck.mjs",
-    "lint": "./scripts/lint.sh",
+    "lint": "node scripts/lint.mjs",
     "format": "./scripts/format.sh",
     "format:check": "./scripts/format-check.sh",
     "changelog:check": "./scripts/changelog-check.sh",

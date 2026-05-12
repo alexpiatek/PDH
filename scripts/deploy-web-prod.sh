@@ -194,7 +194,7 @@ main() {
   fi
 
   local local_chunk
-  local_chunk="$(ls -1 "$ROOT_DIR/apps/web/.next/static/chunks/pages"/play-*.js 2>/dev/null | head -n1 || true)"
+  local_chunk="$(find "$ROOT_DIR/apps/web/.next/static/chunks/pages" -maxdepth 1 -type f -name 'play-*.js' -print -quit 2>/dev/null || true)"
   [[ -n "$local_chunk" ]] || die "Could not find local built play chunk."
   grep -q "$backend_key" "$local_chunk" || die "Local build chunk does not contain expected key prefix ${backend_key:0:8}..."
   if grep -R -q "Startup sanity check failed" "$ROOT_DIR/apps/web/.next/static/chunks" 2>/dev/null; then

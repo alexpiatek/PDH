@@ -18,7 +18,7 @@ echo "Collecting PNGs..."
 count=0
 find "$TMP_DIR/unzip" -type f -iname "*.png" | while read -r file; do
   name="$(basename "$file")"
-  name_lc="$(echo "$name" | tr 'A-Z' 'a-z')"
+  name_lc="$(echo "$name" | tr '[:upper:]' '[:lower:]')"
   if [[ "$name_lc" =~ (ace|king|queen|jack|ten|10|9|8|7|6|5|4|3|2)[^a-z0-9]*(spades|hearts|diamonds|clubs) ]]; then
     rank="${BASH_REMATCH[1]}"
     suit="${BASH_REMATCH[2]}"

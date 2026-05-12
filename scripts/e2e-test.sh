@@ -66,6 +66,7 @@ export NEXT_PUBLIC_NAKAMA_TABLE_ID="$E2E_NAKAMA_TABLE_ID"
 echo "E2E ports: web=${E2E_WEB_PORT} nakama-http=${HTTP_PORT} nakama-console=${CONSOLE_PORT} postgres=${POSTGRES_PORT}"
 
 EXISTING_WEB_PROCESSES="$(
+  # shellcheck disable=SC2009
   ps -ef | grep -F "$ROOT_DIR/apps/web" | grep -F 'next/dist/bin/next' | grep -v grep || true
 )"
 if [[ -n "$EXISTING_WEB_PROCESSES" ]]; then
