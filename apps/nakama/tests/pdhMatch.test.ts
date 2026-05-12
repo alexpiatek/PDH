@@ -436,6 +436,68 @@ describe('pdhMatchHandler', () => {
     expect(state.table.seats.filter(Boolean).map((seat: any) => seat.id)).toEqual(['u1', 'u2']);
   });
 
+  it('releases expired disconnected seats outside a hand so new players can join', () => {
+    const nk = makeNakamaMock();
+    const broadcastMessage = vi.fn();
+    const dispatcher = { broadcastMessage };
+    const init = pdhMatchHandler.matchInit({}, logger, nk, {
+      tableId: 'heads-up',
+      buyIn: 5000,
+      maxPlayers: 2,
+    });
+    const state = init.state as any;
+    const firstPlayers = [
+      { userId: 'u1', sessionId: 's1' },
+      { userId: 'u2', sessionId: 's2' },
+    ];
+
+    pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 1, state, firstPlayers);
+    for (const presence of firstPlayers) {
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 2, state, [
+        {
+          opCode: 1,
+          sender: presence,
+          data: encode({ type: 'join', name: presence.userId, buyIn: 5000 }),
+        },
+      ]);
+    }
+
+    expect(state.table.hand).toBeNull();
+    expect(state.table.seats.filter(Boolean)).toHaveLength(2);
+
+    const leaveNow = vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    try {
+      pdhMatchHandler.matchLeave({}, logger, nk, dispatcher, 3, state, firstPlayers);
+    } finally {
+      leaveNow.mockRestore();
+    }
+
+    const expireNow = vi.spyOn(Date, 'now').mockReturnValue(25_001);
+    try {
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 4, state, []);
+    } finally {
+      expireNow.mockRestore();
+    }
+
+    expect(state.table.seats.filter(Boolean)).toHaveLength(0);
+    expect(state.playerConnections.u1).toBeUndefined();
+    expect(state.playerConnections.u2).toBeUndefined();
+
+    const nextPlayer = { userId: 'u3', sessionId: 's3' };
+    pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 5, state, [nextPlayer]);
+    broadcastMessage.mockClear();
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 6, state, [
+      {
+        opCode: 1,
+        sender: nextPlayer,
+        data: encode({ type: 'join', name: 'u3', buyIn: 5000 }),
+      },
+    ]);
+
+    expect(errorMessagesFrom(broadcastMessage)).not.toContain('No open seats');
+    expect(state.table.seats.filter(Boolean).map((seat: any) => seat.id)).toEqual(['u3']);
+  });
+
   it('stages the first hand and starts early once all seated players are ready', () => {
     const nk = makeNakamaMock();
     const broadcastMessage = vi.fn();
