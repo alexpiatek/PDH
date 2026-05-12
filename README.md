@@ -1,185 +1,126 @@
-# PDH - Discard Hold'em
+# Bondi Poker
 
-Real-time multiplayer poker with a twist:
-you start with 5 hole cards, then discard one after flop, turn, and river, ending on 2-hole-card showdown.
+Bondi Poker is real-time multiplayer Discard Hold'em.
 
-## Play Online
+Players start with 5 hole cards, bet through a familiar no-limit Hold'em flow, discard 1 hidden card after the flop, turn, and river, then reach showdown with 2 hole cards.
+
+## Live Game
 
 - Landing: `https://bondipoker.online/`
-- Web: `https://bondipoker.online/play`
+- Play lobby: `https://bondipoker.online/play`
 - Play subdomain: `https://play.bondipoker.online`
 - API health: `https://api.bondipoker.online/healthcheck`
 
-## Why It Is Different
+Production tracks `main`.
 
-- Classic Hold'em betting structure.
-- Mandatory hidden discards after each post-flop street.
-- Information pressure: everyone shrinks to 2-hole-card showdown.
-- Same game every run: deterministic engine + authoritative server.
+## Game Flow
 
-## Rules (MVP)
+1. 2-9 players sit at a table.
+2. Each player is dealt 5 private hole cards.
+3. Pre-flop betting runs like no-limit Hold'em.
+4. The flop is dealt, betting completes, then each remaining player discards 1 hidden card.
+5. The turn is dealt, betting completes, then each remaining player discards 1 hidden card.
+6. The river is dealt, betting completes, then each remaining player discards 1 hidden card.
+7. Showdown uses the best 5-card hand from each player's final 2 hole cards plus the 5 board cards.
+8. Discards stay face-down and are never revealed.
 
-- Standard 52-card deck, 2-9 players.
-- Deal 5 hole cards to each player.
-- No discards pre-flop.
-- Flop -> betting -> each remaining player discards exactly 1 card.
-- Turn -> betting -> each remaining player discards exactly 1 card.
-- River -> betting -> each remaining player discards exactly 1 card.
-- Players reach showdown with 2 hole cards.
-- Best 5-card hand from 2 hole + 5 board wins.
-- Discards are face-down and never revealed.
-- No-limit betting, standard min-raise behavior.
+## Current Player Experience
 
-## Tech Stack
+- Quick Play finds or creates the best available table.
+- Players can join friends with a 6-character table code.
+- Recent tables are saved locally in the browser.
+- The game table is compact and playable on mobile and desktop.
+- Player actions come from server-sent `legalActions` in Nakama mode.
+- Hidden discard prompts, showdown results, and next-hand readiness are handled in the table UI.
+- Busted players have explicit `Rebuy` and `Sit Out` actions instead of silent stack resets.
 
-- TypeScript monorepo with `pnpm`.
-- `packages/engine`: pure deterministic poker engine.
-- `apps/nakama`: authoritative runtime module for Nakama.
-- `apps/web`: Next.js client.
-- `apps/server`: legacy WebSocket backend (optional fallback).
+## Architecture
 
-## QUICKSTART (Local Dev, 30 Minutes)
+- `apps/web`: Next.js landing page, play lobby, and game table.
+- `apps/nakama`: authoritative Nakama runtime module for live multiplayer.
+- `packages/engine`: deterministic poker engine and rules.
+- `packages/protocol`: shared client/server message contracts.
+- `apps/server`: legacy WebSocket backend kept as an optional local fallback.
+- `tools/smoke`: multiplayer smoke-test tooling.
 
-Single source of truth: `docs/LOCAL_DEV.md`.
+The intended production path is Next.js + Nakama + Postgres behind Caddy. The legacy WebSocket server is not the production multiplayer authority.
 
-Run from repo root:
+## Local Development
+
+Prerequisites:
+
+- Node.js 20+
+- pnpm 9+
+- Docker Desktop or Docker Engine
+
+First run:
 
 ```bash
 pnpm install
-cp -n .env.example .env
-cp -n apps/web/.env.local.example apps/web/.env.local
+```
+
+On a fresh machine, copy `.env.example` to `.env` and `apps/web/.env.local.example` to `apps/web/.env.local`.
+
+Start the normal local stack:
+
+```bash
 pnpm run dev
 ```
 
 Open `http://localhost:3001`.
 
-Notes:
-
-- Local stack is Next.js + Nakama + Postgres.
-- Caddy is production-only and is not needed for local development.
-
-## Local URLs
+Useful local URLs:
 
 - Web: `http://localhost:3001`
-- Nakama API: `http://localhost:7350`
-- Nakama console: `http://localhost:7351`
-- Legacy WS (optional): `ws://localhost:3002`
+- Nakama API: `http://127.0.0.1:7350`
+- Nakama console: `http://127.0.0.1:7351`
+- Legacy WebSocket fallback: `ws://localhost:3002`
 
-## Production Deployment
-
-Use these guides:
-
-- `CONTRIBUTING.md` (branch/PR conventions, golden path, review checklist)
-- `docs/DEFINITION_OF_DONE.md` (feature completion checklist)
-- `CHANGELOG.md` (Keep a Changelog release notes)
-- `docs/LOCAL_DEV.md` (local development commands + troubleshooting)
-- `docs/INTEGRATION_TESTS.md` (local integration test harness and troubleshooting)
-- `docs/E2E_TESTS.md` (Playwright end-to-end test harness and troubleshooting)
-- `docs/ENGINE_CONTRACT.md` (PDH engine state machine + validation contract)
-- `docs/PROTOCOL_CONTRACT.md` (versioned client/server payload contract)
-- `docs/DATABASE_MIGRATIONS.md` (SQL migration + deterministic seed strategy)
-- `docs/ONBOARDING_30_MIN.md` (fast start for new contributors)
-- `docs/PROD_RUNBOOK.md` (exact end-to-end production flow used for `bondipoker.online`)
-- `docs/QUICK_FIX.md` (fastest safe recovery commands for production connection failures)
-- `docs/TROUBLESHOOTING.md` (production issue diagnosis and fix commands)
-- `docs/NON_ROOT_MIGRATION.md` (move production off root user)
-- `docs/MONITORING_ALERTING.md` (uptime, host metrics, alerting baseline)
-- `docs/BACKUP_RESTORE.md` (daily backup + restore drill)
-- `docs/DEPLOY_OCI.md` (OCI-specific deployment checklist)
-- `deploy/README.md` (expected ports/routes/proxy rules for Caddy + realtime)
-- `deploy/PROD_CHECKLIST.md` (quick production readiness checklist)
-- `deploy/Caddyfile.example` (safe baseline Caddy config)
-
-Early access signup alerts are configured in `apps/web/.env.local`. Discord alerts use
-`EARLY_ACCESS_DISCORD_WEBHOOK_URL`; optional SMTP email alerts use `EMAIL_ALERTS_ENABLED`
-and the `SMTP_*` / `ALERT_EMAIL_*` server-side variables documented in
-`apps/web/.env.local.example`. For Gmail SMTP, enable Google 2-Step Verification, create
-a Google App Password, and use that app password as `SMTP_PASS`. Rotate the Discord
-webhook URL if the previous URL was exposed.
-
-The public landing-page Discord CTA uses `NEXT_PUBLIC_DISCORD_INVITE_URL`. Set it to a
-public server invite such as `https://discord.gg/YOUR_INVITE_CODE`; never use a private
-Discord webhook URL as the invite link.
-
-## Test + Smoke
+## Common Commands
 
 ```bash
-make test
-make smoke
-pnpm run test:integration
-```
-
-## Standard Commands
-
-```bash
-pnpm run dev        # default Nakama + Postgres + Next.js stack
-pnpm run up         # start Postgres + Nakama (Docker)
-pnpm run dev:web    # start Next.js client only
-pnpm run dev:full   # start backend then Next.js client
-pnpm run dev:legacy # optional legacy websocket stack
+pnpm run dev        # Nakama + Postgres + Next.js
+pnpm run up         # Start Postgres + Nakama
+pnpm run down       # Stop local backend containers
+pnpm run logs       # Tail local backend logs
+pnpm run dev:web    # Start only the Next.js client
+pnpm run dev:legacy # Optional legacy websocket stack
 pnpm run test
-pnpm run lint
 pnpm run typecheck
+pnpm run lint
 pnpm run build
+pnpm run test:e2e
 ```
 
-Remote web deploy after push:
+## Shipping
 
-```bash
-DEPLOY_REMOTE=user@your-server DEPLOY_DIR=/root/PDH pnpm run deploy:remote:web
-```
-
-Shortcut alias:
-
-```bash
-pnpm restart web serv
-```
-
-Push + deploy shortcut:
-
-```bash
-pnpm git push:web
-```
-
-Ship shortcut:
+Use `main` as the clean production branch.
 
 ```bash
 pnpm ship "Describe the change"
 ```
 
-`pnpm ship` now treats shipping as:
+`pnpm ship` stages and commits current work when needed, pushes the current branch, merges it into `main` when shipping from a feature branch, pushes `main`, and restarts the production services.
 
-- commit current work if needed
-- push the current branch
-- merge that branch into `main`
-- push `main`
-- deploy the production server from `main`
+For manual production operations, use `docs/PROD_RUNBOOK.md`.
 
-Remote git pull only:
+## Verification
+
+Local quality checks:
 
 ```bash
-ONLINE_REMOTE=user@your-server ONLINE_DIR=/root/PDH ONLINE_BRANCH=main pnpm online pull
-```
-
-You can set those values once in `.env`, then just run:
-
-```bash
-pnpm online pull
-```
-
-## Quality Commands
-
-```bash
-pnpm run lint
-pnpm run format
-pnpm run format:check
 pnpm run typecheck
-pnpm run test:e2e
-pnpm run changelog:check
-pnpm run db:migrate
-pnpm run db:seed
-pnpm run db:flag -- list
-pnpm run db:flag -- set ui.table_v2 true
+pnpm run test
+pnpm run build
+```
+
+Live endpoint checks:
+
+```bash
+curl.exe -i https://bondipoker.online/
+curl.exe -i https://bondipoker.online/play
+curl.exe -i https://play.bondipoker.online/
+curl.exe -i https://api.bondipoker.online/healthcheck
 ```
 
 Remote smoke test:
@@ -188,35 +129,25 @@ Remote smoke test:
 SMOKE_SERVER_KEY='<nakama_socket_server_key>' ./scripts/remote-smoke.sh --url https://api.bondipoker.online --ssl true --clients 4
 ```
 
-## Audit Log (Admin Only)
+## Key Docs
 
-Server keeps an in-memory audit trail for the last 5 hands (discards, showdown cards, pot, stacks, winners).
-
-Enable when running legacy server:
-
-```bash
-AUDIT_LOG_TOKEN=supersecret pnpm dev
-```
-
-Fetch (local):
-
-```bash
-AUDIT_LOG_TOKEN=supersecret scripts/fetch-audit-log.sh
-```
-
-Fetch (remote via SSH tunnel):
-
-```bash
-scripts/ssh-audit-tunnel.sh user@your-server 3002 3002
-AUDIT_LOG_TOKEN=supersecret scripts/fetch-audit-log.sh
-```
+- `docs/LOCAL_DEV.md`: local stack setup and troubleshooting.
+- `docs/PROD_RUNBOOK.md`: exact production deployment flow.
+- `docs/ENGINE_CONTRACT.md`: poker engine state machine and validation contract.
+- `docs/PROTOCOL_CONTRACT.md`: client/server payload contract.
+- `docs/DATABASE_MIGRATIONS.md`: migration and seed strategy.
+- `docs/INTEGRATION_TESTS.md`: integration test harness.
+- `docs/E2E_TESTS.md`: Playwright coverage.
+- `docs/TROUBLESHOOTING.md`: production diagnosis and recovery.
+- `docs/BACKUP_RESTORE.md`: backup and restore checklist.
 
 ## Repo Layout
 
 ```text
-apps/web         Next.js game client
-apps/nakama      Nakama runtime module
-apps/server      Legacy WebSocket server
-packages/engine  Core deterministic poker engine
-tools/smoke      Multiplayer smoke tester
+apps/web          Next.js client, lobby, and table UI
+apps/nakama       Authoritative Nakama runtime module
+apps/server       Legacy WebSocket backend
+packages/engine   Deterministic poker rules engine
+packages/protocol Shared protocol types and guards
+tools/smoke       Multiplayer smoke tester
 ```
