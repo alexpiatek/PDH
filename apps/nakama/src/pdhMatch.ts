@@ -673,6 +673,57 @@ function isPlayerSeated(table: PokerTable, playerId: string) {
   return table.state.seats.some((seat) => seat?.id === playerId);
 }
 
+function activeHandPlayerIds(table: PokerTable) {
+  return new Set(table.state.hand?.players.map((player) => player.id) ?? []);
+}
+
+function releaseExpiredDisconnectedSeats(
+  logger: nkruntime.Logger,
+  state: MatchState,
+  table: PokerTable,
+  tick: number
+) {
+  const inHandPlayerIds = activeHandPlayerIds(table);
+  const releasedSeats: Array<{ playerId: string; seat: number }> = [];
+
+  const mutation = commitTableMutation(state, table, () => {
+    for (const seat of table.state.seats) {
+      if (!seat) continue;
+      if (inHandPlayerIds.has(seat.id)) continue;
+      if (hasActivePresenceForUser(state, seat.id)) continue;
+
+      const connection = state.playerConnections[seat.id];
+      if (connection?.status !== 'disconnected' || connection.graceDeadlineMs !== null) {
+        continue;
+      }
+
+      releasedSeats.push({ playerId: seat.id, seat: seat.seat });
+      table.removePlayer(seat.seat);
+    }
+  });
+
+  if (!releasedSeats.length) {
+    return false;
+  }
+
+  for (const released of releasedSeats) {
+    delete state.playerConnections[released.playerId];
+    delete state.lastSeqByPlayer[released.playerId];
+    delete state.lastReactionAtByPlayer[released.playerId];
+    delete state.lastChatAtByPlayer[released.playerId];
+    logStructured(logger, 'info', 'match.seat.released_after_disconnect', {
+      matchId: state.matchId,
+      tableId: table.state.id,
+      tick,
+      userId: released.playerId,
+      seat: released.seat,
+      stateVersion: state.stateVersion,
+    });
+  }
+
+  return mutation.changed;
+}
+
 function ensureBettingTurn(table: PokerTable, playerId: string) {
   ensurePlayerSeated(table, playerId);
   const hand = table.state.hand;
@@ -1144,6 +1195,8 @@ function applyExpiredTableTimers(
   }
 
   shouldBroadcast = applyExpiredReconnectGrace(logger, state, table, tick, now) || shouldBroadcast;
+  shouldBroadcast =
+    releaseExpiredDisconnectedSeats(logger, state, table, tick) || shouldBroadcast;
 
   const autoActionMutation = commitTableMutation(state, table, () => table.autoAction(now));
   if (autoActionMutation.result) {
