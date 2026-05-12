@@ -851,16 +851,16 @@ const ShowdownResultBanner = ({
       aria-live="assertive"
       data-testid="showdown-result-banner"
       style={{
-        width: isPhone ? 320 : 520,
+        width: isPhone ? 'min(348px, calc(100vw - 20px))' : 560,
         maxWidth: 'calc(100vw - 24px)',
-        borderRadius: 12,
+        borderRadius: isPhone ? 10 : 12,
         border: '1px solid rgba(251,191,36,0.56)',
         background:
           'linear-gradient(135deg, rgba(8,16,18,0.94), rgba(2,7,9,0.9)), radial-gradient(circle at 5% 0%, rgba(251,191,36,0.16), transparent 34%), radial-gradient(circle at 100% 100%, rgba(20,184,166,0.16), transparent 38%)',
         boxShadow:
           '0 18px 42px rgba(0,0,0,0.45), 0 0 0 1px rgba(94,234,212,0.12), inset 0 1px 0 rgba(255,255,255,0.08)',
         color: TABLE_THEME.text,
-        padding: isPhone ? '8px 10px' : '9px 12px',
+        padding: isPhone ? '9px 10px' : '10px 12px',
         fontFamily: TABLE_THEME.fontSans,
         animation: 'showdown-pop 220ms ease-out both',
         pointerEvents: 'auto',
@@ -869,9 +869,10 @@ const ShowdownResultBanner = ({
       <div
         style={{
           display: 'flex',
-          alignItems: 'center',
+          flexDirection: isPhone ? 'column' : 'row',
+          alignItems: isPhone ? 'stretch' : 'center',
           justifyContent: 'space-between',
-          gap: isPhone ? 8 : 12,
+          gap: isPhone ? 7 : 12,
           minWidth: 0,
         }}
       >
@@ -881,6 +882,7 @@ const ShowdownResultBanner = ({
             flex: '0 0 auto',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: isPhone ? 'center' : 'flex-start',
             gap: 5,
           }}
         >
@@ -909,45 +911,45 @@ const ShowdownResultBanner = ({
             </div>
           )}
         </div>
-        <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+        <div style={{ minWidth: 0, flex: '1 1 auto', textAlign: isPhone ? 'center' : 'left' }}>
           <div
+            data-testid="showdown-result-main-line"
             style={{
               fontFamily: TABLE_THEME.fontDisplay,
-              fontSize: isPhone ? 17 : 21,
+              fontSize: isPhone ? 16 : 21,
               fontWeight: 900,
-              lineHeight: 1.08,
+              lineHeight: isPhone ? 1.14 : 1.08,
               color: '#f8fafc',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              overflowWrap: 'anywhere',
+              whiteSpace: isPhone ? 'normal' : 'nowrap',
             }}
           >
             {mainLine}
           </div>
           <div
+            data-testid="showdown-result-hand-line"
             style={{
               marginTop: 3,
               color: '#dcfce7',
               fontSize: isPhone ? 12 : 14,
               fontWeight: 800,
-              lineHeight: 1.15,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              lineHeight: 1.18,
+              overflowWrap: 'anywhere',
+              whiteSpace: isPhone ? 'normal' : 'nowrap',
             }}
           >
             {subLine}
           </div>
           {potMeta ? (
             <div
+              data-testid="showdown-result-pot-meta"
               style={{
                 marginTop: 5,
                 color: TABLE_THEME.muted,
                 fontSize: isPhone ? 10 : 12,
                 fontWeight: 700,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                overflowWrap: 'anywhere',
+                whiteSpace: isPhone ? 'normal' : 'nowrap',
               }}
             >
               {potMeta}
@@ -1953,6 +1955,10 @@ export const PokerGamePage = ({
         window.clearTimeout(joinTimeoutRef.current);
         joinTimeoutRef.current = null;
       }
+      if (copyFeedbackTimerRef.current !== null) {
+        window.clearTimeout(copyFeedbackTimerRef.current);
+        copyFeedbackTimerRef.current = null;
+      }
       connectionRef.current?.close();
       connectionRef.current = null;
       legacySocketRef.current = null;
@@ -1967,7 +1973,12 @@ export const PokerGamePage = ({
 
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(STORAGE_KEYS.matchId);
+      const tableIdForIntent = typeof state?.id === 'string' ? state.id : resolvedForcedMatchId || null;
+      clearStoredNextHandIntent(window.localStorage, tableIdForIntent, playerId);
     }
+    updateQueuedNextHandIntent(null);
+    setQueuedIntentApplying(null);
+    setQueuedIntentError(null);
 
     if (onExitLobby) {
       onExitLobby();
@@ -2393,6 +2404,9 @@ export const PokerGamePage = ({
     }
     return null;
   }, [hand?.log, state?.log]);
+  const showLatestActionTicker = Boolean(
+    latestActionLine && !isRevealPhase && !isShowdown && !showHandHistory && !showRulesOverlay
+  );
   const dealAnimationKey = hand?.handId ?? 'no-hand';
   const [animateHoleDeal, setAnimateHoleDeal] = useState(false);
   const actionByPlayerId = useMemo(() => {
@@ -2810,29 +2824,25 @@ export const PokerGamePage = ({
     send({ type: 'action', action, amount });
   };
 
-  const rebuy = () => {
-    if (rebuyState !== 'idle') {
+  const chooseNextHandIntent = (intent: NextHandIntent) => {
+    if (queuedIntentApplying) {
       return;
     }
-    logClientEvent('table_rebuy_click', {
+    logClientEvent(intent === 'rebuy' ? 'table_rebuy_click' : 'table_sit_out_click', {
       handId: hand?.handId ?? null,
       stack: localSeatStack,
       status: localSeatStatus,
     });
     rebuyNextHandSentRef.current = false;
-    updateRebuyState('pending');
-    setStatus('Rebuy requested. Waiting for confirmation...');
-    send({ type: 'rebuy', amount: 10000 });
+    updateQueuedNextHandIntent(intent);
+    setQueuedIntentApplying(null);
+    setQueuedIntentError(null);
+    setStatus(intent === 'rebuy' ? 'Rebuy queued.' : 'Sit out queued.');
   };
 
-  const sitOut = () => {
-    logClientEvent('table_sit_out_click', {
-      handId: hand?.handId ?? null,
-      stack: localSeatStack,
-      status: localSeatStatus,
-    });
-    send({ type: 'sitOut' });
-  };
+  const rebuy = () => chooseNextHandIntent('rebuy');
+
+  const sitOut = () => chooseNextHandIntent('sitOut');
 
   const toggleReadyForHand = () => {
     logClientEvent('table_ready_for_hand_click', {
@@ -3208,6 +3218,18 @@ export const PokerGamePage = ({
   const playerInfoTextSize = isPortraitPhone ? 10 : isPhone ? 11 : 12;
   const playerInfoStatusTextSize = isPortraitPhone ? 8 : isPhone ? 9 : 10;
   const playerInfoOffsetY = isPortraitPhone ? 0 : -30 + 38;
+  const mobileSeatSafeHalfWidth = Math.ceil(seatNameplateWidth / 2 + 8);
+  const mobileSeatSafeHalfHeight = Math.ceil(playerPanelMinHeight / 2 + 8);
+  const safeSeatCoordinate = (
+    value: string | number,
+    axis: 'x' | 'y'
+  ): string | number => {
+    if (!isPhone || typeof value !== 'string') {
+      return value;
+    }
+    const inset = axis === 'x' ? mobileSeatSafeHalfWidth : mobileSeatSafeHalfHeight;
+    return `clamp(${inset}px, ${value}, calc(100% - ${inset}px))`;
+  };
   const seatHoleCardSize = isPortraitPhone ? 'small' : 'medium';
   const seatHoleCardWidth = isPortraitPhone ? 34 : 44;
   const seatHoleCardHeight = isPortraitPhone ? 48 : 62;
@@ -3336,6 +3358,8 @@ export const PokerGamePage = ({
   const selectedRaiseIsAllIn = Boolean(
     maxRaiseTo !== null && selectedRaiseTo >= maxRaiseTo && (allInPresetSelected || onlyAllInRaiseAmount)
   );
+  const rangeRaiseValue =
+    manualMaxRaiseTo !== null ? Math.min(selectedRaiseTo, manualMaxRaiseTo) : selectedRaiseTo;
   const raiseSubmitLabel = selectedRaiseIsAllIn
     ? `Confirm all-in ${selectedRaiseTo}`
     : raiseActionLabel === 'Bet'
@@ -3384,7 +3408,6 @@ export const PokerGamePage = ({
   const discardLimit = serverDiscardActions?.count ?? 1;
   const isDiscardIndexAllowed = (idx: number) =>
     !serverDiscardValidIndexes || serverDiscardValidIndexes.has(idx);
-  const selectedDiscardCount = selectedDiscardIndex === null ? 0 : 1;
   const selectedDiscardIsValid =
     selectedDiscardIndex !== null && isDiscardIndexAllowed(selectedDiscardIndex);
   const canConfirmDiscard = discardPending && selectedDiscardIsValid && !discardSubmitted;
@@ -3497,25 +3520,39 @@ export const PokerGamePage = ({
       : youSeatStatusColor;
   const utilityEnabledCount =
     Number(soundEnabled) + Number(showActivityFeed) + Number(showTableChat);
-  const rebuyButtonDisabled = rebuyState !== 'idle';
+  const rebuyButtonDisabled = Boolean(queuedIntentApplying);
   const rebuyStatusCopy =
     rebuyState === 'confirmed'
       ? 'Rebuy confirmed'
-      : rebuyState === 'pending'
-        ? 'Confirming rebuy'
-        : 'You are out of chips';
+      : queuedNextHandIntent === 'rebuy'
+        ? queuedIntentApplying === 'rebuy'
+          ? 'Applying queued rebuy'
+          : 'Rebuy queued'
+        : queuedNextHandIntent === 'sitOut'
+          ? queuedIntentApplying === 'sitOut'
+            ? 'Applying queued sit out'
+            : 'Sit out queued'
+          : "You're out of chips";
   const rebuyDetailCopy =
     rebuyState === 'confirmed'
       ? 'Your stack is restored. You will be seated when the next hand starts.'
-      : rebuyState === 'pending'
-        ? 'Waiting for the table to confirm your new stack.'
-        : `${localPlayerName} can rebuy before the next hand.`;
+      : queuedIntentError
+        ? `Could not apply choice: ${queuedIntentError}`
+        : queuedNextHandIntent
+          ? 'You can change this choice before the next hand.'
+          : 'Choose what happens next hand.';
   const rebuyButtonCopy =
-    rebuyState === 'confirmed'
-      ? 'Rebuy confirmed'
-      : rebuyState === 'pending'
-        ? 'Rebuy requested'
-        : 'Rebuy 10,000';
+    queuedNextHandIntent === 'rebuy'
+      ? queuedIntentApplying === 'rebuy'
+        ? 'Applying'
+        : 'Rebuy queued'
+      : 'Rebuy next hand';
+  const sitOutButtonCopy =
+    queuedNextHandIntent === 'sitOut'
+      ? queuedIntentApplying === 'sitOut'
+        ? 'Applying'
+        : 'Sit out queued'
+      : 'Sit out next hand';
   const rebuyTray = localNeedsRebuy ? (
     <div
       style={{
@@ -3563,11 +3600,12 @@ export const PokerGamePage = ({
         }}
       >
         <button
+          data-testid="rebuy-next-hand"
           type="button"
           disabled={rebuyButtonDisabled}
           onClick={rebuy}
           aria-live="polite"
-          style={turnActionStyle(!rebuyButtonDisabled, {
+          style={turnActionStyle(!rebuyButtonDisabled || queuedNextHandIntent === 'rebuy', {
             border: 'rgba(94,234,212,0.78)',
             background: 'rgba(20,184,166,0.28)',
             color: '#ccfbf1',
@@ -3577,17 +3615,18 @@ export const PokerGamePage = ({
           {rebuyButtonCopy}
         </button>
         <button
+          data-testid="sit-out-next-hand"
           type="button"
           disabled={rebuyButtonDisabled}
           onClick={sitOut}
-          style={turnActionStyle(!rebuyButtonDisabled, {
+          style={turnActionStyle(!rebuyButtonDisabled || queuedNextHandIntent === 'sitOut', {
             border: 'rgba(148,163,184,0.65)',
             background: 'rgba(255,255,255,0.045)',
             color: '#e2e8f0',
             glow: 'rgba(148,163,184,0.18)',
           })}
         >
-          Sit Out
+          {sitOutButtonCopy}
         </button>
       </div>
     </div>
@@ -3887,7 +3926,7 @@ export const PokerGamePage = ({
       setStatus('Use the all-in preset to go all-in.');
       return;
     }
-    if (isAllInRaise && !confirmAllIn) {
+    if (isAllInRaise && !confirmAllIn && !onlyAllInRaiseAmount) {
       setConfirmAllIn(true);
       return;
     }
@@ -4165,14 +4204,13 @@ export const PokerGamePage = ({
       ) : null}
       {seated && statusDisplay && !status.startsWith('Connected') ? (
         <div
+          role="status"
+          data-testid="table-notice"
           style={{
-            position: 'fixed',
-            left: isPhone ? 10 : '50%',
-            right: isPhone ? 10 : undefined,
-            top: isPhone ? 78 : 88,
-            transform: isPhone ? 'none' : 'translateX(-50%)',
-            zIndex: 60,
-            maxWidth: isPhone ? undefined : 520,
+            width: isPhone ? 'calc(100% - 16px)' : 'min(520px, calc(100% - 32px))',
+            margin: isPhone ? '0 auto 6px' : '0 auto 8px',
+            zIndex: 22,
+            maxWidth: 520,
             borderRadius: 8,
             border:
               status.toLowerCase().includes('error') ||
@@ -4181,11 +4219,10 @@ export const PokerGamePage = ({
                 ? '1px solid rgba(248,113,113,0.45)'
                 : `1px solid ${TABLE_THEME.border}`,
             background: 'rgba(2,7,9,0.92)',
-            boxShadow: '0 18px 36px rgba(0,0,0,0.38)',
+            boxShadow: '0 10px 24px rgba(0,0,0,0.3)',
             color: TABLE_THEME.text,
-            padding: '10px 12px',
+            padding: isPhone ? '8px 10px' : '9px 12px',
             fontFamily: TABLE_THEME.fontSans,
-            pointerEvents: 'none',
           }}
         >
           <div style={{ fontSize: 12, fontWeight: 900 }}>{statusDisplay.title}</div>
@@ -4468,20 +4505,30 @@ export const PokerGamePage = ({
                 >
                   {currentStreetLabel}
                 </div>
+                {showLatestActionTicker ? (
+                  <div
+                    data-testid="latest-action-ticker"
+                    style={{
+                      maxWidth: isPortraitPhone ? 250 : isPhone ? 280 : 320,
+                      minHeight: isPhone ? 20 : 22,
+                      borderRadius: 999,
+                      border: `1px solid ${TABLE_THEME.border}`,
+                      background: 'rgba(2,7,9,0.74)',
+                      color: '#e2e8f0',
+                      padding: isPortraitPhone ? '3px 8px' : '4px 10px',
+                      fontSize: isPortraitPhone ? 10 : 11,
+                      fontWeight: 700,
+                      textAlign: 'center',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      boxShadow: '0 8px 18px rgba(0,0,0,0.24)',
+                    }}
+                  >
+                    {latestActionLine}
+                  </div>
+                ) : null}
               </div>
-              {isShowdown && showdownResult ? (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: isPortraitPhone ? '18%' : isPhone ? '18%' : '8%',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    zIndex: 18,
-                  }}
-                >
-                  <ShowdownResultBanner result={showdownResult} isPhone={isPhone} />
-                </div>
-              ) : null}
               <div
                 style={{
                   position: 'absolute',
@@ -4525,29 +4572,6 @@ export const PokerGamePage = ({
                     </div>
                   ))}
                 </div>
-                {latestActionLine && !isRevealPhase && !showHandHistory && !showRulesOverlay ? (
-                  <div
-                    data-testid="latest-action-toast"
-                    style={{
-                      maxWidth: isPortraitPhone ? 260 : 300,
-                      borderRadius: 999,
-                      border: `1px solid ${TABLE_THEME.border}`,
-                      background: 'rgba(2,7,9,0.78)',
-                      color: '#e2e8f0',
-                      padding: isPortraitPhone ? '4px 9px' : '5px 10px',
-                      fontSize: isPortraitPhone ? 10 : 11,
-                      fontWeight: 700,
-                      textAlign: 'center',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      boxShadow: '0 10px 24px rgba(0,0,0,0.28)',
-                      transform: isPortraitPhone ? 'translate(128px, -28px)' : undefined,
-                    }}
-                  >
-                    {latestActionLine}
-                  </div>
-                ) : null}
               </div>
               {tablePlayers.map((p, idx) => {
                 const pos = seatingPositions[idx];
@@ -4615,7 +4639,7 @@ export const PokerGamePage = ({
                   seatDelta &&
                   seatDelta.net < 0 &&
                   (p.status === 'allIn' || playerBusted)
-                    ? 'ALL-IN'
+                    ? 'All-in'
                     : statusLabel;
                 const displayStatusColor =
                   isShowdown &&
@@ -4629,8 +4653,8 @@ export const PokerGamePage = ({
                     key={p.id}
                     style={{
                       position: 'absolute',
-                      left: pos.left,
-                      top: pos.top,
+                      left: safeSeatCoordinate(pos.left, 'x'),
+                      top: safeSeatCoordinate(pos.top, 'y'),
                       transform: `translate(-50%, -50%) translateY(${playerInfoOffsetY}px)`,
                       width: seatNameplateWidth,
                       textAlign: 'center',
@@ -4745,18 +4769,19 @@ export const PokerGamePage = ({
                               )}
                               {playerBusted ? (
                                 <div
+                                  data-testid={`seat-player-status-${p.id}`}
                                   style={{
                                     marginTop: 4,
                                     fontSize: playerInfoStatusTextSize,
                                     letterSpacing: 0.2,
                                     color: displayStatusColor,
-                                    textTransform: 'uppercase',
                                   }}
                                 >
                                   {displayStatusLabel}
                                 </div>
                               ) : showDiscardState ? (
                                 <div
+                                  data-testid={`seat-player-status-${p.id}`}
                                   style={{
                                     marginTop: 4,
                                     fontSize: playerInfoStatusTextSize,
@@ -4769,12 +4794,12 @@ export const PokerGamePage = ({
                               ) : null}
                               {isTurn ? (
                                 <div
+                                  data-testid={`seat-player-status-${p.id}`}
                                   style={{
                                     marginTop: 4,
                                     fontSize: playerInfoStatusTextSize,
                                     letterSpacing: 0.3,
                                     color: displayStatusColor,
-                                    textTransform: 'uppercase',
                                     animation: 'turn-pulse 1.2s ease-in-out infinite',
                                   }}
                                 >
@@ -4786,12 +4811,12 @@ export const PokerGamePage = ({
                               !showDiscardState &&
                               !isTurn ? (
                                 <div
+                                  data-testid={`seat-player-status-${p.id}`}
                                   style={{
                                     marginTop: 4,
                                     fontSize: isPortraitPhone ? 8 : isPhone ? 9 : 10,
                                     letterSpacing: 0.35,
                                     color: displayStatusColor,
-                                    textTransform: 'uppercase',
                                     lineHeight: 1.1,
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis',
@@ -5069,12 +5094,12 @@ export const PokerGamePage = ({
                           </div>
                           {youBusted ? (
                             <div
+                              data-testid={`seat-player-status-${you.id}`}
                               style={{
                                 marginTop: 4,
                                 fontSize: playerInfoStatusTextSize,
                                 letterSpacing: 0.2,
                                 color: youDisplayStatusColor,
-                                textTransform: 'uppercase',
                               }}
                             >
                               {youDisplayStatusLabel}
@@ -5082,12 +5107,12 @@ export const PokerGamePage = ({
                           ) : null}
                           {isMyTurn ? (
                             <div
+                              data-testid={`seat-player-status-${you.id}`}
                               style={{
                                 marginTop: 4,
                                 fontSize: playerInfoStatusTextSize,
                                 letterSpacing: 0.3,
                                 color: youDisplayStatusColor,
-                                textTransform: 'uppercase',
                                 animation: 'turn-pulse 1.2s ease-in-out infinite',
                               }}
                             >
@@ -5096,12 +5121,12 @@ export const PokerGamePage = ({
                           ) : null}
                           {youDisplayStatusLabel && !youBusted && !isMyTurn ? (
                             <div
+                              data-testid={`seat-player-status-${you.id}`}
                               style={{
                                 marginTop: 4,
                                 fontSize: isPortraitPhone ? 8 : isPhone ? 9 : 10,
                                 letterSpacing: 0.35,
                                 color: youDisplayStatusColor,
-                                textTransform: 'uppercase',
                                 lineHeight: 1.1,
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
@@ -5235,6 +5260,19 @@ export const PokerGamePage = ({
                 </>
               )}
             </div>
+            {isShowdown && showdownResult ? (
+              <div
+                data-testid="showdown-result-lane"
+                style={{
+                  width: isPhone ? '100%' : 'min(620px, 100%)',
+                  margin: isPhone ? '0 auto' : '0 auto',
+                  display: 'flex',
+                  justifyContent: 'center',
+                }}
+              >
+                <ShowdownResultBanner result={showdownResult} isPhone={isPhone} />
+              </div>
+            ) : null}
             {showHandHistory ? (
               <HandHistoryPanel
                 lines={lastHandRecapLines}
@@ -5548,7 +5586,7 @@ export const PokerGamePage = ({
                             type="range"
                             min={minRaiseTo ?? undefined}
                             max={manualMaxRaiseTo ?? undefined}
-                            value={selectedRaiseTo}
+                            value={rangeRaiseValue}
                             step={1}
                             disabled={
                               !canOpenRaiseDrawer || minRaiseTo === null || maxRaiseTo === null

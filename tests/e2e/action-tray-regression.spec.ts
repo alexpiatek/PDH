@@ -46,10 +46,18 @@ test.describe('poker action tray viewport regressions', () => {
 
     await expectClickable(page.getByTestId('action-call'));
     await page.getByTestId('action-raise-toggle').click();
-    await expect(page.getByTestId('action-raise')).toContainText('Raise 1600');
+    await expect(page.getByTestId('action-raise-toggle')).toHaveText('Raise');
+    await expect(page.getByRole('button', { name: /^Close (Bet|Raise)$/ })).toHaveCount(0);
+    await expect(page.getByTestId('bet-panel-close')).toBeVisible();
+    await expect(page.getByTestId('action-raise')).toContainText('Raise to 1600');
     await expectWithinViewport(page, page.getByTestId('action-raise'));
     await expectClickable(page.getByTestId('action-raise'));
     await expect(page.getByTestId('raise-option-allin')).toBeVisible();
+    await expect(page.getByTestId('action-raise')).not.toContainText('Confirm all-in');
+    await page.getByTestId('raise-option-allin').click();
+    await expect(page.getByTestId('action-raise')).toContainText('Confirm all-in');
+    await page.getByTestId('bet-panel-close').click();
+    await expect(page.getByTestId('bet-panel-close')).toHaveCount(0);
 
     await openScenario(page, 'betting-check-allin', { width: 390, height: 844 });
     await expectWithinViewport(page, page.getByTestId('action-tray'));

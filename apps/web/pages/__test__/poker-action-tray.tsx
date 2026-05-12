@@ -8,7 +8,13 @@ type Scenario =
   | 'betting-check-allin'
   | 'discard'
   | 'showdown'
+  | 'showdown-long'
   | 'long-names'
+  | 'mobile-4'
+  | 'mobile-5'
+  | 'mobile-6'
+  | 'out-of-chips-active'
+  | 'out-of-chips-between'
   | 'start-gate'
   | 'start-gate-ready'
   | 'join-fallback'
@@ -29,7 +35,13 @@ const scenarios = new Set<Scenario>([
   'betting-check-allin',
   'discard',
   'showdown',
+  'showdown-long',
   'long-names',
+  'mobile-4',
+  'mobile-5',
+  'mobile-6',
+  'out-of-chips-active',
+  'out-of-chips-between',
   'start-gate',
   'start-gate-ready',
   'join-fallback',
@@ -408,6 +420,233 @@ const longNamesState = (now: number): PublicState => {
   return state;
 };
 
+const multiPlayerState = (now: number, count: 4 | 5 | 6): PublicState => {
+  const names = [
+    'Alex Chrome Long Table Name',
+    'Brad Mobile Very Long Name',
+    'Casey Small Blind Long Name',
+    'Devon Dealer Long Name',
+    'Emerson Cutoff Long Name',
+    'Finley Big Blind Long Name',
+  ];
+  const seats = Array.from({ length: count }, (_, index) => ({
+    seat: index,
+    id: index === 0 ? HERO_ID : `player-${index + 1}`,
+    name: names[index],
+    stack: 10000 - index * 650,
+    status: 'active',
+    sittingOut: false,
+    buyInTotal: 10000,
+    rebuyCount: 0,
+    connectionStatus: 'connected',
+  }));
+  const players = seats.map((seat, index) => ({
+    seat: seat.seat,
+    id: seat.id,
+    name: seat.name,
+    stack: seat.stack,
+    status: 'active',
+    holeCards: index === 0 ? heroCards : hiddenCards,
+    betThisStreet: index === 1 ? 800 : index === 0 ? 400 : 0,
+    totalCommitted: index === 1 ? 800 : index === 0 ? 400 : 0,
+    hasActed: index !== 0,
+  }));
+
+  return baseState(`mobile-${count}` as Scenario, now, {
+    seats,
+    hand: {
+      handId: `hand-mobile-${count}`,
+      buttonSeat: 3 % count,
+      street: 'preflop',
+      phase: 'betting',
+      board: [],
+      deck: [],
+      players,
+      pots: [],
+      currentBet: 800,
+      minRaise: 800,
+      raisesThisStreet: 0,
+      actionOnSeat: 0,
+      actionDeadline: now + 28000,
+      lastAggressorSeat: 1,
+      pendingNextPhaseAt: null,
+      discardPending: [],
+      discardDeadline: null,
+      showdownWinners: [],
+      showdownPots: [],
+      log: [
+        { message: `${names[1]} posts big blind 800`, ts: now - 5000 },
+        { message: `${names[0]} called 400`, ts: now - 2500 },
+      ],
+    },
+    log: [
+      { message: `${names[1]} posts big blind 800`, ts: now - 5000 },
+      { message: `${names[0]} called 400`, ts: now - 2500 },
+    ],
+    legalActions: {
+      phase: 'betting',
+      isActor: true,
+      betting: {
+        canFold: true,
+        canCheck: false,
+        canCall: true,
+        callAmount: 400,
+        canBet: false,
+        minBet: null,
+        maxBet: null,
+        canRaise: true,
+        minRaiseTo: 1600,
+        maxRaiseTo: 10000,
+        canAllIn: true,
+        allInAmount: 10000,
+        stack: 9600,
+        committedThisStreet: 400,
+        currentBet: 800,
+      },
+    },
+  });
+};
+
+const showdownLongState = (now: number): PublicState => {
+  const state = showdownState(now);
+  const winnerName = 'Alex Mobile Long Winner Name';
+  if (state.seats[0]) {
+    state.seats[0] = { ...state.seats[0], name: winnerName, stack: 15675 };
+  }
+  if (state.hand) {
+    state.hand.players = state.hand.players.map((player: any) =>
+      player.id === HERO_ID ? { ...player, name: winnerName, stack: 15675 } : player
+    );
+    state.hand.showdownWinners = [
+      {
+        playerId: HERO_ID,
+        amount: 16750,
+        bestFive: [
+          card('A', 'H'),
+          card('K', 'H'),
+          card('Q', 'H'),
+          card('J', 'H'),
+          card('T', 'H'),
+        ],
+        handLabel: 'Straight Flush',
+        potIds: ['pot-0', 'pot-1'],
+        potLabels: ['Main pot', 'Side pot 1'],
+      },
+    ];
+    state.hand.showdownPots = [
+      {
+        potId: 'pot-0',
+        label: 'Main pot',
+        amount: 12000,
+        eligible: [HERO_ID, VILLAIN_ID],
+        winners: [{ playerId: HERO_ID, amount: 12000, handLabel: 'Straight Flush' }],
+      },
+      {
+        potId: 'pot-1',
+        label: 'Side pot 1',
+        amount: 4750,
+        eligible: [HERO_ID],
+        winners: [{ playerId: HERO_ID, amount: 4750, handLabel: 'Straight Flush' }],
+      },
+    ];
+    state.hand.log = [
+      { message: `${winnerName} wins 16750 with straight flush`, ts: now - 2000 },
+    ];
+  }
+  state.log = state.hand?.log ?? state.log;
+  return state;
+};
+
+const outOfChipsState = (now: number, betweenHand: boolean): PublicState =>
+  baseState(betweenHand ? 'out-of-chips-between' : 'out-of-chips-active', now, {
+    id: 'QUEUE1',
+    seats: [
+      {
+        seat: 0,
+        id: HERO_ID,
+        name: 'Alex Mobile',
+        stack: 0,
+        status: 'busted',
+        sittingOut: true,
+        buyInTotal: 10000,
+        rebuyCount: 0,
+        connectionStatus: 'connected',
+      },
+      {
+        seat: 1,
+        id: VILLAIN_ID,
+        name: 'Brad Mobile',
+        stack: 18600,
+        status: 'active',
+        sittingOut: false,
+        buyInTotal: 10000,
+        rebuyCount: 0,
+        connectionStatus: 'connected',
+      },
+    ],
+    hand: {
+      handId: betweenHand ? 'hand-out-between' : 'hand-out-active',
+      buttonSeat: 1,
+      street: betweenHand ? 'showdown' : 'turn',
+      phase: betweenHand ? 'showdown' : 'betting',
+      board: [card('2', 'S'), card('7', 'D'), card('T', 'H'), card('4', 'C')],
+      deck: [],
+      players: [
+        {
+          seat: 1,
+          id: VILLAIN_ID,
+          name: 'Brad Mobile',
+          stack: 18600,
+          status: 'active',
+          holeCards: hiddenCards,
+          betThisStreet: 0,
+          totalCommitted: 1400,
+          hasActed: true,
+        },
+      ],
+      pots: [],
+      currentBet: 0,
+      minRaise: 800,
+      raisesThisStreet: 0,
+      actionOnSeat: 1,
+      actionDeadline: betweenHand ? null : now + 25000,
+      lastAggressorSeat: null,
+      pendingNextPhaseAt: null,
+      discardPending: [],
+      discardDeadline: null,
+      showdownWinners: betweenHand
+        ? [{ playerId: VILLAIN_ID, amount: 2800, handLabel: 'One Pair' }]
+        : [],
+      showdownPots: betweenHand
+        ? [
+            {
+              potId: 'pot-0',
+              label: 'Main pot',
+              amount: 2800,
+              eligible: [VILLAIN_ID],
+              winners: [{ playerId: VILLAIN_ID, amount: 2800, handLabel: 'One Pair' }],
+            },
+          ]
+        : [],
+      log: [
+        { message: 'Alex Mobile is out of chips', ts: now - 3000 },
+        { message: betweenHand ? 'Brad Mobile wins 2800 with one pair' : 'Brad Mobile checked', ts: now - 1500 },
+      ],
+    },
+    log: [
+      { message: 'Alex Mobile is out of chips', ts: now - 3000 },
+      { message: betweenHand ? 'Brad Mobile wins 2800 with one pair' : 'Brad Mobile checked', ts: now - 1500 },
+    ],
+    betweenHandStartedAtMs: betweenHand ? now : null,
+    betweenHandMinUntilMs: betweenHand ? now + 6000 : null,
+    betweenHandAutoStartAtMs: betweenHand ? now + 12000 : null,
+    legalActions: {
+      phase: betweenHand ? 'between_hands' : 'waiting',
+      isActor: false,
+      reason: betweenHand ? 'between_hands' : 'busted',
+    },
+  });
+
 const startGateState = (now: number, readyPlayerIds: string[] = []): PublicState =>
   baseState('start-gate', now, {
     id: 'RZ587G',
@@ -434,10 +673,22 @@ const buildState = (scenario: Scenario, now: number): PublicState | null => {
       return bettingCheckAllInState(now);
     case 'discard':
       return discardState(now);
+    case 'showdown-long':
+      return showdownLongState(now);
     case 'showdown':
       return showdownState(now);
     case 'long-names':
       return longNamesState(now);
+    case 'mobile-4':
+      return multiPlayerState(now, 4);
+    case 'mobile-5':
+      return multiPlayerState(now, 5);
+    case 'mobile-6':
+      return multiPlayerState(now, 6);
+    case 'out-of-chips-active':
+      return outOfChipsState(now, false);
+    case 'out-of-chips-between':
+      return outOfChipsState(now, true);
     case 'betting-call':
     default:
       return bettingCallState(now);

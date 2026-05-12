@@ -1,5 +1,27 @@
 # Poker UI Gameplay Audit
 
+## Implementation Note: Active Table UI Refinement
+
+Date: 2026-05-12
+
+Changed in this slice:
+
+- Replaced the roaming latest-action toast with a compact ticker lane under the pot/street stack, hidden during result/history/rules states so it does not cover cards or panels.
+- Moved bet-panel close behavior into the expanded panel and kept the primary row to poker actions only. Bet/raise opens at the legal minimum from `legalActions`; all-in confirmation appears only after the all-in preset is chosen, except when all-in is the only legal amount.
+- Tightened mobile seat placement with safe viewport clamps, single-line name truncation, and reserved dealer/SB/BB badge space.
+- Changed Copy Table Code feedback to inline `Copied` menu feedback with no floating mobile toast or modal.
+- Cleaned seat statuses to sentence-case labels such as `Your turn · 28s`, `To act · 25s`, `Waiting`, `Discarding`, `Folded`, `Disconnected`, `Reconnecting`, and `All-in`.
+- Kept the discard tray focused on `Discard 1 card`; the helper appears only before a card is selected, and `Discard selected` enables after a valid selection.
+- Moved showdown results into a reserved result lane below the table, with mobile wrapping for winner name, amount, hand label, and main/side pot metadata while keeping the next-hand countdown visible.
+- Added client-side queued next-hand intent for out-of-chips players. Rebuy next hand and Sit out next hand persist by table/player id, can be changed before applying, and submit only when the existing between-hand/showdown server path allows it.
+- Moved table notices into a compact non-overlapping lane below the header; expected early rebuy/sit-out choices now show queued feedback instead of the old between-hand error path.
+
+Remaining active-table UX risks:
+
+- Queued next-hand intent persistence is same-device local state; cross-device recovery would need a small server-backed pending-intent field.
+- The result lane is intentionally close to the table but no longer over the felt; future side-pot-heavy results may need an expandable detail view.
+- The test route still uses representative snapshots, so live multi-device timing should continue to be smoke-tested after deploy.
+
 ## Implementation Note: Active Table UI Cleanup
 
 Date: 2026-05-12
