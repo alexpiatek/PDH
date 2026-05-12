@@ -2972,14 +2972,14 @@ export const PokerGamePage = ({
     addChip(bbSeat, { label: 'BB', tone: 'blind' });
     return map;
   }, [hand, state?.seats]);
-  const infoAvatarSize = isPortraitPhone ? 22 : isPhone ? 30 : 36;
-  const seatNameplateWidth = isPortraitPhone ? 116 : isPhone ? 154 : 170;
-  const playerPanelMinHeight = isPortraitPhone ? 40 : isPhone ? 48 : 54;
-  const playerPanelPadding = isPortraitPhone ? '4px 6px' : isPhone ? '6px 8px' : '7px 10px';
+  const infoAvatarSize = isPortraitPhone ? 20 : isPhone ? 28 : 34;
+  const seatNameplateWidth = isPortraitPhone ? 108 : isPhone ? 146 : 162;
+  const playerPanelMinHeight = isPortraitPhone ? 36 : isPhone ? 44 : 50;
+  const playerPanelPadding = isPortraitPhone ? '3px 5px' : isPhone ? '5px 7px' : '6px 9px';
   const playerPanelRadius = isPortraitPhone ? 8 : 10;
-  const playerPanelColumnGap = isPortraitPhone ? 6 : 8;
-  const playerInfoTextSize = isPortraitPhone ? 10 : isPhone ? 11 : 12;
-  const playerInfoStatusTextSize = isPortraitPhone ? 8 : 10;
+  const playerPanelColumnGap = isPortraitPhone ? 5 : 7;
+  const playerInfoTextSize = isPortraitPhone ? 9 : isPhone ? 10 : 11;
+  const playerInfoStatusTextSize = isPortraitPhone ? 7 : 9;
   const playerInfoOffsetY = isPortraitPhone ? 0 : -30 + 38;
   const seatHoleCardSize = isPortraitPhone ? 'small' : 'medium';
   const seatHoleCardWidth = isPortraitPhone ? 34 : 44;
@@ -4441,8 +4441,8 @@ export const PokerGamePage = ({
                   top: isPortraitPhone ? '38%' : '40%',
                   left: '50%',
                   transform: isPortraitPhone
-                    ? 'translate(-50%, -50%) translateY(2px)'
-                    : 'translate(-50%, -50%) translateY(calc(-19px - 0.4cm))',
+                    ? 'translate(-50%, -50%) translateY(calc(2px + 10mm))'
+                    : 'translate(-50%, -50%) translateY(calc(-19px - 0.4cm + 10mm))',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
