@@ -268,20 +268,26 @@ const PlayLobbyPage: NextPage = () => {
           </div>
         </header>
 
-        <div className="relative z-10 mx-auto grid min-h-[calc(100vh-89px)] w-full max-w-7xl items-center gap-8 px-6 py-10 sm:px-8 lg:grid-cols-[0.88fr_1.12fr] lg:py-14">
-          <section className="max-w-xl">
+        <div
+          data-testid="lobby-shell"
+          className="relative z-10 mx-auto grid min-h-[calc(100vh-73px)] w-full max-w-7xl gap-6 px-5 py-5 sm:px-8 sm:py-8 lg:min-h-[calc(100vh-89px)] lg:grid-cols-[0.78fr_1.22fr] lg:items-center lg:gap-10 lg:py-12"
+        >
+          <section
+            data-testid="lobby-hero"
+            className="hidden max-w-xl lg:order-1 lg:block"
+          >
             <p className="font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.34em] text-amber-200">
               Play Lobby
             </p>
-            <h1 className="mt-4 font-[var(--font-serif)] text-5xl font-semibold leading-[0.94] text-white sm:text-6xl">
-              Enter fast, or join by code.
+            <h1 className="mt-4 font-[var(--font-serif)] text-4xl font-semibold leading-[0.98] text-white xl:text-5xl">
+              Quick Play or join by code.
             </h1>
-            <p className="mt-6 max-w-lg text-base leading-7 text-zinc-300 sm:text-lg">
-              Quick Play seats you at the best available table. Table codes keep friend games one
-              step away.
+            <p className="mt-5 max-w-lg text-base leading-7 text-zinc-300">
+              Jump into a table or join a friend by code. Quick Play finds the best available
+              table.
             </p>
 
-            <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            <div className="mt-7 grid gap-3 xl:grid-cols-3">
               {[
                 { label: 'Quick seat', value: 'Best table', icon: Users },
                 { label: 'Private code', value: '6 chars', icon: KeyRound },
@@ -291,10 +297,10 @@ const PlayLobbyPage: NextPage = () => {
                 return (
                   <div
                     key={item.label}
-                    className="rounded-lg border border-white/15 bg-white/[0.035] px-4 py-4"
+                    className="rounded-md border border-white/10 bg-white/[0.025] px-4 py-3.5"
                   >
                     <Icon aria-hidden="true" className="h-5 w-5 text-teal-300" strokeWidth={1.7} />
-                    <div className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                    <div className="mt-3 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                       {item.label}
                     </div>
                     <div className="mt-1 text-sm font-semibold text-zinc-100">{item.value}</div>
@@ -304,14 +310,30 @@ const PlayLobbyPage: NextPage = () => {
             </div>
           </section>
 
-          <section className="w-full">
+          <section data-testid="lobby-actions" className="w-full lg:order-2">
+            <div className="mb-4 lg:hidden">
+              <p className="font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.24em] text-amber-200">
+                Play Lobby
+              </p>
+              <h1 className="mt-2 font-[var(--font-serif)] text-3xl font-semibold leading-tight text-white">
+                Quick Play or join by code.
+              </h1>
+              <p className="mt-2 text-sm leading-6 text-zinc-300">
+                Jump into a table or join a friend by code.
+              </p>
+            </div>
+
             <form
+              data-testid="quick-play-card"
               onSubmit={(event) => void handleQuickPlay(event)}
-              className="rounded-lg border border-amber-300/35 bg-amber-300/[0.055] p-4 sm:p-5"
+              className="rounded-lg border border-amber-300/45 bg-amber-300/[0.07] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.24)] sm:p-5"
             >
-              <label htmlFor="player-name" className="block text-sm font-semibold text-zinc-100">
-                Player name
-              </label>
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <label htmlFor="player-name" className="block text-sm font-semibold text-zinc-100">
+                  Player name
+                </label>
+                <p className="text-xs leading-5 text-amber-100/75">Quick Play finds a table.</p>
+              </div>
               <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
                 <input
                   id="player-name"
@@ -333,7 +355,7 @@ const PlayLobbyPage: NextPage = () => {
                   type="submit"
                   data-testid="join-button"
                   disabled={loading}
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md border border-teal-200/70 bg-teal-400/[0.42] px-5 py-3 text-sm font-semibold text-white shadow-[0_0_24px_rgba(20,184,166,0.18)] transition hover:bg-teal-300/[0.52] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-md border border-teal-200/70 bg-teal-400/[0.46] px-5 py-3 text-sm font-semibold text-white shadow-[0_0_26px_rgba(20,184,166,0.22)] transition hover:bg-teal-300/[0.56] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
                   {loadingMode === 'quick_play' ? 'Finding Table...' : 'Quick Play'}
                   <ArrowRight aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
@@ -342,15 +364,20 @@ const PlayLobbyPage: NextPage = () => {
             </form>
 
             <form
+              data-testid="join-code-card"
               onSubmit={(event) => void handleJoinByCode(event)}
-              className="mt-4 rounded-lg border border-white/15 bg-white/[0.035] p-4 sm:p-5"
+              className="mt-3 rounded-lg border border-white/15 bg-white/[0.035] p-4 sm:mt-4 sm:p-5"
             >
-              <label htmlFor="join-code" className="block text-sm font-semibold text-zinc-100">
-                Join by code
-              </label>
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <label htmlFor="join-code" className="block text-sm font-semibold text-zinc-100">
+                  Join by code
+                </label>
+                <p className="text-xs leading-5 text-zinc-400">For friend and private tables.</p>
+              </div>
               <div className="mt-3 flex flex-col gap-3 sm:flex-row">
                 <input
                   id="join-code"
+                  data-testid="join-code-input"
                   value={joinCode}
                   onChange={(event) => {
                     setJoinCode(normalizeTableCode(event.target.value));
@@ -364,6 +391,7 @@ const PlayLobbyPage: NextPage = () => {
                 />
                 <button
                   type="submit"
+                  data-testid="join-code-button"
                   disabled={loading}
                   className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-md border border-amber-300/60 bg-transparent px-5 py-3 text-sm font-semibold text-amber-100 transition hover:border-teal-200 hover:text-teal-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
@@ -373,12 +401,15 @@ const PlayLobbyPage: NextPage = () => {
               </div>
             </form>
 
-            <div className="mt-5 rounded-lg border border-white/10 bg-black/[0.2] p-4 sm:p-5">
+            <div
+              data-testid="recent-tables-card"
+              className="mt-4 rounded-lg border border-white/10 bg-black/[0.16] p-4 sm:mt-5 sm:p-5"
+            >
               <div className="flex items-center justify-between gap-3">
-                <h2 className="font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.24em] text-amber-200">
+                <h2 className="font-[var(--font-display)] text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-amber-200/85">
                   Recent Tables
                 </h2>
-                <Spade aria-hidden="true" className="h-4 w-4 text-teal-300" strokeWidth={1.7} />
+                <Spade aria-hidden="true" className="h-4 w-4 text-teal-300/85" strokeWidth={1.7} />
               </div>
               {recentTables.length > 0 ? (
                 <div className="mt-3 grid gap-2">
@@ -392,7 +423,7 @@ const PlayLobbyPage: NextPage = () => {
                         onClick={() => {
                           void handleJoinRecent(table);
                         }}
-                        className="inline-flex min-h-12 items-center justify-between rounded-md border border-white/15 bg-white/[0.035] px-4 py-3 text-left text-sm text-zinc-100 transition hover:border-teal-300/45 hover:bg-teal-400/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex min-h-11 items-center justify-between rounded-md border border-white/10 bg-white/[0.025] px-4 py-2.5 text-left text-sm text-zinc-100 transition hover:border-teal-300/45 hover:bg-teal-400/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <span className="truncate pr-3">{table.name || `Table ${table.code}`}</span>
                         <span className="font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.14em] text-zinc-200">
