@@ -25,7 +25,7 @@
     "lint": "node scripts/lint.mjs",
     "format": "./scripts/format.sh",
     "format:check": "./scripts/format-check.sh",
-    "changelog:check": "./scripts/changelog-check.sh",
+    "changelog:check": "node scripts/changelog-check.mjs",
     "changelog:release": "./scripts/changelog-release.sh",
     "deploy:remote:web": "./scripts/deploy-remote-web-prod.sh",
     "db:migrate": "./scripts/db-migrate.sh",
