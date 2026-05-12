@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, Copy, MoreHorizontal, Trophy, X } from 'lucide-react';
+import { Check, ChevronRight, Copy, MoreHorizontal, Trophy, X } from 'lucide-react';
 import { Client as NakamaClient } from '@heroiclabs/nakama-js';
 import type { Match, Session, Socket as NakamaSocket } from '@heroiclabs/nakama-js';
 import { Card, HandState, PlayerInHand, ShowdownPotResult, ShowdownWinner } from '@pdh/engine';
@@ -16,6 +16,13 @@ import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../l
 import { getPlayerInitials } from '../lib/playerInitials';
 import { resolveBettingActionControls } from '../lib/actionControls';
 import { nextAppliedStateVersion, shouldApplyStateSnapshot } from '../lib/stateVersion';
+import {
+  canSubmitNextHandIntentNow,
+  clearStoredNextHandIntent,
+  readStoredNextHandIntent,
+  writeStoredNextHandIntent,
+  type NextHandIntent,
+} from '../lib/nextHandIntent';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4000';
 
@@ -704,18 +711,18 @@ const playerSeatStatusLabel = ({
   hasDiscarded?: boolean;
 }) => {
   if (connectionStatus === 'reconnecting') {
-    return `RECONNECTING${formatSeatTimer(reconnectSecondsLeft)}`;
+    return `Reconnecting${formatSeatTimer(reconnectSecondsLeft)}`;
   }
-  if (connectionStatus === 'disconnected') return 'DISCONNECTED';
+  if (connectionStatus === 'disconnected') return 'Disconnected';
   if (isTurn) {
-    return `${isHero ? 'YOUR TURN' : 'TO ACT'}${formatSeatTimer(secondsLeft)}`;
+    return `${isHero ? 'Your turn' : 'To act'}${formatSeatTimer(secondsLeft)}`;
   }
-  if (status === 'folded') return 'FOLDED';
-  if (status === 'allIn') return 'ALL-IN';
-  if (status === 'sitting_out') return 'SITTING OUT';
-  if (status === 'busted' || status === 'out') return 'WAITING';
-  if (isDiscarding) return hasDiscarded ? 'DISCARDED' : 'DISCARDING';
-  if (isBetting && status === 'active') return 'WAITING';
+  if (status === 'folded') return 'Folded';
+  if (status === 'allIn') return 'All-in';
+  if (status === 'sitting_out') return 'Waiting';
+  if (status === 'busted' || status === 'out') return 'Waiting';
+  if (isDiscarding) return hasDiscarded ? 'Waiting' : 'Discarding';
+  if (isBetting && status === 'active') return 'Waiting';
   return null;
 };
 
@@ -1422,6 +1429,7 @@ export const PokerGamePage = ({
   const discardTimerRef = useRef<number | null>(null);
   const holeDealTimerRef = useRef<number | null>(null);
   const joinTimeoutRef = useRef<number | null>(null);
+  const copyFeedbackTimerRef = useRef<number | null>(null);
   const latestAppliedStateVersionRef = useRef<number | null>(null);
   const serverTimeOffsetMsRef = useRef(0);
   const tableRef = useRef<HTMLDivElement | null>(null);
@@ -1450,7 +1458,11 @@ export const PokerGamePage = ({
   const [copyCodeFeedback, setCopyCodeFeedback] = useState<string | null>(null);
   const [showRaiseDrawer, setShowRaiseDrawer] = useState(false);
   const [confirmAllIn, setConfirmAllIn] = useState(false);
+  const [allInPresetSelected, setAllInPresetSelected] = useState(false);
   const [rebuyState, setRebuyState] = useState<'idle' | 'pending' | 'confirmed'>('idle');
+  const [queuedNextHandIntent, setQueuedNextHandIntent] = useState<NextHandIntent | null>(null);
+  const [queuedIntentApplying, setQueuedIntentApplying] = useState<NextHandIntent | null>(null);
+  const [queuedIntentError, setQueuedIntentError] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<TableChatMessage[]>([]);
   const [mutedChatPlayerIds, setMutedChatPlayerIds] = useState<string[]>([]);
@@ -1461,6 +1473,9 @@ export const PokerGamePage = ({
   const autoJoinAttemptedRef = useRef(false);
   const rebuyNextHandSentRef = useRef(false);
   const rebuyStateRef = useRef<'idle' | 'pending' | 'confirmed'>('idle');
+  const queuedNextHandIntentRef = useRef<NextHandIntent | null>(null);
+  const queuedIntentSubmittedRef = useRef(false);
+  const lastNextHandIntentKeyRef = useRef<{ tableId: string; playerId: string } | null>(null);
   const [hasReceivedState, setHasReceivedState] = useState(Boolean(debugInitialState));
 
   const serverClockNow = () => Date.now() + serverTimeOffsetMsRef.current;
@@ -1468,6 +1483,12 @@ export const PokerGamePage = ({
   const updateRebuyState = (next: 'idle' | 'pending' | 'confirmed') => {
     rebuyStateRef.current = next;
     setRebuyState(next);
+  };
+
+  const updateQueuedNextHandIntent = (next: NextHandIntent | null) => {
+    queuedNextHandIntentRef.current = next;
+    queuedIntentSubmittedRef.current = false;
+    setQueuedNextHandIntent(next);
   };
 
   const requestFreshState = () => {
@@ -1663,15 +1684,23 @@ export const PokerGamePage = ({
       }
       if (msg.type === 'error') {
         clearJoinTimeout();
+        const hadQueuedIntent = Boolean(queuedNextHandIntentRef.current);
         if (rebuyStateRef.current !== 'idle') {
           updateRebuyState('idle');
           rebuyNextHandSentRef.current = false;
+        }
+        if (hadQueuedIntent) {
+          setQueuedIntentApplying(null);
+          queuedIntentSubmittedRef.current = false;
+          setQueuedIntentError(msg.message);
         }
         if (
           msg.message.toLowerCase().includes('player not pending discard') ||
           msg.message.toLowerCase().includes('not in discard phase')
         ) {
           recoverDiscardSubmission('Discard not received. Choose a card again.');
+        } else if (hadQueuedIntent) {
+          setStatus(`Next-hand choice failed: ${msg.message}`);
         } else {
           setStatus(msg.message);
         }
@@ -1869,10 +1898,15 @@ export const PokerGamePage = ({
               if (!disposed) {
                 if (msg.type === 'discard') {
                   recoverDiscardSubmission('Discard not received. Choose a card again.');
-                } else if (msg.type === 'rebuy') {
+                } else if (msg.type === 'rebuy' || msg.type === 'sitOut') {
                   updateRebuyState('idle');
                   rebuyNextHandSentRef.current = false;
-                  setStatus(`Rebuy failed: ${errorMessage(error)}`);
+                  setQueuedIntentApplying(null);
+                  queuedIntentSubmittedRef.current = false;
+                  setQueuedIntentError(errorMessage(error));
+                  setStatus(
+                    `${msg.type === 'rebuy' ? 'Rebuy' : 'Sit out'} failed: ${errorMessage(error)}`
+                  );
                 } else {
                   setStatus(`Send failed: ${errorMessage(error)}`);
                 }
@@ -2026,6 +2060,8 @@ export const PokerGamePage = ({
       !hand ||
       hand.phase === 'showdown')
   );
+  const currentTableId = typeof state?.id === 'string' ? state.id : resolvedForcedMatchId || null;
+  const currentPlayerId = playerId ?? null;
   const localReadyBetweenHands = Boolean(
     seated && localSeat && !hand && !startGate && localSeatStack > 0 && localSeatStatus === 'active'
   );
@@ -2239,6 +2275,11 @@ export const PokerGamePage = ({
     betweenHandStartedAtMs !== null && betweenHandAutoStartAtMs !== null
       ? Math.max(1, betweenHandAutoStartAtMs - betweenHandStartedAtMs)
       : 12_000;
+  const canSubmitQueuedIntentNow = canSubmitNextHandIntentNow({
+    betweenHandActive,
+    hasHand: Boolean(hand),
+    handPhase: hand?.phase,
+  });
   const startGateReadyIds = useMemo(
     () => new Set<string>(startGate?.readyPlayerIds ?? []),
     [startGate?.readyPlayerIds]
@@ -2326,8 +2367,15 @@ export const PokerGamePage = ({
         // The UI feedback still confirms the requested table code action in restricted browsers.
       })
       .finally(() => {
-        setCopyCodeFeedback('Table code copied.');
-        window.setTimeout(() => setCopyCodeFeedback(null), 1800);
+        if (copyFeedbackTimerRef.current !== null) {
+          window.clearTimeout(copyFeedbackTimerRef.current);
+        }
+        setCopyCodeFeedback('Copied');
+        copyFeedbackTimerRef.current = window.setTimeout(() => {
+          setShowTopMenu(false);
+          setCopyCodeFeedback(null);
+          copyFeedbackTimerRef.current = null;
+        }, 650);
       });
   };
   const latestActionLine = useMemo(() => {
@@ -2347,11 +2395,6 @@ export const PokerGamePage = ({
   }, [hand?.log, state?.log]);
   const dealAnimationKey = hand?.handId ?? 'no-hand';
   const [animateHoleDeal, setAnimateHoleDeal] = useState(false);
-  const suggestedRaiseTo = useMemo(() => {
-    if (!hand) return null;
-    if (hand.currentBet === 0) return hand.minRaise;
-    return hand.currentBet + hand.minRaise;
-  }, [hand?.currentBet, hand?.minRaise]);
   const actionByPlayerId = useMemo(() => {
     if (!hand || hand.phase !== 'betting') return new Map<string, ActionBadge>();
     const logs = hand.log ?? [];
@@ -2410,6 +2453,117 @@ export const PokerGamePage = ({
     return chatMessages.filter((message) => !mutedChatPlayerSet.has(message.playerId));
   }, [chatMessages, mutedChatPlayerSet]);
   const hiddenChatCount = chatMessages.length - visibleChatMessages.length;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const previousKey = lastNextHandIntentKeyRef.current;
+    if (
+      previousKey &&
+      (previousKey.tableId !== currentTableId || previousKey.playerId !== currentPlayerId)
+    ) {
+      clearStoredNextHandIntent(window.localStorage, previousKey.tableId, previousKey.playerId);
+      queuedNextHandIntentRef.current = null;
+      queuedIntentSubmittedRef.current = false;
+      setQueuedNextHandIntent(null);
+      setQueuedIntentApplying(null);
+      setQueuedIntentError(null);
+    }
+
+    if (!currentTableId || !currentPlayerId) {
+      lastNextHandIntentKeyRef.current = null;
+      return;
+    }
+
+    lastNextHandIntentKeyRef.current = { tableId: currentTableId, playerId: currentPlayerId };
+    const storedIntent = readStoredNextHandIntent(
+      window.localStorage,
+      currentTableId,
+      currentPlayerId
+    );
+    if (storedIntent) {
+      queuedNextHandIntentRef.current = storedIntent;
+      setQueuedNextHandIntent(storedIntent);
+    }
+  }, [currentTableId, currentPlayerId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !currentTableId || !currentPlayerId) {
+      return;
+    }
+    if (queuedNextHandIntent) {
+      writeStoredNextHandIntent(
+        window.localStorage,
+        currentTableId,
+        currentPlayerId,
+        queuedNextHandIntent
+      );
+      return;
+    }
+    clearStoredNextHandIntent(window.localStorage, currentTableId, currentPlayerId);
+  }, [currentTableId, currentPlayerId, queuedNextHandIntent]);
+
+  useEffect(() => {
+    if (!queuedNextHandIntent || !localNeedsRebuy) {
+      return;
+    }
+    if (!canSubmitQueuedIntentNow || queuedIntentSubmittedRef.current) {
+      return;
+    }
+
+    queuedIntentSubmittedRef.current = true;
+    setQueuedIntentApplying(queuedNextHandIntent);
+    setQueuedIntentError(null);
+
+    if (queuedNextHandIntent === 'rebuy') {
+      updateRebuyState('pending');
+      setStatus('Applying queued rebuy...');
+      send({ type: 'rebuy', amount: 10000 });
+      return;
+    }
+
+    setStatus('Applying queued sit out...');
+    send({ type: 'sitOut' });
+  }, [
+    betweenHandActive,
+    canSubmitQueuedIntentNow,
+    hand?.handId,
+    hand?.phase,
+    localNeedsRebuy,
+    queuedNextHandIntent,
+  ]);
+
+  useEffect(() => {
+    if (!queuedNextHandIntent) {
+      return;
+    }
+
+    const rebuyApplied =
+      queuedNextHandIntent === 'rebuy' && seated && !localNeedsRebuy && localSeatStack > 0;
+    const sitOutApplied =
+      queuedNextHandIntent === 'sitOut' &&
+      queuedIntentApplying === 'sitOut' &&
+      localSeatStatus === 'sitting_out';
+    const noLongerNeedsChoice = seated && localSeat && !localNeedsRebuy;
+
+    if (!rebuyApplied && !sitOutApplied && !noLongerNeedsChoice) {
+      return;
+    }
+
+    updateQueuedNextHandIntent(null);
+    setQueuedIntentApplying(null);
+    setQueuedIntentError(null);
+  }, [
+    localNeedsRebuy,
+    localSeat,
+    localSeatStack,
+    localSeatStatus,
+    queuedIntentApplying,
+    queuedNextHandIntent,
+    seated,
+  ]);
 
   useEffect(() => {
     if (rebuyState === 'idle') {
@@ -2565,14 +2719,10 @@ export const PokerGamePage = ({
   }, []);
 
   useEffect(() => {
-    if (!isMyTurn || suggestedRaiseTo === null) return;
-    setBetAmount(suggestedRaiseTo);
-  }, [isMyTurn, hand?.handId, hand?.currentBet, hand?.minRaise, suggestedRaiseTo]);
-
-  useEffect(() => {
     if (!hand || hand.phase !== 'betting' || !isMyTurn) {
       setShowRaiseDrawer(false);
       setConfirmAllIn(false);
+      setAllInPresetSelected(false);
     }
   }, [hand?.handId, hand?.phase, isMyTurn]);
 
@@ -3173,6 +3323,34 @@ export const PokerGamePage = ({
     raiseActionLabel,
     checkOrCallLabel,
   } = bettingControls;
+  const onlyAllInRaiseAmount =
+    minRaiseTo !== null && maxRaiseTo !== null && minRaiseTo === maxRaiseTo;
+  const manualMaxRaiseTo =
+    minRaiseTo !== null && maxRaiseTo !== null && maxRaiseTo > minRaiseTo
+      ? maxRaiseTo - 1
+      : maxRaiseTo;
+  const selectedRaiseTo =
+    allInPresetSelected || onlyAllInRaiseAmount || manualMaxRaiseTo === null
+      ? clampedRaiseTo
+      : Math.min(clampedRaiseTo, manualMaxRaiseTo);
+  const selectedRaiseIsAllIn = Boolean(
+    maxRaiseTo !== null && selectedRaiseTo >= maxRaiseTo && (allInPresetSelected || onlyAllInRaiseAmount)
+  );
+  const raiseSubmitLabel = selectedRaiseIsAllIn
+    ? `Confirm all-in ${selectedRaiseTo}`
+    : raiseActionLabel === 'Bet'
+      ? `Bet ${selectedRaiseTo}`
+      : `Raise to ${selectedRaiseTo}`;
+  const setManualRaiseAmount = (amount: number) => {
+    const normalized = Number.isFinite(amount) ? Math.floor(amount) : 0;
+    setAllInPresetSelected(false);
+    setConfirmAllIn(false);
+    if (minRaiseTo !== null && manualMaxRaiseTo !== null) {
+      setBetAmount(Math.min(manualMaxRaiseTo, Math.max(minRaiseTo, normalized)));
+      return;
+    }
+    setBetAmount(normalized);
+  };
   const raiseDisabledHint = (() => {
     if (!hand || hand.phase !== 'betting') return 'Betting controls unlock during betting rounds.';
     if (!isMyTurn) return 'Wait for your turn.';
@@ -3195,6 +3373,14 @@ export const PokerGamePage = ({
         ? `To call ${formatChips(toCall)} \u00b7 Pot ${formatChips(potAmount)}`
         : `Check available \u00b7 Pot ${formatChips(potAmount)}`
       : '';
+
+  useEffect(() => {
+    if (!isMyTurn || minRaiseTo === null) return;
+    setBetAmount(minRaiseTo);
+    setAllInPresetSelected(false);
+    setConfirmAllIn(false);
+  }, [actionCurrentBet, hand?.handId, hand?.street, isMyTurn, minRaiseTo]);
+
   const discardLimit = serverDiscardActions?.count ?? 1;
   const isDiscardIndexAllowed = (idx: number) =>
     !serverDiscardValidIndexes || serverDiscardValidIndexes.has(idx);
@@ -3206,7 +3392,8 @@ export const PokerGamePage = ({
     if (!hand || minRaiseTo === null || maxRaiseTo === null) {
       return [] as Array<{ label: string; value: number; requiresConfirm?: boolean }>;
     }
-    const clamp = (value: number) => Math.min(maxRaiseTo, Math.max(minRaiseTo, Math.floor(value)));
+    const nonAllInMax = maxRaiseTo > minRaiseTo ? maxRaiseTo - 1 : maxRaiseTo;
+    const clamp = (value: number) => Math.min(nonAllInMax, Math.max(minRaiseTo, Math.floor(value)));
     const seed = [
       { label: '1/2 pot', value: clamp(actionCurrentBet + potAmount * 0.5) },
       { label: 'pot', value: clamp(actionCurrentBet + potAmount) },
@@ -3302,7 +3489,7 @@ export const PokerGamePage = ({
   );
   const youDisplayStatusLabel =
     isShowdown && youSeatDelta && youSeatDelta.net < 0 && (you?.status === 'allIn' || youBusted)
-      ? 'ALL-IN'
+      ? 'All-in'
       : youSeatStatusLabel;
   const youDisplayStatusColor =
     isShowdown && youSeatDelta && youSeatDelta.net < 0 && (you?.status === 'allIn' || youBusted)
@@ -3670,28 +3857,43 @@ export const PokerGamePage = ({
   useEffect(() => {
     if (maxRaiseTo === null || clampedRaiseTo < maxRaiseTo) {
       setConfirmAllIn(false);
+      if (allInPresetSelected) {
+        setAllInPresetSelected(false);
+      }
     }
-  }, [clampedRaiseTo, maxRaiseTo]);
+  }, [allInPresetSelected, clampedRaiseTo, maxRaiseTo]);
 
   const toggleRaiseDrawer = () => {
     if (!canOpenRaiseDrawer) {
       return;
     }
-    setShowRaiseDrawer((previous) => !previous);
+    setShowRaiseDrawer((previous) => {
+      const next = !previous;
+      if (next && minRaiseTo !== null) {
+        setBetAmount(minRaiseTo);
+      }
+      return next;
+    });
     setConfirmAllIn(false);
+    setAllInPresetSelected(false);
   };
 
   const submitRaiseAction = () => {
     if (!canRaise) {
       return;
     }
-    const isAllInRaise = maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo;
+    const isAllInRaise = maxRaiseTo !== null && selectedRaiseTo >= maxRaiseTo;
+    if (isAllInRaise && !allInPresetSelected && !onlyAllInRaiseAmount) {
+      setStatus('Use the all-in preset to go all-in.');
+      return;
+    }
     if (isAllInRaise && !confirmAllIn) {
       setConfirmAllIn(true);
       return;
     }
-    act(isAllInRaise ? 'allIn' : raiseActionLabel === 'Bet' ? 'bet' : 'raise', clampedRaiseTo);
+    act(isAllInRaise ? 'allIn' : raiseActionLabel === 'Bet' ? 'bet' : 'raise', selectedRaiseTo);
     setConfirmAllIn(false);
+    setAllInPresetSelected(false);
     setShowRaiseDrawer(false);
   };
 
@@ -3883,7 +4085,6 @@ export const PokerGamePage = ({
                     type="button"
                     onClick={() => {
                       copyTableCode();
-                      setShowTopMenu(false);
                     }}
                     data-testid="menu-copy-table-code"
                     style={{
@@ -3902,8 +4103,12 @@ export const PokerGamePage = ({
                       gap: 8,
                     }}
                   >
-                    <span>Copy Table Code</span>
-                    <Copy aria-hidden="true" size={14} strokeWidth={2.1} />
+                    <span>{copyCodeFeedback ? 'Copied' : 'Copy Table Code'}</span>
+                    {copyCodeFeedback ? (
+                      <Check aria-hidden="true" size={14} strokeWidth={2.3} />
+                    ) : (
+                      <Copy aria-hidden="true" size={14} strokeWidth={2.1} />
+                    )}
                   </button>
                 ) : null}
                 <button
@@ -3955,29 +4160,6 @@ export const PokerGamePage = ({
           </div>
         </div>
       </div>
-      {copyCodeFeedback ? (
-        <div
-          role="status"
-          data-testid="copy-table-code-feedback"
-          style={{
-            position: 'fixed',
-            right: isPhone ? 10 : 24,
-            top: isPhone ? 64 : 76,
-            zIndex: 62,
-            borderRadius: 999,
-            border: `1px solid ${TABLE_THEME.tealBorder}`,
-            background: 'rgba(2, 18, 26, 0.94)',
-            color: '#ccfbf1',
-            padding: '7px 11px',
-            fontSize: 12,
-            fontWeight: 800,
-            boxShadow: '0 14px 28px rgba(0,0,0,0.34)',
-            pointerEvents: 'none',
-          }}
-        >
-          {copyCodeFeedback}
-        </div>
-      ) : null}
       {showRulesOverlay ? (
         <RulesOverlay isPhone={isPhone} onClose={() => setShowRulesOverlay(false)} />
       ) : null}
@@ -5295,7 +5477,7 @@ export const PokerGamePage = ({
                             glow: 'rgba(148,163,184,0.26)',
                           })}
                         >
-                          {showRaiseDrawer ? `Close ${raiseActionLabel}` : raiseActionLabel}
+                          {raiseActionLabel}
                         </button>
                         {canShortOpenAllIn && allInTotal !== null ? (
                           <button
@@ -5326,22 +5508,54 @@ export const PokerGamePage = ({
                             gap: 10,
                           }}
                         >
-                          <div style={{ fontSize: 12, color: '#e2e8f0' }}>
-                            {raiseActionLabel === 'Bet' ? 'Bet amount' : 'Raise to'}{' '}
-                            <strong>{clampedRaiseTo}</strong>
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 8,
+                            }}
+                          >
+                            <div style={{ fontSize: 12, color: '#e2e8f0' }}>
+                              {raiseActionLabel === 'Bet' ? 'Bet amount' : 'Raise to'}{' '}
+                              <strong>{selectedRaiseTo}</strong>
+                            </div>
+                            <button
+                              type="button"
+                              data-testid="bet-panel-close"
+                              aria-label="Close bet panel"
+                              onClick={() => {
+                                setShowRaiseDrawer(false);
+                                setConfirmAllIn(false);
+                                setAllInPresetSelected(false);
+                              }}
+                              style={{
+                                border: `1px solid ${TABLE_THEME.border}`,
+                                background: TABLE_THEME.panelSoft,
+                                color: TABLE_THEME.muted,
+                                borderRadius: 6,
+                                minWidth: 30,
+                                minHeight: 28,
+                                display: 'grid',
+                                placeItems: 'center',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <X aria-hidden="true" size={14} strokeWidth={2.2} />
+                            </button>
                           </div>
                           <input
                             type="range"
                             min={minRaiseTo ?? undefined}
-                            max={maxRaiseTo ?? undefined}
-                            value={clampedRaiseTo}
+                            max={manualMaxRaiseTo ?? undefined}
+                            value={selectedRaiseTo}
                             step={1}
                             disabled={
                               !canOpenRaiseDrawer || minRaiseTo === null || maxRaiseTo === null
                             }
                             onChange={(event) => {
                               const next = Number.parseInt(event.target.value, 10);
-                              setBetAmount(Number.isFinite(next) ? next : 0);
+                              setManualRaiseAmount(next);
                             }}
                             style={{ width: '100%' }}
                           />
@@ -5361,7 +5575,8 @@ export const PokerGamePage = ({
                                 type="button"
                                 onClick={() => {
                                   setBetAmount(option.value);
-                                  setConfirmAllIn(false);
+                                  setAllInPresetSelected(Boolean(option.requiresConfirm));
+                                  setConfirmAllIn(Boolean(option.requiresConfirm));
                                 }}
                                 style={{
                                   borderRadius: 6,
@@ -5391,12 +5606,12 @@ export const PokerGamePage = ({
                               type="number"
                               value={betAmount}
                               min={minRaiseTo ?? undefined}
-                              max={maxRaiseTo ?? undefined}
+                              max={manualMaxRaiseTo ?? undefined}
                               step={1}
                               disabled={!canOpenRaiseDrawer}
                               onChange={(event) => {
                                 const next = Number.parseInt(event.target.value, 10);
-                                setBetAmount(Number.isFinite(next) ? next : 0);
+                                setManualRaiseAmount(next);
                               }}
                               style={{
                                 minHeight: 42,
@@ -5416,26 +5631,24 @@ export const PokerGamePage = ({
                               onClick={submitRaiseAction}
                               style={turnActionStyle(canRaise, {
                                 border:
-                                  maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
+                                  selectedRaiseIsAllIn
                                     ? 'rgba(248,113,113,0.9)'
                                     : 'rgba(94,234,212,0.78)',
                                 background:
-                                  maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
+                                  selectedRaiseIsAllIn
                                     ? 'rgba(127,29,29,0.58)'
                                     : 'rgba(20,184,166,0.28)',
                                 color:
-                                  maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
+                                  selectedRaiseIsAllIn
                                     ? '#fee2e2'
                                     : '#ccfbf1',
                                 glow:
-                                  maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo
+                                  selectedRaiseIsAllIn
                                     ? 'rgba(248,113,113,0.35)'
                                     : 'rgba(20,184,166,0.3)',
                               })}
                             >
-                              {maxRaiseTo !== null && clampedRaiseTo >= maxRaiseTo && !confirmAllIn
-                                ? `Confirm all-in ${clampedRaiseTo}`
-                                : `${raiseActionLabel} ${clampedRaiseTo}`}
+                              {raiseSubmitLabel}
                             </button>
                           </div>
                           <div style={{ fontSize: 11, color: 'rgba(203,213,225,0.9)' }}>
