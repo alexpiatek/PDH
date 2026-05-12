@@ -21,7 +21,7 @@
     "nakama:up": "pnpm -C apps/nakama build && docker compose -f apps/nakama/docker-compose.yml up",
     "nakama:up:oracle": "pnpm -C apps/nakama build && docker compose -f apps/nakama/docker-compose.oracle.yml up",
     "build": "./scripts/run-pnpm.sh -C packages/engine build && ./scripts/run-pnpm.sh -C apps/nakama build && ./scripts/run-pnpm.sh -C apps/web build",
-    "typecheck": "./scripts/typecheck.sh",
+    "typecheck": "node scripts/typecheck.mjs",
     "lint": "./scripts/lint.sh",
     "format": "./scripts/format.sh",
     "format:check": "./scripts/format-check.sh",
@@ -31,7 +31,7 @@
     "db:migrate": "./scripts/db-migrate.sh",
     "db:seed": "./scripts/db-seed.sh",
     "db:flag": "./scripts/feature-flag.sh",
-    "test": "./scripts/test.sh",
+    "test": "node scripts/test.mjs",
     "test:integration": "./scripts/integration-test.sh",
     "test:e2e": "./scripts/e2e-test.sh"
   },
