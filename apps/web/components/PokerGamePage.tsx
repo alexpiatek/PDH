@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronUp, MoreHorizontal, Trophy } from 'lucide-react';
+import { ChevronRight, MoreHorizontal, Trophy } from 'lucide-react';
 import { Client as NakamaClient } from '@heroiclabs/nakama-js';
 import type { Match, Session, Socket as NakamaSocket } from '@heroiclabs/nakama-js';
 import { Card, HandState, PlayerInHand, ShowdownPotResult, ShowdownWinner } from '@pdh/engine';
@@ -798,21 +798,6 @@ type LastHandRecapLine = {
   tone?: 'winner' | 'danger';
 };
 
-const formatPotWinnerText = (pot: ShowdownPotView) => {
-  const winners = pot.winners;
-  if (!winners.length) return `${pot.label}: unresolved`;
-  const names = joinPlayerNames(winners.map((winner) => winner.name));
-  const amounts = [...new Set(winners.map((winner) => winner.amount))];
-  const handTitles = [...new Set(winners.map((winner) => winner.handTitle).filter(Boolean))];
-  const amountCopy =
-    amounts.length === 1
-      ? `${formatChips(amounts[0])}${winners.length > 1 ? ' each' : ''}`
-      : winners.map((winner) => `${winner.name} ${formatChips(winner.amount)}`).join(', ');
-  const handCopy =
-    handTitles.length === 1 && handTitles[0] ? ` with ${handTitles[0]}` : ' with winning hands';
-  return `${pot.label}: ${names} ${winners.length === 1 ? 'wins' : 'win'} ${amountCopy}${handCopy}`;
-};
-
 const ShowdownResultBanner = ({
   result,
   isPhone,
@@ -820,7 +805,7 @@ const ShowdownResultBanner = ({
 }: {
   result: ShowdownResultView;
   isPhone: boolean;
-  onViewDetails: () => void;
+  onViewDetails?: () => void;
 }) => {
   const { winners, pots, hasSplitPot } = result;
   const primaryWinner = [...winners].sort((a, b) => b.amount - a.amount)[0] ?? winners[0];
@@ -949,27 +934,29 @@ const ShowdownResultBanner = ({
             </div>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={onViewDetails}
-          style={{
-            flex: '0 0 auto',
-            border: 'none',
-            background: 'transparent',
-            color: '#ccfbf1',
-            padding: isPhone ? '6px 0 6px 4px' : '6px 0 6px 8px',
-            fontSize: isPhone ? 11 : 12,
-            fontWeight: 900,
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 3,
-          }}
-        >
-          {isPhone ? 'Details' : 'View hand details'}
-          <ChevronRight size={isPhone ? 14 : 15} strokeWidth={2.7} />
-        </button>
+        {onViewDetails ? (
+          <button
+            type="button"
+            onClick={onViewDetails}
+            style={{
+              flex: '0 0 auto',
+              border: 'none',
+              background: 'transparent',
+              color: '#ccfbf1',
+              padding: isPhone ? '6px 0 6px 4px' : '6px 0 6px 8px',
+              fontSize: isPhone ? 11 : 12,
+              fontWeight: 900,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 3,
+            }}
+          >
+            {isPhone ? 'Details' : 'View hand details'}
+            <ChevronRight size={isPhone ? 14 : 15} strokeWidth={2.7} />
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -977,40 +964,26 @@ const ShowdownResultBanner = ({
 
 const LastHandRecap = ({
   lines,
-  fullLog,
-  potSummaries,
-  isCollapsed,
-  showDetails,
   isPhone,
-  onToggleCollapsed,
-  onViewDetails,
 }: {
   lines: LastHandRecapLine[];
-  fullLog: Array<{ message?: string }>;
-  potSummaries: string[];
-  isCollapsed: boolean;
-  showDetails: boolean;
   isPhone: boolean;
-  onToggleCollapsed: () => void;
-  onViewDetails: () => void;
 }) => {
-  const compactLines = lines.slice(0, 4);
-  const detailRows = fullLog
-    .map((entry) => entry.message)
-    .filter((message): message is string => Boolean(message));
+  const visibleLines = lines.slice(-10);
 
   return (
     <section
-      aria-label="Last hand recap"
+      aria-label="Game log"
       data-testid="last-hand-recap"
       style={{
         position: 'fixed',
         zIndex: 46,
         left: isPhone ? 10 : 24,
-        right: isPhone ? 10 : undefined,
-        bottom: isPhone ? 96 : 26,
-        width: isPhone ? 'auto' : 392,
-        maxHeight: isPhone ? '34dvh' : '38dvh',
+        bottom: isPhone ? 'calc(env(safe-area-inset-bottom, 0px) + 96px)' : 26,
+        width: isPhone ? 'min(320px, calc(100vw - 20px))' : 420,
+        maxWidth: 'calc(100vw - 20px)',
+        minHeight: isPhone ? 132 : 148,
+        maxHeight: isPhone ? '32dvh' : '40dvh',
         borderRadius: 8,
         border: `1px solid ${TABLE_THEME.border}`,
         background:
@@ -1022,128 +995,55 @@ const LastHandRecap = ({
         pointerEvents: 'auto',
       }}
     >
-      <button
-        type="button"
-        aria-expanded={!isCollapsed}
-        onClick={onToggleCollapsed}
+      <div
         style={{
-          width: '100%',
-          border: 'none',
-          borderBottom: isCollapsed ? 'none' : `1px solid ${TABLE_THEME.border}`,
-          background: 'transparent',
-          color: TABLE_THEME.text,
-          padding: isPhone ? '9px 10px' : '10px 12px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          cursor: 'pointer',
-          fontFamily: TABLE_THEME.fontDisplay,
-          fontSize: isPhone ? 12 : 13,
-          fontWeight: 900,
-          letterSpacing: 0.45,
-          textTransform: 'uppercase',
+          height: '100%',
+          padding: isPhone ? '10px 11px' : '12px 14px',
+          overflowY: 'auto',
+          display: 'grid',
+          alignContent: 'start',
+          gap: isPhone ? 5 : 6,
         }}
       >
-        <span>Last Hand Recap</span>
-        {isCollapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-      </button>
-      {!isCollapsed ? (
-        <div
-          style={{
-            padding: isPhone ? '8px 10px 10px' : '10px 12px 12px',
-            overflowY: showDetails ? 'auto' : 'hidden',
-            maxHeight: isPhone ? 'calc(34dvh - 38px)' : 'calc(38dvh - 42px)',
-          }}
-        >
-          <div style={{ display: 'grid', gap: isPhone ? 5 : 7 }}>
-            {compactLines.map((line) => (
-              <div
-                key={`${line.street}-${line.text}`}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: isPhone ? '58px minmax(0, 1fr)' : '72px minmax(0, 1fr)',
-                  gap: 8,
-                  alignItems: 'baseline',
-                  fontSize: isPhone ? 11 : 12,
-                  lineHeight: 1.25,
-                }}
-              >
-                <span style={{ color: TABLE_THEME.muted, fontWeight: 900 }}>{line.street}:</span>
-                <span
-                  style={{
-                    minWidth: 0,
-                    color: line.tone === 'winner' ? '#86efac' : TABLE_THEME.text,
-                    fontWeight: line.tone === 'winner' ? 800 : 700,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {line.text}
-                </span>
-              </div>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={onViewDetails}
-            style={{
-              marginTop: isPhone ? 8 : 10,
-              border: 'none',
-              background: 'transparent',
-              color: '#5eead4',
-              padding: 0,
-              fontSize: isPhone ? 11 : 12,
-              fontWeight: 900,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-            }}
-          >
-            View hand details
-            <ChevronRight size={14} strokeWidth={2.7} />
-          </button>
-          {showDetails ? (
+        {visibleLines.length ? (
+          visibleLines.map((line, index) => (
             <div
-              data-testid="last-hand-detail-log"
+              key={`${index}-${line.street}-${line.text}`}
               style={{
-                marginTop: 10,
-                paddingTop: 9,
-                borderTop: `1px solid ${TABLE_THEME.border}`,
                 display: 'grid',
-                gap: 5,
+                gridTemplateColumns: isPhone ? '56px minmax(0, 1fr)' : '68px minmax(0, 1fr)',
+                gap: 8,
+                alignItems: 'baseline',
+                fontSize: isPhone ? 10.5 : 11.5,
+                lineHeight: 1.32,
               }}
             >
-              {potSummaries.map((summary) => (
-                <div
-                  key={summary}
-                  style={{
-                    fontSize: isPhone ? 10 : 11,
-                    lineHeight: 1.3,
-                    color: '#ccfbf1',
-                    fontWeight: 800,
-                  }}
-                >
-                  {summary}
-                </div>
-              ))}
-              {detailRows.map((message, idx) => (
-                <div
-                  key={`${idx}-${message}`}
-                  style={{
-                    fontSize: isPhone ? 10 : 11,
-                    lineHeight: 1.3,
-                    color: 'rgba(226,232,240,0.84)',
-                  }}
-                >
-                  {formatRecapActionMessage(message)}
-                </div>
-              ))}
+              <span style={{ color: TABLE_THEME.muted, fontWeight: 900 }}>{line.street}</span>
+              <span
+                style={{
+                  minWidth: 0,
+                  color: line.tone === 'winner' ? '#86efac' : TABLE_THEME.text,
+                  fontWeight: line.tone === 'winner' ? 800 : 700,
+                  overflowWrap: 'anywhere',
+                }}
+              >
+                {line.text}
+              </span>
             </div>
-          ) : null}
-        </div>
-      ) : null}
+          ))
+        ) : (
+          <div
+            style={{
+              fontSize: isPhone ? 10.5 : 11.5,
+              lineHeight: 1.35,
+              color: TABLE_THEME.muted,
+              fontWeight: 700,
+            }}
+          >
+            Waiting for action.
+          </div>
+        )}
+      </div>
     </section>
   );
 };
@@ -1370,8 +1270,6 @@ export const PokerGamePage = ({
   const [chatMessages, setChatMessages] = useState<TableChatMessage[]>([]);
   const [mutedChatPlayerIds, setMutedChatPlayerIds] = useState<string[]>([]);
   const [clockNowMs, setClockNowMs] = useState(() => Date.now());
-  const [lastHandRecapCollapsed, setLastHandRecapCollapsed] = useState(false);
-  const [showLastHandDetails, setShowLastHandDetails] = useState(false);
   const resolvedForcedMatchId = forcedMatchId?.trim() || '';
   const hasLoggedTableJoinedRef = useRef(false);
   const hasLoggedFirstActionRef = useRef(false);
@@ -2285,14 +2183,6 @@ export const PokerGamePage = ({
   const hiddenChatCount = chatMessages.length - visibleChatMessages.length;
 
   useEffect(() => {
-    if (hand?.phase === 'showdown') {
-      setLastHandRecapCollapsed(false);
-      setShowLastHandDetails(false);
-      return;
-    }
-  }, [hand?.handId, hand?.phase]);
-
-  useEffect(() => {
     if (rebuyState === 'idle') {
       return;
     }
@@ -2808,76 +2698,37 @@ export const PokerGamePage = ({
     };
   }, [hand?.players, hand?.showdownPots, hand?.showdownWinners, playerNameById]);
   const lastHandRecapLines = useMemo<LastHandRecapLine[]>(() => {
-    if (!hand) return [];
-    const streetOrder = ['Pre-flop', 'Flop', 'Turn'] as const;
-    const actionsByStreet = new Map<(typeof streetOrder)[number], string[]>(
-      streetOrder.map((street) => [street, []])
-    );
-    let currentStreet: (typeof streetOrder)[number] = 'Pre-flop';
-    for (const entry of hand.log ?? []) {
-      const message = entry.message;
+    const sourceLog = hand?.log ?? state?.log ?? [];
+    if (!sourceLog.length) return [];
+
+    let currentStreet = hand ? formatStreetLabel(hand.street) : 'Table';
+    const lines: LastHandRecapLine[] = [];
+    for (const entry of sourceLog) {
+      const message = entry.message?.trim();
       if (!message) continue;
-      if (/^Starting betting on flop$/i.test(message) || /^Flop:/i.test(message)) {
+      if (message === 'Hand started' || message.startsWith('Blinds posted')) {
+        currentStreet = 'Pre-flop';
+      } else if (/^Starting betting on flop$/i.test(message) || /^Flop:/i.test(message)) {
         currentStreet = 'Flop';
         continue;
-      }
-      if (/^Starting betting on turn$/i.test(message) || /^Turn:/i.test(message)) {
+      } else if (/^Starting betting on turn$/i.test(message) || /^Turn:/i.test(message)) {
         currentStreet = 'Turn';
         continue;
-      }
-      if (/^Starting betting on river$/i.test(message) || /^River:/i.test(message)) {
+      } else if (/^Starting betting on river$/i.test(message) || /^River:/i.test(message)) {
+        currentStreet = 'River';
         continue;
+      } else if (/showdown/i.test(message)) {
+        currentStreet = 'Showdown';
       }
-      if (
-        /^Hand started$/i.test(message) ||
-        /^Discard phase started/i.test(message) ||
-        /posts (small|big) blind/i.test(message) ||
-        /\bwins\b/i.test(message) ||
-        /: \d+ -> \d+$/.test(message) ||
-        /is out of chips$/i.test(message)
-      ) {
-        continue;
-      }
-      if (
-        /(folded|checked|called|raised|bet|all-in|auto-folded|auto-checked|discarded)/i.test(
-          message
-        )
-      ) {
-        actionsByStreet.get(currentStreet)?.push(message);
-      }
-    }
-
-    const lines: LastHandRecapLine[] = [];
-    for (const street of streetOrder) {
-      const actions = actionsByStreet.get(street) ?? [];
-      if (!actions.length) continue;
-      const allInActions = actions.filter((message) => /all-in/i.test(message));
-      const text =
-        allInActions.length >= 2
-          ? allInActions.length === 2
-            ? 'both players all-in'
-            : 'multiple players all-in'
-          : formatRecapActionMessage(actions[actions.length - 1]);
-      lines.push({ street, text });
-    }
-
-    if (showdownResult?.winners.length) {
-      const winner =
-        [...showdownResult.winners].sort((a, b) => b.amount - a.amount)[0] ??
-        showdownResult.winners[0];
-      const resultStreet = hand.board.length >= 5 ? 'River' : formatStreetLabel(hand.street);
-      const winnerNames = joinPlayerNames(showdownResult.winners.map((entry) => entry.name));
       lines.push({
-        street: resultStreet === 'Preflop' ? 'Pre-flop' : resultStreet,
-        text: showdownResult.hasSplitPot
-          ? `${winnerNames} split${winner.handTitle ? ` with ${winner.handTitle}` : ''}`
-          : `${winner.name} wins${winner.handTitle ? ` with ${winner.handTitle}` : ''}`,
-        tone: 'winner',
+        street: currentStreet,
+        text: formatRecapActionMessage(message),
+        tone: /(wins|split)/i.test(message) ? 'winner' : undefined,
       });
     }
 
-    return lines.slice(-4);
-  }, [hand, showdownResult]);
+    return lines.slice(-10);
+  }, [hand?.log, hand?.street, state?.log]);
 
   const seatingPositions = isPortraitPhone
     ? [
@@ -4365,10 +4216,10 @@ export const PokerGamePage = ({
                   top: isPortraitPhone ? '29%' : '40%',
                   left: '50%',
                   transform: isPortraitPhone
-                    ? 'translate(-50%, -50%) translateY(-10px)'
+                    ? 'translate(-50%, -50%) translateY(calc(-10px - 10mm))'
                     : isShowdown
-                      ? 'translate(-50%, -50%) translateY(calc(-19px - 3.75cm))'
-                      : 'translate(-50%, -50%) translateY(calc(-19px - 2.1cm))',
+                      ? 'translate(-50%, -50%) translateY(calc(-19px - 3.75cm - 10mm))'
+                      : 'translate(-50%, -50%) translateY(calc(-19px - 2.1cm - 10mm))',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -4425,10 +4276,6 @@ export const PokerGamePage = ({
                   <ShowdownResultBanner
                     result={showdownResult}
                     isPhone={isPhone}
-                    onViewDetails={() => {
-                      setLastHandRecapCollapsed(false);
-                      setShowLastHandDetails(true);
-                    }}
                   />
                 </div>
               ) : null}
@@ -4592,11 +4439,11 @@ export const PokerGamePage = ({
                             <div
                               style={{
                                 position: 'absolute',
-                                top: -26,
-                                right: 4,
+                                top: 6,
+                                right: 6,
                                 zIndex: 12,
                                 display: 'flex',
-                                gap: 4,
+                                gap: 3,
                                 transform: 'none',
                                 pointerEvents: 'none',
                               }}
@@ -4919,11 +4766,11 @@ export const PokerGamePage = ({
                         <div
                           style={{
                             position: 'absolute',
-                            top: -26,
-                            right: 4,
+                            top: 6,
+                            right: 6,
                             zIndex: 12,
                             display: 'flex',
-                            gap: 4,
+                            gap: 3,
                             transform: 'none',
                             pointerEvents: 'none',
                           }}
@@ -5184,35 +5031,19 @@ export const PokerGamePage = ({
                 </>
               )}
             </div>
-            {isShowdown && showdownResult ? (
-              <>
-                <LastHandRecap
-                  lines={lastHandRecapLines}
-                  fullLog={hand?.log ?? []}
-                  potSummaries={showdownResult.pots.map(formatPotWinnerText)}
-                  isCollapsed={lastHandRecapCollapsed}
-                  showDetails={showLastHandDetails}
+            <LastHandRecap lines={lastHandRecapLines} isPhone={isPhone} />
+            {!localNeedsRebuy ? (
+              betweenHandActive ? (
+                <NextHandCountdown
+                  seconds={betweenHandCountdownSeconds}
+                  minSeconds={betweenHandMinSeconds}
+                  durationMs={betweenHandDurationMs}
+                  ready={readyForNextHand}
+                  canReady={canReadyForNextHand}
                   isPhone={isPhone}
-                  onToggleCollapsed={() => setLastHandRecapCollapsed((previous) => !previous)}
-                  onViewDetails={() => {
-                    setLastHandRecapCollapsed(false);
-                    setShowLastHandDetails(true);
-                  }}
+                  onReady={sendReadyForNextHand}
                 />
-                {!localNeedsRebuy ? (
-                  betweenHandActive ? (
-                    <NextHandCountdown
-                      seconds={betweenHandCountdownSeconds}
-                      minSeconds={betweenHandMinSeconds}
-                      durationMs={betweenHandDurationMs}
-                      ready={readyForNextHand}
-                      canReady={canReadyForNextHand}
-                      isPhone={isPhone}
-                      onReady={sendReadyForNextHand}
-                    />
-                  ) : null
-                ) : null}
-              </>
+              ) : null
             ) : null}
           </div>
           {(you || localNeedsRebuy) && (
@@ -6063,8 +5894,8 @@ const RoleChip = ({ label, tone }: { label: string; tone: 'dealer' | 'blind' }) 
   return (
     <div
       style={{
-        width: 22,
-        height: 22,
+        minWidth: label === 'BB' ? 24 : 18,
+        height: 18,
         borderRadius: '50%',
         background: isDealer ? TABLE_THEME.amberStrong : TABLE_THEME.teal,
         border: isDealer ? '1px solid #fef3c7' : '1px solid #ccfbf1',
@@ -6072,10 +5903,13 @@ const RoleChip = ({ label, tone }: { label: string; tone: 'dealer' | 'blind' }) 
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: 10,
-        fontWeight: 700,
-        letterSpacing: 0.2,
+        padding: label.length > 1 ? '0 5px' : 0,
+        fontSize: 8.5,
+        fontWeight: 800,
+        letterSpacing: 0.1,
+        lineHeight: 1,
         fontFamily: TABLE_THEME.fontSans,
+        boxShadow: '0 4px 10px rgba(0,0,0,0.22)',
       }}
     >
       {label}
