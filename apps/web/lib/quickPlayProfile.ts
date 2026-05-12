@@ -112,7 +112,7 @@ function inferQuickPlaySkillTierFromProfile(profile: QuickPlayProfile): QuickPla
   return 'pro';
 }
 
-export function buildQuickPlayRequest(maxPlayers = 6): QuickPlayRpcRequest {
+export function buildQuickPlayRequest(maxPlayers = 9): QuickPlayRpcRequest {
   const profile = readProfile();
   return {
     maxPlayers,
