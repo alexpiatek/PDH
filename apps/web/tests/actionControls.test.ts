@@ -76,4 +76,42 @@ describe('betting action controls', () => {
     expect(controls.checkOrCallLabel).toBe('Call 800');
     expect(controls.raiseActionLabel).toBe('Raise');
   });
+
+  it('labels a covered call as all-in from server legalActions', () => {
+    const legalActions: LegalActions = {
+      phase: 'betting',
+      isActor: true,
+      betting: {
+        canFold: true,
+        canCheck: false,
+        canCall: true,
+        callAmount: 1200,
+        canBet: false,
+        minBet: null,
+        maxBet: null,
+        canRaise: false,
+        minRaiseTo: null,
+        maxRaiseTo: null,
+        canAllIn: true,
+        allInAmount: 900,
+        stack: 900,
+        committedThisStreet: 0,
+        currentBet: 1200,
+      },
+    };
+
+    const controls = resolveBettingActionControls({
+      hand: partialHand,
+      player: { ...player, stack: 900 },
+      legalActions,
+      preferLegalActions: true,
+      betAmount: 1600,
+      raiseCapReached: false,
+    });
+
+    expect(controls.usesServerLegalActions).toBe(true);
+    expect(controls.canCheckOrCall).toBe(true);
+    expect(controls.isCallAllIn).toBe(true);
+    expect(controls.checkOrCallLabel).toBe('All-in 900');
+  });
 });

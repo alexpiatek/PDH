@@ -37,6 +37,7 @@ export default defineConfig({
           `NEXT_PUBLIC_NAKAMA_SERVER_KEY=${nakamaServerKey} ` +
           `NEXT_PUBLIC_NAKAMA_MATCH_MODULE=pdh ` +
           `NEXT_PUBLIC_NAKAMA_TABLE_ID=main ` +
+          `PDH_ENABLE_TEST_POKER_STATE=1 ` +
           `./scripts/run-pnpm.sh -C apps/web build && ` +
           `NEXT_PUBLIC_NETWORK_BACKEND=nakama ` +
           `NEXT_PUBLIC_NAKAMA_HOST=127.0.0.1 ` +
@@ -45,6 +46,7 @@ export default defineConfig({
           `NEXT_PUBLIC_NAKAMA_SERVER_KEY=${nakamaServerKey} ` +
           `NEXT_PUBLIC_NAKAMA_MATCH_MODULE=pdh ` +
           `NEXT_PUBLIC_NAKAMA_TABLE_ID=main ` +
+          `PDH_ENABLE_TEST_POKER_STATE=1 ` +
           `./scripts/run-pnpm.sh -C apps/web start --port ${webPort}`,
         url: baseURL,
         reuseExistingServer: false,

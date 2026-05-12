@@ -470,6 +470,10 @@ interface PokerGamePageProps {
   forcedMatchId?: string | null;
   onExitLobby?: () => void;
   showExitButton?: boolean;
+  debugInitialState?: ServerStatePayload | null;
+  debugPlayerId?: string | null;
+  debugDisableNetwork?: boolean;
+  debugStatus?: string;
 }
 
 type Pip = { x: number; y: number; size?: number };
@@ -1164,7 +1168,7 @@ const NextHandCountdown = ({
         position: 'fixed',
         zIndex: 46,
         right: isPhone ? 10 : 24,
-        bottom: isPhone ? 18 : 26,
+        bottom: `calc(${isPhone ? 18 : 26}px + env(safe-area-inset-bottom))`,
         width: isPhone ? 236 : 292,
         borderRadius: 8,
         border: `1px solid ${TABLE_THEME.border}`,
@@ -1309,7 +1313,13 @@ export const PokerGamePage = ({
   forcedMatchId = null,
   onExitLobby,
   showExitButton = true,
+  debugInitialState = null,
+  debugPlayerId = null,
+  debugDisableNetwork = false,
+  debugStatus = 'Connected (test snapshot)',
 }: PokerGamePageProps) => {
+  const debugMode = Boolean(debugDisableNetwork || debugInitialState);
+  const resolvedDebugPlayerId = debugPlayerId ?? debugInitialState?.you?.playerId ?? null;
   const connectionRef = useRef<{ send: (msg: ClientMessage) => void; close: () => void } | null>(
     null
   );
@@ -1322,15 +1332,15 @@ export const PokerGamePage = ({
   const latestAppliedStateVersionRef = useRef<number | null>(null);
   const serverTimeOffsetMsRef = useRef(0);
   const tableRef = useRef<HTMLDivElement | null>(null);
-  const [playerId, setPlayerId] = useState<string | null>(null);
+  const [playerId, setPlayerId] = useState<string | null>(resolvedDebugPlayerId);
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
   const [tableScale, setTableScale] = useState(1);
   const [viewportWidth, setViewportWidth] = useState(1280);
   const [viewportHeight, setViewportHeight] = useState(800);
   const buyIn = 10000;
-  const [state, setState] = useState<any>(null);
-  const [status, setStatus] = useState<string>('Disconnected');
+  const [state, setState] = useState<any>(debugInitialState);
+  const [status, setStatus] = useState<string>(debugInitialState ? debugStatus : 'Disconnected');
   const [betAmount, setBetAmount] = useState<number>(200);
   const [discardFlashIndex, setDiscardFlashIndex] = useState<number | null>(null);
   const [discardSubmitted, setDiscardSubmitted] = useState(false);
@@ -1357,7 +1367,7 @@ export const PokerGamePage = ({
   const autoJoinAttemptedRef = useRef(false);
   const rebuyNextHandSentRef = useRef(false);
   const rebuyStateRef = useRef<'idle' | 'pending' | 'confirmed'>('idle');
-  const [hasReceivedState, setHasReceivedState] = useState(false);
+  const [hasReceivedState, setHasReceivedState] = useState(Boolean(debugInitialState));
 
   const serverClockNow = () => Date.now() + serverTimeOffsetMsRef.current;
 
@@ -1486,6 +1496,17 @@ export const PokerGamePage = ({
   };
 
   useEffect(() => {
+    if (debugMode) {
+      connectionRef.current = null;
+      legacySocketRef.current = null;
+      pendingMessagesRef.current = [];
+      setPlayerId(resolvedDebugPlayerId);
+      setState(debugInitialState);
+      setStatus(debugStatus);
+      setHasReceivedState(Boolean(debugInitialState));
+      return;
+    }
+
     const existing =
       typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.playerId) : null;
     const storedNextMutatingSeq =
@@ -1802,7 +1823,7 @@ export const PokerGamePage = ({
       connectionRef.current = null;
       legacySocketRef.current = null;
     };
-  }, [resolvedForcedMatchId]);
+  }, [debugInitialState, debugMode, debugStatus, resolvedDebugPlayerId, resolvedForcedMatchId]);
 
   const handleExitTable = () => {
     connectionRef.current?.close();
@@ -2979,7 +3000,7 @@ export const PokerGamePage = ({
       ? isPortraitPhone
         ? 178
         : isLandscapePhone
-          ? 198
+          ? 210
           : 122
       : 74
     : 152 + actionBarReserve;
@@ -5150,6 +5171,7 @@ export const PokerGamePage = ({
           </div>
           {(you || localNeedsRebuy) && (
             <div
+              data-testid="action-tray"
               style={{
                 position: pinActionTray ? 'fixed' : 'static',
                 left: pinActionTray ? (isPhone ? 8 : 16) : undefined,
@@ -5242,7 +5264,13 @@ export const PokerGamePage = ({
                       ? `1px solid ${TABLE_THEME.tealBorder}`
                       : `1px solid ${TABLE_THEME.border}`,
                     background: TABLE_THEME.panelStrong,
-                    padding: isMyTurn ? (isPhone ? '10px 12px' : '12px 14px') : '9px 12px',
+                    padding: isMyTurn
+                      ? isLandscapePhone
+                        ? '8px 10px'
+                        : isPhone
+                          ? '10px 12px'
+                          : '12px 14px'
+                      : '9px 12px',
                     boxShadow: isMyTurn
                       ? '0 0 0 1px rgba(20,184,166,0.2), 0 14px 28px rgba(20,184,166,0.16)'
                       : '0 10px 20px rgba(0,0,0,0.22)',
@@ -5349,6 +5377,7 @@ export const PokerGamePage = ({
                           style={{ display: 'none' }}
                         />
                         <button
+                          data-testid="action-raise-toggle"
                           type="button"
                           disabled={!canOpenRaiseDrawer}
                           onClick={toggleRaiseDrawer}
@@ -5419,6 +5448,9 @@ export const PokerGamePage = ({
                             {quickRaiseOptions.map((option) => (
                               <button
                                 key={`${option.label}-${option.value}`}
+                                data-testid={
+                                  option.requiresConfirm ? 'raise-option-allin' : undefined
+                                }
                                 type="button"
                                 onClick={() => {
                                   setBetAmount(option.value);

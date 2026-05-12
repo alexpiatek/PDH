@@ -1006,3 +1006,26 @@ Remaining risks:
 - Mobile-specific action-tray regression coverage is still thin.
 
 Next recommended task: add mobile action-tray regression tests, or move to persistence/restart recovery if restart safety is the higher priority.
+
+## Implementation Note: Mobile Action-Tray Regression Coverage
+
+Date: 2026-05-11
+
+Covered in this slice:
+
+- Added state-driven Playwright coverage for the action tray at 390x844 mobile portrait, 375x667 small mobile, 844x390 mobile landscape, and 1280x720 desktop.
+- Covered betting controls from Nakama-style `legalActions`, including call/raise, check/all-in, no `Call 0`, raise drawer access, and primary action clickability.
+- Covered discard selection plus the confirm discard CTA, and showdown/between-hand visibility with the server-owned next-hand countdown/ready state.
+
+Layout fixes made:
+
+- Added safe-area-aware bottom positioning to the between-hand countdown.
+- Tightened mobile-landscape betting tray padding and table vertical reserve so the action tray container stays inside the viewport.
+- Added semantic test ids for the action tray and raise drawer controls without changing `legalActions` resolution or legacy fallback behavior.
+
+Remaining UI risks:
+
+- The regression page uses representative snapshots rather than a full live Nakama hand progression, so it does not prove transport, reconnect, or timing behavior.
+- Visual overlap is checked through locator visibility, viewport bounds, and clickability rather than screenshot diffing.
+
+Next recommended task: implement active hand persistence/restart recovery.
