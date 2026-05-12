@@ -6,7 +6,7 @@ import { isValidTableCodeFormat, normalizeTableCode } from '@pdh/protocol';
 import { ArrowRight, Clock3, KeyRound, Spade, Users } from 'lucide-react';
 import { logClientEvent } from '../lib/clientTelemetry';
 import {
-  ensureNakamaReady,
+  ensureNakamaSession,
   formatNakamaError,
   quickPlayLobby,
   resolveLobbyCode,
@@ -122,7 +122,7 @@ const PlayLobbyPage: NextPage = () => {
         return;
       }
 
-      await ensureNakamaReady();
+      await ensureNakamaSession();
       const quickPlayRequest = buildQuickPlayRequest();
       const resolved = await quickPlayLobby(quickPlayRequest);
 
@@ -159,7 +159,7 @@ const PlayLobbyPage: NextPage = () => {
       };
     }
 
-    await ensureNakamaReady();
+    await ensureNakamaSession();
     const resolved = await resolveLobbyCode({ code });
     return {
       code,
