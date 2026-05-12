@@ -16,6 +16,7 @@ const STORAGE_KEYS = {
 } as const;
 
 const SESSION_EXPIRY_SKEW_SECONDS = 20;
+const LOCAL_NAKAMA_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '0.0.0.0']);
 
 export interface NakamaClientConfig {
   host: string;
@@ -213,8 +214,17 @@ async function authenticateDeviceWithRetries(client: NakamaClient, deviceId: str
 }
 
 export function getNakamaConfig(): NakamaClientConfig {
+  const configuredHost =
+    process.env.NEXT_PUBLIC_NAKAMA_HOST || process.env.NAKAMA_HOST || '127.0.0.1';
+  const host =
+    typeof window !== 'undefined' &&
+    LOCAL_NAKAMA_HOSTS.has(configuredHost.trim().toLowerCase()) &&
+    !LOCAL_NAKAMA_HOSTS.has(window.location.hostname.toLowerCase())
+      ? window.location.hostname
+      : configuredHost;
+
   return {
-    host: process.env.NEXT_PUBLIC_NAKAMA_HOST || process.env.NAKAMA_HOST || '127.0.0.1',
+    host,
     port: process.env.NEXT_PUBLIC_NAKAMA_PORT || process.env.NAKAMA_PORT || '7350',
     useSSL: parseBoolean(
       process.env.NEXT_PUBLIC_NAKAMA_USE_SSL || process.env.NAKAMA_USE_SSL,

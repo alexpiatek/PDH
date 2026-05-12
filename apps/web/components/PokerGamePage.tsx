@@ -71,7 +71,7 @@ const parseBoolean = (value: string | undefined, fallback: boolean) => {
 
 const NAKAMA_USE_SSL = parseBoolean(process.env.NEXT_PUBLIC_NAKAMA_USE_SSL, false);
 const USE_NAKAMA_BACKEND = NETWORK_BACKEND === 'nakama';
-const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '0.0.0.0']);
 const TABLE_THEME = {
   fontSans:
     'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
@@ -230,11 +230,25 @@ const isMissingNakamaMatchError = (error: unknown) => {
   return message === 'code 4' || message.includes('not found');
 };
 
+const runtimeNakamaHost = () => {
+  const configuredHost = NAKAMA_HOST.trim();
+  if (typeof window === 'undefined') {
+    return configuredHost;
+  }
+
+  const uiHost = window.location.hostname.toLowerCase();
+  const apiHost = configuredHost.toLowerCase();
+  if (!LOCAL_HOSTS.has(uiHost) && LOCAL_HOSTS.has(apiHost)) {
+    return window.location.hostname;
+  }
+  return configuredHost;
+};
+
 const startupSanityError = () => {
   if (!USE_NAKAMA_BACKEND) return null;
   if (typeof window === 'undefined') return null;
 
-  if (!NAKAMA_HOST.trim()) {
+  if (!runtimeNakamaHost()) {
     return 'Missing NEXT_PUBLIC_NAKAMA_HOST';
   }
   if (!NAKAMA_PORT.trim()) {
@@ -249,9 +263,9 @@ const startupSanityError = () => {
   }
 
   const uiHost = window.location.hostname.toLowerCase();
-  const apiHost = NAKAMA_HOST.trim().toLowerCase();
+  const apiHost = runtimeNakamaHost().toLowerCase();
   if (!LOCAL_HOSTS.has(uiHost) && LOCAL_HOSTS.has(apiHost)) {
-    return `Nakama host ${NAKAMA_HOST} is local, but UI host is ${window.location.hostname}`;
+    return `Nakama host ${runtimeNakamaHost()} is local, but UI host is ${window.location.hostname}`;
   }
 
   return null;
@@ -1710,7 +1724,12 @@ export const PokerGamePage = ({
         throw new Error(`Startup sanity check failed: ${sanity}`);
       }
 
-      const client = new NakamaClient(NAKAMA_CLIENT_KEY, NAKAMA_HOST, NAKAMA_PORT, NAKAMA_USE_SSL);
+      const client = new NakamaClient(
+        NAKAMA_CLIENT_KEY,
+        runtimeNakamaHost(),
+        NAKAMA_PORT,
+        NAKAMA_USE_SSL
+      );
       const session = await authenticateDeviceWithRetries(client, getOrCreateDeviceId());
       if (disposed) return;
       const sessionUserId =
