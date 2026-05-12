@@ -4444,59 +4444,61 @@ export const PokerGamePage = ({
                     ? 'translate(-50%, -50%) translateY(2px)'
                     : 'translate(-50%, -50%) translateY(calc(-19px - 0.4cm))',
                   display: 'flex',
-                  gap: isPortraitPhone ? 4 : '1mm',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: isPortraitPhone ? 12 : isPhone ? 14 : 16,
+                  zIndex: 12,
                 }}
               >
-                {communityCards.map((c, idx) => (
-                  <div
-                    key={`${dealAnimationKey}-community-${idx}-${c.rank}${c.suit}`}
-                    style={
-                      {
-                        animation: `deal-card 700ms ease-out ${idx * 120}ms both`,
-                        '--deal-x': '0px',
-                        '--deal-y': '-3.8cm',
-                      } as React.CSSProperties
-                    }
-                  >
-                    <CardView
-                      key={idx}
-                      card={c}
-                      size={isPortraitPhone ? 'medium' : isPhone ? 'large' : 'xlarge'}
-                      highlight={isShowdown && winningCards.has(cardKey(c))}
-                      dim={isShowdown && winningCards.size > 0 && !winningCards.has(cardKey(c))}
-                    />
-                  </div>
-                ))}
-              </div>
-              {latestActionLine && !isRevealPhase ? (
                 <div
                   style={{
-                    position: 'absolute',
-                    top: isPortraitPhone ? '38%' : '40%',
-                    left: '50%',
-                    transform: isPortraitPhone
-                      ? 'translate(-50%, -50%) translateY(104px)'
-                      : isPhone
-                        ? 'translate(-50%, -50%) translateY(calc(-19px + 1.55cm))'
-                        : 'translate(-50%, -50%) translateY(calc(-19px + 1.65cm))',
-                    maxWidth: isPortraitPhone ? 260 : 300,
-                    borderRadius: 999,
-                    border: `1px solid ${TABLE_THEME.border}`,
-                    background: 'rgba(2,7,9,0.78)',
-                    color: '#e2e8f0',
-                    padding: isPortraitPhone ? '4px 9px' : '5px 10px',
-                    fontSize: isPortraitPhone ? 10 : 11,
-                    fontWeight: 700,
-                    textAlign: 'center',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    boxShadow: '0 10px 24px rgba(0,0,0,0.28)',
+                    display: 'flex',
+                    gap: isPortraitPhone ? 4 : '1mm',
                   }}
                 >
-                  {latestActionLine}
+                  {communityCards.map((c, idx) => (
+                    <div
+                      key={`${dealAnimationKey}-community-${idx}-${c.rank}${c.suit}`}
+                      style={
+                        {
+                          animation: `deal-card 700ms ease-out ${idx * 120}ms both`,
+                          '--deal-x': '0px',
+                          '--deal-y': '-3.8cm',
+                        } as React.CSSProperties
+                      }
+                    >
+                      <CardView
+                        key={idx}
+                        card={c}
+                        size={isPortraitPhone ? 'medium' : isPhone ? 'large' : 'xlarge'}
+                        highlight={isShowdown && winningCards.has(cardKey(c))}
+                        dim={isShowdown && winningCards.size > 0 && !winningCards.has(cardKey(c))}
+                      />
+                    </div>
+                  ))}
                 </div>
-              ) : null}
+                {latestActionLine && !isRevealPhase ? (
+                  <div
+                    style={{
+                      maxWidth: isPortraitPhone ? 260 : 300,
+                      borderRadius: 999,
+                      border: `1px solid ${TABLE_THEME.border}`,
+                      background: 'rgba(2,7,9,0.78)',
+                      color: '#e2e8f0',
+                      padding: isPortraitPhone ? '4px 9px' : '5px 10px',
+                      fontSize: isPortraitPhone ? 10 : 11,
+                      fontWeight: 700,
+                      textAlign: 'center',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      boxShadow: '0 10px 24px rgba(0,0,0,0.28)',
+                    }}
+                  >
+                    {latestActionLine}
+                  </div>
+                ) : null}
+              </div>
               {tablePlayers.map((p, idx) => {
                 const pos = seatingPositions[idx];
                 const winner = winnersById.has(p.id);
