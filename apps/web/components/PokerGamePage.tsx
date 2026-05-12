@@ -4475,8 +4475,10 @@ export const PokerGamePage = ({
                     top: isPortraitPhone ? '38%' : '40%',
                     left: '50%',
                     transform: isPortraitPhone
-                      ? 'translate(-50%, -50%) translateY(74px)'
-                      : 'translate(-50%, -50%) translateY(calc(-19px - 0.85cm))',
+                      ? 'translate(-50%, -50%) translateY(104px)'
+                      : isPhone
+                        ? 'translate(-50%, -50%) translateY(calc(-19px + 1.55cm))'
+                        : 'translate(-50%, -50%) translateY(calc(-19px + 1.65cm))',
                     maxWidth: isPortraitPhone ? 260 : 300,
                     borderRadius: 999,
                     border: `1px solid ${TABLE_THEME.border}`,
