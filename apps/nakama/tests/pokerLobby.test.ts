@@ -25,6 +25,8 @@ function makeNakamaMock() {
   const storage = new Map<string, Record<string, unknown>>();
   const matches = new Map<string, MockMatchRecord>();
   let nextMatchId = 1;
+  const storageKey = (object: { collection: string; key: string; userId: string }) =>
+    `${object.collection}:${object.userId}:${object.key}`;
 
   const nk = {
     binaryToString: (data: Uint8Array) => new TextDecoder().decode(data),
@@ -70,7 +72,10 @@ function makeNakamaMock() {
     storageRead: vi.fn((objects: Array<{ key: string; collection: string; userId: string }>) => {
       return objects
         .map((object) => {
-          const value = storage.get(object.key);
+          const value =
+            object.collection === 'tables'
+              ? storage.get(object.key) ?? storage.get(storageKey(object))
+              : storage.get(storageKey(object)) ?? storage.get(object.key);
           if (!value) {
             return null;
           }
@@ -96,7 +101,10 @@ function makeNakamaMock() {
         }>
       ) => {
         for (const object of objects) {
-          storage.set(object.key, object.value);
+          storage.set(storageKey(object), object.value);
+          if (object.collection === 'tables') {
+            storage.set(object.key, object.value);
+          }
         }
         return objects.map((object) => ({
           collection: object.collection,
@@ -119,6 +127,22 @@ function makeNakamaMock() {
       }
       existing.size = size;
       matches.set(matchId, existing);
+    },
+    removeMatch(matchId: string) {
+      matches.delete(matchId);
+    },
+    addMatch(matchId: string, tableId: string, size = 0) {
+      matches.set(matchId, {
+        matchId,
+        label: JSON.stringify({ tableId }),
+        size,
+      });
+    },
+    setCheckpoint(tableId: string, checkpoint: Record<string, unknown>) {
+      storage.set(
+        `pdh_match_checkpoints:00000000-0000-0000-0000-000000000000:${tableId}`,
+        checkpoint
+      );
     },
   };
 }
@@ -213,6 +237,49 @@ describe('poker lobby RPCs', () => {
     expect(JSON.parse(joinResponse)).toEqual({
       error: 'We could not find a table with that code.',
     });
+  });
+
+  it('reuses an already-live replacement match when stale metadata has a checkpoint', () => {
+    const { nk, storage, removeMatch, addMatch, setCheckpoint } = makeNakamaMock();
+
+    const createResponse = rpcCreateTable(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ name: 'Recovered', maxPlayers: 5, isPrivate: true })
+    );
+    const created = JSON.parse(createResponse) as { code: string; matchId: string };
+    removeMatch(created.matchId);
+    addMatch('match-existing-recovery', created.code, 0);
+    setCheckpoint(created.code, {
+      schemaVersion: 1,
+      checkpointId: 'checkpoint-existing-recovery',
+      tableId: created.code,
+      matchId: created.matchId,
+      stateVersion: 7,
+      writtenAtMs: Date.now(),
+      serverTimeMs: Date.now(),
+      expiresAtMs: Date.now() + 60_000,
+      recovery: { policy: 'restore_from_checkpoint', canRestore: true },
+      privateState: {
+        tableState: { id: created.code },
+        lastSeqByPlayer: {},
+        replayEvents: [],
+      },
+    });
+
+    nk.matchCreate.mockClear();
+    const joinResponse = rpcJoinByCode(
+      {},
+      logger as any,
+      nk as any,
+      JSON.stringify({ code: created.code })
+    );
+
+    const joined = JSON.parse(joinResponse) as { matchId: string; recovered?: boolean };
+    expect(joined).toEqual({ matchId: 'match-existing-recovery', recovered: true });
+    expect(nk.matchCreate).not.toHaveBeenCalled();
+    expect((storage.get(created.code) as any).matchId).toBe('match-existing-recovery');
   });
 
   it('quick play selects an existing public table when seats are available', () => {
