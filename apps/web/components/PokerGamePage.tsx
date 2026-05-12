@@ -992,7 +992,7 @@ const LastHandRecap = ({
         color: TABLE_THEME.text,
         fontFamily: TABLE_THEME.fontSans,
         overflow: 'hidden',
-        pointerEvents: 'auto',
+        pointerEvents: 'none',
       }}
     >
       <div
@@ -1245,6 +1245,7 @@ export const PokerGamePage = ({
   const tableRef = useRef<HTMLDivElement | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(resolvedDebugPlayerId);
   const [name, setName] = useState('');
+  const [nameHydrated, setNameHydrated] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [tableScale, setTableScale] = useState(1);
   const [viewportWidth, setViewportWidth] = useState(1280);
@@ -1315,6 +1316,7 @@ export const PokerGamePage = ({
     if (storedName) {
       setName(storedName);
     }
+    setNameHydrated(true);
   }, []);
 
   useEffect(() => {
@@ -2062,6 +2064,12 @@ export const PokerGamePage = ({
     seatedPlayers.length >= startGate.minPlayers &&
     seatedPlayers.every((seat: any) => startGateReadyIds.has(seat.id))
   );
+  const startGateReadyCount = startGate
+    ? seatedPlayers.filter((seat: any) => startGateReadyIds.has(seat.id)).length
+    : 0;
+  const startGateReadyTarget = startGate
+    ? Math.max(startGate.minPlayers, seatedPlayers.length)
+    : seatedPlayers.length;
   const startGateCanEarlyStart = Boolean(startGateAllReady);
   const localReadyForStart = Boolean(playerId && startGateReadyIds.has(playerId));
   const isMobile = viewportWidth <= 900;
@@ -2098,7 +2106,8 @@ export const PokerGamePage = ({
   const isRevealPhase = hand?.phase === 'showdown';
   const tableLabel = useMemo(() => {
     const sourceId = typeof state?.id === 'string' && state.id.trim() ? state.id.trim() : '';
-    if (!sourceId) return `Table ${NAKAMA_TABLE_ID}`;
+    if (!sourceId) return NAKAMA_TABLE_ID === 'main' ? 'Quick Play Table' : `Table ${NAKAMA_TABLE_ID}`;
+    if (sourceId.toLowerCase() === 'main') return 'Quick Play Table';
     return `Table ${sourceId}`;
   }, [state?.id]);
   const latestActionLine = useMemo(() => {
@@ -3258,20 +3267,48 @@ export const PokerGamePage = ({
           <div
             data-testid="start-gate-countdown"
             style={{
-              minWidth: 58,
-              borderRadius: 999,
+              minWidth: isPhone ? 92 : 112,
+              borderRadius: 8,
               border: `1px solid ${TABLE_THEME.border}`,
               background: 'rgba(255,255,255,0.045)',
               color:
                 startGateSecondsLeft !== null && startGateSecondsLeft <= 3 ? '#fecaca' : '#ccfbf1',
-              padding: '5px 9px',
+              padding: '6px 9px',
               textAlign: 'center',
-              fontSize: 12,
-              fontWeight: 900,
+              display: 'grid',
+              gap: 2,
             }}
           >
-            {startGateSecondsLeft !== null ? `${startGateSecondsLeft}s` : '--'}
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 800,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                color: TABLE_THEME.dim,
+              }}
+            >
+              Starts in
+            </span>
+            <span style={{ fontSize: 14, fontWeight: 900 }}>
+              {startGateSecondsLeft !== null ? `${startGateSecondsLeft}s` : '--'}
+            </span>
           </div>
+        </div>
+        <div
+          data-testid="start-gate-ready-count"
+          style={{
+            width: 'fit-content',
+            borderRadius: 999,
+            border: `1px solid ${TABLE_THEME.tealBorder}`,
+            background: 'rgba(20,184,166,0.12)',
+            color: '#ccfbf1',
+            padding: '5px 9px',
+            fontSize: 11,
+            fontWeight: 900,
+          }}
+        >
+          Ready {startGateReadyCount} / {startGateReadyTarget}
         </div>
         <div
           style={{
@@ -3282,15 +3319,35 @@ export const PokerGamePage = ({
         >
           {seatedPlayers.map((seat: any) => {
             const ready = startGateReadyIds.has(seat.id);
+            const connectionStatus = connectionStateByPlayerId.get(seat.id)?.status ?? 'connected';
+            const statusLabel =
+              connectionStatus === 'reconnecting'
+                ? 'reconnecting'
+                : connectionStatus === 'disconnected'
+                  ? 'disconnected'
+                  : ready
+                    ? 'ready'
+                    : 'waiting';
+            const isOffline = connectionStatus === 'reconnecting' || connectionStatus === 'disconnected';
             return (
               <div
                 key={seat.id}
                 data-testid="start-gate-player"
                 style={{
                   borderRadius: 999,
-                  border: `1px solid ${ready ? TABLE_THEME.tealBorder : TABLE_THEME.border}`,
-                  background: ready ? 'rgba(20,184,166,0.18)' : 'rgba(255,255,255,0.04)',
-                  color: ready ? '#ccfbf1' : TABLE_THEME.text,
+                  border: `1px solid ${
+                    isOffline
+                      ? 'rgba(248,113,113,0.55)'
+                      : ready
+                        ? TABLE_THEME.tealBorder
+                        : TABLE_THEME.border
+                  }`,
+                  background: isOffline
+                    ? 'rgba(127,29,29,0.22)'
+                    : ready
+                      ? 'rgba(20,184,166,0.18)'
+                      : 'rgba(255,255,255,0.04)',
+                  color: isOffline ? '#fecaca' : ready ? '#ccfbf1' : TABLE_THEME.text,
                   padding: '6px 10px',
                   fontSize: 12,
                   fontWeight: 800,
@@ -3300,7 +3357,7 @@ export const PokerGamePage = ({
                   whiteSpace: 'nowrap',
                 }}
               >
-                {seat.name} {ready ? 'ready' : 'waiting'}
+                {seat.name} {statusLabel}
               </div>
             );
           })}
@@ -3457,6 +3514,15 @@ export const PokerGamePage = ({
     </>
   );
   const statusDisplay = friendlyStatus(status);
+  const normalizedEntryName = normalizePlayerName(name);
+  const shouldShowTableEntryForm = !seated && nameHydrated && !normalizedEntryName;
+  const tableEntryStatusCopy = status.startsWith('Connected')
+    ? 'Taking your seat...'
+    : status.toLowerCase().includes('failed') ||
+        status.toLowerCase().includes('error') ||
+        status.toLowerCase().includes('timed out')
+      ? 'Could not take your seat'
+      : 'Connecting to table...';
 
   return (
     <div
@@ -3996,160 +4062,163 @@ export const PokerGamePage = ({
             justifyContent: 'center',
             alignItems: 'center',
             minHeight: centeredSectionMinHeight,
-            paddingTop: 'clamp(0px, 2vh, 1cm)',
+            paddingTop: shouldShowTableEntryForm ? 'clamp(0px, 2vh, 1cm)' : 'clamp(12px, 8vh, 2cm)',
             paddingBottom: 'clamp(0px, 6vh, 2cm)',
           }}
         >
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 12,
-              transform: isMobile ? 'none' : 'translateY(-2.4cm)',
-              width: isPhone ? '100%' : 'min(94vw, 560px)',
-              padding: isPhone ? '18px 16px' : '22px',
-              borderRadius: 8,
-              border: `1px solid ${TABLE_THEME.borderStrong}`,
-              background: TABLE_THEME.panel,
-              boxShadow: '0 24px 70px rgba(0,0,0,0.34)',
-              backdropFilter: 'blur(14px)',
-            }}
-          >
-            <div style={{ width: '100%', textAlign: isPhone ? 'left' : 'center' }}>
-              <div
-                style={{
-                  fontFamily: TABLE_THEME.fontDisplay,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: '0.28em',
-                  textTransform: 'uppercase',
-                  color: TABLE_THEME.amber,
-                }}
-              >
-                Table Entry
-              </div>
-              <div
-                style={{ marginTop: 6, fontSize: 14, lineHeight: 1.5, color: TABLE_THEME.muted }}
-              >
-                Enter your table name to take a seat.
-              </div>
-            </div>
+          {shouldShowTableEntryForm ? (
             <div
+              data-testid="table-entry-form"
               style={{
                 display: 'flex',
-                gap: 10,
-                flexDirection: isPhone ? 'column' : 'row',
-                width: isPhone ? 'min(92vw, 360px)' : 'auto',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 12,
+                transform: isMobile ? 'none' : 'translateY(-2.4cm)',
+                width: isPhone ? '100%' : 'min(94vw, 460px)',
+                padding: isPhone ? '16px' : '20px',
+                borderRadius: 8,
+                border: `1px solid ${TABLE_THEME.borderStrong}`,
+                background: TABLE_THEME.panel,
+                boxShadow: '0 20px 58px rgba(0,0,0,0.32)',
+                backdropFilter: 'blur(14px)',
               }}
             >
-              <input
-                value={name}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setName(next);
-                  if (nameError && next.trim()) setNameError(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    if (name.trim()) {
-                      setNameError(null);
-                      join();
-                    } else {
-                      setNameError('Please enter a name.');
-                    }
-                    e.currentTarget.blur();
-                  }
-                }}
-                placeholder="Enter player name"
-                aria-invalid={Boolean(nameError)}
-                style={{
-                  padding: '12px 14px',
-                  width: isPhone ? '100%' : undefined,
-                  minWidth: isPhone ? 0 : 300,
-                  borderRadius: 6,
-                  border: nameError ? '1px solid #fca5a5' : `1px solid ${TABLE_THEME.border}`,
-                  background: 'rgba(0,0,0,0.34)',
-                  color: TABLE_THEME.text,
-                  caretColor: TABLE_THEME.text,
-                  fontSize: 16,
-                  fontFamily: TABLE_THEME.fontSans,
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setNameError(null);
-                  join();
-                }}
-                disabled={!name.trim()}
-                style={{
-                  padding: '12px 18px',
-                  width: isPhone ? '100%' : undefined,
-                  minHeight: 44,
-                  borderRadius: 6,
-                  border: `1px solid ${TABLE_THEME.tealBorder}`,
-                  background: TABLE_THEME.tealSoft,
-                  color: '#ccfbf1',
-                  fontWeight: 700,
-                  fontFamily: TABLE_THEME.fontSans,
-                  letterSpacing: 0.5,
-                  boxShadow: '0 0 24px rgba(20,184,166,0.18)',
-                  cursor: name.trim() ? 'pointer' : 'not-allowed',
-                  opacity: name.trim() ? 1 : 0.58,
-                }}
-              >
-                Join
-              </button>
-            </div>
-            {nameError && (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: '#fca5a5',
-                  fontFamily:
-                    'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-                }}
-              >
-                {nameError}
-              </div>
-            )}
-            <div
-              style={{
-                fontSize: 12,
-                color: TABLE_THEME.muted,
-                fontFamily: TABLE_THEME.fontSans,
-                alignSelf: 'center',
-                textAlign: 'center',
-                marginLeft: 0,
-              }}
-            >
-              Waiting for hand...
-            </div>
-            {statusDisplay && status && !status.startsWith('Connected') && (
-              <div
-                style={{
-                  fontFamily: TABLE_THEME.fontSans,
-                  borderRadius: 8,
-                  border:
-                    status.toLowerCase().includes('error') ||
-                    status.toLowerCase().includes('failed') ||
-                    status.toLowerCase().includes('500')
-                      ? '1px solid rgba(248,113,113,0.45)'
-                      : `1px solid ${TABLE_THEME.border}`,
-                  background: 'rgba(2,7,9,0.58)',
-                  color: TABLE_THEME.text,
-                  padding: '9px 10px',
-                  textAlign: 'center',
-                }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 900 }}>{statusDisplay.title}</div>
-                <div style={{ marginTop: 3, fontSize: 12, color: TABLE_THEME.muted }}>
-                  {statusDisplay.detail}
+              <div style={{ width: '100%', textAlign: isPhone ? 'left' : 'center' }}>
+                <div
+                  style={{
+                    fontFamily: TABLE_THEME.fontDisplay,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: '0.24em',
+                    textTransform: 'uppercase',
+                    color: TABLE_THEME.amber,
+                  }}
+                >
+                  Join Table
+                </div>
+                <div
+                  style={{ marginTop: 6, fontSize: 14, lineHeight: 1.5, color: TABLE_THEME.muted }}
+                >
+                  Enter your player name to take a seat.
                 </div>
               </div>
-            )}
-          </div>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 10,
+                  flexDirection: isPhone ? 'column' : 'row',
+                  width: isPhone ? 'min(92vw, 360px)' : '100%',
+                }}
+              >
+                <input
+                  data-testid="table-entry-player-name-input"
+                  value={name}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setName(next);
+                    if (nameError && next.trim()) setNameError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      if (name.trim()) {
+                        setNameError(null);
+                        join();
+                      } else {
+                        setNameError('Please enter a name.');
+                      }
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  placeholder="Player name"
+                  aria-invalid={Boolean(nameError)}
+                  style={{
+                    padding: '12px 14px',
+                    width: '100%',
+                    minWidth: isPhone ? 0 : 260,
+                    borderRadius: 6,
+                    border: nameError ? '1px solid #fca5a5' : `1px solid ${TABLE_THEME.border}`,
+                    background: 'rgba(0,0,0,0.34)',
+                    color: TABLE_THEME.text,
+                    caretColor: TABLE_THEME.text,
+                    fontSize: 16,
+                    fontFamily: TABLE_THEME.fontSans,
+                  }}
+                />
+                <button
+                  data-testid="table-entry-join-button"
+                  type="button"
+                  onClick={() => {
+                    setNameError(null);
+                    join();
+                  }}
+                  disabled={!name.trim()}
+                  style={{
+                    padding: '12px 18px',
+                    width: isPhone ? '100%' : undefined,
+                    minHeight: 44,
+                    borderRadius: 6,
+                    border: `1px solid ${TABLE_THEME.tealBorder}`,
+                    background: TABLE_THEME.tealSoft,
+                    color: '#ccfbf1',
+                    fontWeight: 700,
+                    fontFamily: TABLE_THEME.fontSans,
+                    letterSpacing: 0.5,
+                    boxShadow: '0 0 24px rgba(20,184,166,0.18)',
+                    cursor: name.trim() ? 'pointer' : 'not-allowed',
+                    opacity: name.trim() ? 1 : 0.58,
+                  }}
+                >
+                  Join
+                </button>
+              </div>
+              {nameError && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: '#fca5a5',
+                    fontFamily: TABLE_THEME.fontSans,
+                  }}
+                >
+                  {nameError}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div
+              data-testid="table-entry-connecting"
+              style={{
+                width: isPhone ? 'min(100%, 360px)' : 'min(420px, 100%)',
+                transform: isMobile ? 'none' : 'translateY(-2.8cm)',
+                borderRadius: 8,
+                border: `1px solid ${TABLE_THEME.border}`,
+                background: 'rgba(2,7,9,0.68)',
+                boxShadow: '0 18px 46px rgba(0,0,0,0.3)',
+                padding: isPhone ? '14px 16px' : '16px 18px',
+                textAlign: 'center',
+                backdropFilter: 'blur(12px)',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 900,
+                  color: TABLE_THEME.text,
+                  fontFamily: TABLE_THEME.fontSans,
+                }}
+              >
+                {tableEntryStatusCopy}
+              </div>
+              <div style={{ marginTop: 6, fontSize: 12, color: TABLE_THEME.muted }}>
+                {normalizedEntryName ? `${normalizedEntryName} is joining ${tableLabel}.` : 'Preparing the table.'}
+              </div>
+              {statusDisplay && status && !status.startsWith('Connected') ? (
+                <div style={{ marginTop: 10, fontSize: 12, color: TABLE_THEME.dim }}>
+                  {statusDisplay.detail}
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
       )}
       {hand ? (
@@ -5446,9 +5515,9 @@ export const PokerGamePage = ({
             style={{
               display: 'flex',
               justifyContent: 'center',
-              alignItems: 'center',
-              minHeight: centeredSectionMinHeight,
-              paddingTop: 'clamp(0px, 2vh, 1cm)',
+              alignItems: startGateTray && isMobile ? 'flex-start' : 'center',
+              minHeight: startGateTray && isMobile ? 'auto' : centeredSectionMinHeight,
+              paddingTop: startGateTray && isPhone ? 14 : startGateTray && isMobile ? 18 : 'clamp(0px, 2vh, 1cm)',
               paddingBottom: 'clamp(0px, 6vh, 2cm)',
             }}
           >
@@ -5456,7 +5525,7 @@ export const PokerGamePage = ({
               <div
                 style={{
                   width: isMobile ? '100%' : 'min(720px, 100%)',
-                  transform: isMobile ? 'none' : 'translateY(-3cm)',
+                  transform: isMobile ? 'none' : 'translateY(-2.4cm)',
                 }}
               >
                 {startGateTray}

@@ -3,17 +3,36 @@ import type { GetServerSideProps } from 'next';
 import PokerGamePage from '../../components/PokerGamePage';
 import type { PublicState } from '../../server-types';
 
-type Scenario = 'betting-call' | 'betting-check-allin' | 'discard' | 'showdown';
+type Scenario =
+  | 'betting-call'
+  | 'betting-check-allin'
+  | 'discard'
+  | 'showdown'
+  | 'start-gate'
+  | 'start-gate-ready'
+  | 'join-fallback'
+  | 'joining-known-name';
 
 interface TestPageProps {
   scenario: Scenario;
-  state: PublicState;
+  state: PublicState | null;
+  playerId: string | null;
+  debugStatus: string;
 }
 
 const HERO_ID = 'player-hero';
 const VILLAIN_ID = 'player-villain';
 
-const scenarios = new Set<Scenario>(['betting-call', 'betting-check-allin', 'discard', 'showdown']);
+const scenarios = new Set<Scenario>([
+  'betting-call',
+  'betting-check-allin',
+  'discard',
+  'showdown',
+  'start-gate',
+  'start-gate-ready',
+  'join-fallback',
+  'joining-known-name',
+]);
 
 const card = (rank: string, suit: string) => ({ rank, suit });
 
@@ -353,8 +372,28 @@ const showdownState = (now: number): PublicState =>
     legalActions: { phase: 'between_hands', isActor: false, reason: 'between_hands' },
   });
 
-const buildState = (scenario: Scenario, now: number) => {
+const startGateState = (now: number, readyPlayerIds: string[] = []): PublicState =>
+  baseState('start-gate', now, {
+    id: 'RZ587G',
+    startGate: {
+      openedAt: now - 4000,
+      startsAt: now + 26000,
+      earlyStartAt: now + 1000,
+      minPlayers: 2,
+      readyPlayerIds,
+    },
+    legalActions: { phase: 'waiting', isActor: false, reason: 'waiting_for_players' },
+  });
+
+const buildState = (scenario: Scenario, now: number): PublicState | null => {
   switch (scenario) {
+    case 'join-fallback':
+    case 'joining-known-name':
+      return null;
+    case 'start-gate-ready':
+      return startGateState(now, [HERO_ID]);
+    case 'start-gate':
+      return startGateState(now);
     case 'betting-check-allin':
       return bettingCheckAllInState(now);
     case 'discard':
@@ -381,11 +420,19 @@ export const getServerSideProps: GetServerSideProps<TestPageProps> = async ({ qu
     props: {
       scenario,
       state: buildState(scenario, Date.now()),
+      playerId: scenario === 'join-fallback' || scenario === 'joining-known-name' ? null : HERO_ID,
+      debugStatus:
+        scenario === 'joining-known-name' ? 'Connecting to Nakama...' : 'Connected (test snapshot)',
     },
   };
 };
 
-export default function PokerActionTrayTestPage({ scenario, state }: TestPageProps) {
+export default function PokerActionTrayTestPage({
+  scenario,
+  state,
+  playerId,
+  debugStatus,
+}: TestPageProps) {
   return (
     <>
       <Head>
@@ -395,8 +442,9 @@ export default function PokerActionTrayTestPage({ scenario, state }: TestPagePro
         forcedMatchId={`test-${scenario}`}
         showExitButton={false}
         debugInitialState={state}
-        debugPlayerId={HERO_ID}
+        debugPlayerId={playerId}
         debugDisableNetwork
+        debugStatus={debugStatus}
       />
     </>
   );

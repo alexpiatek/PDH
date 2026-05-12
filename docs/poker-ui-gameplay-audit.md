@@ -24,3 +24,22 @@ Remaining lobby UX questions:
 - Whether private/friend games need a stronger create-table affordance separate from Join by code.
 
 Next suggested audit area: active table / in-hand gameplay UI.
+
+## Implementation Note: Table Entry and Waiting Room
+
+Date: 2026-05-12
+
+Changed in this slice:
+
+- The normal known-name table entry path now uses a compact joining state instead of briefly flashing the full join form.
+- The direct table-link fallback keeps a minimal join form and fixes the copy to ask for a player name, not a table name.
+- The waiting room now labels the countdown as "Starts in", shows a clear ready count, and keeps seated player chips tied to ready/waiting/reconnecting/disconnected state.
+- Mobile waiting-room layout moves the useful card higher, reducing empty atmospheric space above the Ready for Hand action.
+
+Remaining UX questions:
+
+- Whether the waiting room should explain why a disconnected player is still counted during reconnect grace.
+- Whether Quick Play tables should show richer table metadata once multiple table types exist.
+- Whether ready-state feedback should include a subtle confirmation animation after tapping Ready.
+
+Next suggested audit area: active hand / table gameplay UI.
