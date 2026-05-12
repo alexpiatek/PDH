@@ -140,11 +140,19 @@ Push + deploy shortcut:
 pnpm git push:web
 ```
 
-Commit + push + full production deploy shortcut:
+Ship shortcut:
 
 ```bash
 pnpm ship "Describe the change"
 ```
+
+`pnpm ship` now treats shipping as:
+
+- commit current work if needed
+- push the current branch
+- merge that branch into `main`
+- push `main`
+- deploy the production server from `main`
 
 Remote git pull only:
 
