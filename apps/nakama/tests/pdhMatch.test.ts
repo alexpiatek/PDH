@@ -14,11 +14,50 @@ const logger = {
 };
 
 function makeNakamaMock() {
+  const storage = new Map<string, Record<string, unknown>>();
+  const storageKey = (object: { collection: string; key: string; userId: string }) =>
+    `${object.collection}:${object.userId}:${object.key}`;
   return {
     binaryToString: (data: Uint8Array) => new TextDecoder().decode(data),
     matchCreate: vi.fn(() => 'created-match-id'),
     matchList: vi.fn(() => []),
     matchSignal: vi.fn(() => JSON.stringify({ ok: true })),
+    storage,
+    storageRead: vi.fn((objects: Array<{ collection: string; key: string; userId: string }>) =>
+      objects
+        .map((object) => {
+          const value = storage.get(storageKey(object));
+          return value
+            ? {
+                collection: object.collection,
+                key: object.key,
+                userId: object.userId,
+                value,
+              }
+            : null;
+        })
+        .filter((object): object is Record<string, unknown> => Boolean(object))
+    ),
+    storageWrite: vi.fn(
+      (
+        objects: Array<{
+          collection: string;
+          key: string;
+          userId: string;
+          value: Record<string, unknown>;
+        }>
+      ) => {
+        for (const object of objects) {
+          storage.set(storageKey(object), object.value);
+        }
+        return objects.map((object) => ({
+          collection: object.collection,
+          key: object.key,
+          userId: object.userId,
+          value: object.value,
+        }));
+      }
+    ),
   };
 }
 
@@ -67,6 +106,19 @@ function stateMessagesTo(broadcastMessage: ReturnType<typeof vi.fn>, playerId: s
       }
     })
     .filter((msg): msg is { type: 'state'; state: any } => Boolean(msg));
+}
+
+function checkpointFromStorage(nk: ReturnType<typeof makeNakamaMock>, tableId = 'main') {
+  return nk.storage.get(
+    `pdh_match_checkpoints:00000000-0000-0000-0000-000000000000:${tableId}`
+  ) as any;
+}
+
+function checkpointWriteValues(nk: ReturnType<typeof makeNakamaMock>) {
+  return nk.storageWrite.mock.calls
+    .flatMap((call) => call[0] as Array<{ collection: string; value: any }>)
+    .filter((object) => object.collection === 'pdh_match_checkpoints')
+    .map((object) => object.value);
 }
 
 function connectionFor(state: any, playerId: string) {
@@ -941,6 +993,143 @@ describe('pdhMatchHandler', () => {
       reason: 'not_your_turn',
     });
     expect(nonActorSnapshot?.legalActions.betting).toBeUndefined();
+  });
+
+  it('writes a durable checkpoint when a hand starts', () => {
+    const { nk, state } = setupThreePlayerMatch();
+    const checkpoint = checkpointFromStorage(nk);
+
+    expect(checkpoint).toBeTruthy();
+    expect(checkpoint.writeReasons).toContain('hand_start');
+    expect(checkpoint.tableId).toBe('main');
+    expect(checkpoint.matchId).toBe(state.matchId);
+    expect(checkpoint.stateVersion).toBe(state.stateVersion);
+    expect(checkpoint.serverTimeMs).toEqual(expect.any(Number));
+    expect(checkpoint.privateState.tableState.hand.handId).toBe(state.table.hand.handId);
+    expect(checkpoint.privateState.tableState.hand.deck.length).toBeGreaterThan(0);
+  });
+
+  it('writes a checkpoint after an accepted player action', () => {
+    const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
+    const hand = state.table.hand;
+    const actor = hand.players.find((p: any) => p.seat === hand.actionOnSeat);
+    const sender = presenceById.get(actor.id);
+
+    nk.storageWrite.mockClear();
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+      { opCode: 1, sender, data: encode(actionPayloadFor(hand, actor.id, 1)) },
+    ]);
+
+    const writes = checkpointWriteValues(nk);
+    expect(writes.length).toBeGreaterThan(0);
+    expect(writes.at(-1)?.writeReasons).toContain('accepted_action');
+    expect(writes.at(-1)?.stateVersion).toBe(state.stateVersion);
+  });
+
+  it('writes a checkpoint when showdown enters between-hand state', () => {
+    const { nk, dispatcher, state } = setupThreePlayerMatch();
+
+    nk.storageWrite.mockClear();
+    enterBetweenHand(nk, dispatcher, state, 100_000);
+
+    const writes = checkpointWriteValues(nk);
+    expect(writes.length).toBeGreaterThan(0);
+    expect(writes.at(-1)?.writeReasons).toContain('between_hand_start');
+    expect(writes.at(-1)?.phase).toBe('between_hands');
+    expect(writes.at(-1)?.betweenHand).toMatchObject({
+      startedAtMs: 100_000,
+      minUntilMs: 106_000,
+      autoStartAtMs: 112_000,
+    });
+  });
+
+  it('logs checkpoint write failures without crashing gameplay or logging private card state', () => {
+    const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
+    const hand = state.table.hand;
+    const actor = hand.players.find((p: any) => p.seat === hand.actionOnSeat);
+    const sender = presenceById.get(actor.id);
+    const versionBefore = state.stateVersion;
+
+    logger.error.mockClear();
+    nk.storageWrite.mockImplementation(() => {
+      throw new Error('disk full');
+    });
+
+    expect(() =>
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+        { opCode: 1, sender, data: encode(actionPayloadFor(hand, actor.id, 1)) },
+      ])
+    ).not.toThrow();
+
+    expect(state.stateVersion).toBeGreaterThan(versionBefore);
+    const errorLog = JSON.stringify(logger.error.mock.calls);
+    expect(errorLog).toContain('match.checkpoint.persist_failed');
+    expect(errorLog).not.toContain('privateState');
+    expect(errorLog).not.toContain('holeCards');
+    expect(errorLog).not.toContain('deck');
+  });
+
+  it('restores a recent checkpoint when an interrupted table is recreated', () => {
+    const { nk, state } = setupThreePlayerMatch();
+    const checkpoint = checkpointFromStorage(nk);
+    const handId = state.table.hand.handId;
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(checkpoint.writtenAtMs + 1_000);
+    let restored: any;
+    try {
+      restored = pdhMatchHandler.matchInit(
+        { matchId: 'recreated-match-id' },
+        logger,
+        nk,
+        { tableId: 'main' }
+      ).state;
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(restored.matchId).toBe('recreated-match-id');
+    expect(restored.table.hand.handId).toBe(handId);
+    expect(restored.table.hand.phase).toBe('betting');
+    expect(restored.stateVersion).toBeGreaterThan(checkpoint.stateVersion);
+    expect(restored.playerConnections.u1).toMatchObject({
+      status: 'reconnecting',
+      graceDeadlineMs: checkpoint.writtenAtMs + 16_000,
+    });
+  });
+
+  it('does not expose other players hidden cards in recovery state snapshots', () => {
+    const { nk, state } = setupThreePlayerMatch();
+    const checkpoint = checkpointFromStorage(nk);
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(checkpoint.writtenAtMs + 1_000);
+    let restored: any;
+    try {
+      restored = pdhMatchHandler.matchInit(
+        { matchId: 'recreated-match-id' },
+        logger,
+        nk,
+        { tableId: 'main' }
+      ).state;
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    const broadcastMessage = vi.fn();
+    const dispatcher = { broadcastMessage };
+    pdhMatchHandler.matchJoin({}, logger, nk, dispatcher, 4, restored, [
+      { userId: 'u1', sessionId: 'restored-u1' },
+    ]);
+
+    const latest = stateMessagesTo(broadcastMessage, 'u1').at(-1)?.state;
+    const hiddenPlayer = restored.table.hand.players.find((p: any) => p.id === 'u2');
+    const hiddenCard = hiddenPlayer.holeCards[0];
+    const publicHiddenPlayer = latest.hand.players.find((p: any) => p.id === 'u2');
+
+    expect(latest.hand.deck).toEqual([]);
+    expect(publicHiddenPlayer.holeCards).toEqual(
+      hiddenPlayer.holeCards.map(() => ({ rank: 'X', suit: 'X' }))
+    );
+    expect(JSON.stringify(latest)).not.toContain(JSON.stringify(hiddenCard));
   });
 
   it('enters server-owned between-hand state after showdown settlement', () => {

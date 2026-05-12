@@ -1,4 +1,5 @@
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
+import { hasRecoverablePdhCheckpoint } from './pdhMatch';
 
 export const POKER_TABLE_MATCH_MODULE = 'poker_table';
 export const LOBBY_GAMEPLAY_MATCH_MODULE = 'pdh';
@@ -64,6 +65,7 @@ interface CreateTableResult {
 
 interface JoinByCodeResult {
   matchId: string;
+  recovered?: boolean;
 }
 
 interface JoinByCodeErrorResult {
@@ -761,6 +763,25 @@ export function rpcJoinByCode(
 
   const snapshot = resolveMatchSnapshot(runtimeNakama, stored.matchId);
   if (snapshot.found === false) {
+    if (hasRecoverablePdhCheckpoint(runtimeNakama, input.code)) {
+      const recoveredMatchId = nk.matchCreate(LOBBY_GAMEPLAY_MATCH_MODULE, {
+        tableId: input.code,
+        maxPlayers: stored.maxPlayers,
+        buyIn: stored.quickPlay?.buyIn ?? DEFAULT_QUICK_PLAY_BUY_IN,
+      });
+      writeTableByCode(runtimeNakama, input.code, {
+        ...stored,
+        matchId: recoveredMatchId,
+      });
+      logger.warn(
+        'Recovered interrupted table code=%v oldMatchId=%v newMatchId=%v',
+        input.code,
+        stored.matchId,
+        recoveredMatchId
+      );
+      const result: JoinByCodeResult = { matchId: recoveredMatchId, recovered: true };
+      return JSON.stringify(result);
+    }
     const result: JoinByCodeErrorResult = { error: 'This table is no longer active.' };
     return JSON.stringify(result);
   }

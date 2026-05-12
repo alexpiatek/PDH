@@ -1029,3 +1029,30 @@ Remaining UI risks:
 - Visual overlap is checked through locator visibility, viewport bounds, and clickability rather than screenshot diffing.
 
 Next recommended task: implement active hand persistence/restart recovery.
+
+## Implementation Note: Restart Checkpoint Foundation
+
+Date: 2026-05-12
+
+Covered in this slice:
+
+- Nakama authoritative poker matches now write bounded server-side checkpoints to Nakama storage collection `pdh_match_checkpoints`, keyed by table id under the system user id.
+- Checkpoints include `schemaVersion`, `tableId`, `matchId`, `stateVersion`, `eventSeq`, `serverTimeMs`, `writtenAtMs`, `expiresAtMs`, `handId`, `handNumber`, `phase`, `street`, table config metadata, seat summaries, connection/grace state, between-hand metadata, a bounded replay/action log, and a private server-only `TableState` snapshot.
+- Checkpoints are written on match init/restore, presence join/leave, player seat/join, hand start, accepted player action, discard, auto action/discard, street/phase transition, showdown settlement, between-hand start/readiness, next-hand start, rebuy, sit-out, and reconnect grace changes.
+- Checkpoint write failures are structured-log errors and do not crash normal gameplay. The failure log includes ids/reason/version only, not the private table snapshot.
+
+Recovery policy:
+
+- Option A restore is now the first policy. On match init/table recreation, the match reads a recent checkpoint and rehydrates the authoritative `PokerTable` state from the private server-side snapshot.
+- Restored matches continue from a higher `stateVersion`, start with empty live presences, and mark seated players that were not already disconnected as reconnecting for the configured reconnect grace window.
+- If lobby metadata points to a dead match but a recent checkpoint exists, join-by-code creates a replacement authoritative match for the same table id and updates the stored lobby match id. Clients still receive only the replacement match id/status, not checkpoint contents.
+- Hidden hole cards and deck state are stored only in the server-side checkpoint object with storage read/write permissions set to server-only. Client recovery/status messages continue to use the existing masked personalized snapshots.
+
+Still not solved:
+
+- This is not a ledger, compliance archive, or hand-history audit system.
+- Checkpoints are latest-state snapshots, not a transaction log with replayable causality guarantees.
+- Cross-node concurrent restoration and storage compare-and-swap/version conflict handling are not implemented.
+- Old checkpoints are ignored after the recovery window rather than migrated into a long-term interrupted-table workflow.
+
+Next recommended task: add storage-version conflict handling plus an interrupted-table user flow for stale checkpoints that are too old or invalid to restore.

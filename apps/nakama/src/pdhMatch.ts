@@ -37,10 +37,36 @@ const MIN_RECONNECT_GRACE_MS = 0;
 const MAX_RECONNECT_GRACE_MS = 120_000;
 const DEFAULT_BETWEEN_HAND_MIN_MS = 6_000;
 const DEFAULT_BETWEEN_HAND_AUTO_START_MS = 12_000;
+const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
+export const PDH_CHECKPOINT_COLLECTION = 'pdh_match_checkpoints';
+const CHECKPOINT_SCHEMA_VERSION = 1;
+const CHECKPOINT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const CHECKPOINT_MAX_REPLAY_EVENTS = 100;
+const CHECKPOINT_MAX_LOG_ENTRIES = 100;
 
 type ReplayEventKind = 'action' | 'discard' | 'nextHand' | 'rebuy' | 'sitOut';
 type ReplayOutcome = 'accepted' | 'rejected';
 type PlayerConnectionStatus = 'connected' | 'reconnecting' | 'disconnected';
+type CheckpointWriteReason =
+  | 'match_init'
+  | 'match_restore'
+  | 'presence_joined'
+  | 'presence_left'
+  | 'player_joined'
+  | 'hand_start'
+  | 'accepted_action'
+  | 'auto_action'
+  | 'discard'
+  | 'auto_discard'
+  | 'street_transition'
+  | 'showdown_settlement'
+  | 'between_hand_start'
+  | 'between_hand_ready_changed'
+  | 'next_hand_start'
+  | 'reconnect_grace_changed'
+  | 'rebuy'
+  | 'sit_out'
+  | 'ready_for_hand';
 
 interface ReplayEvent {
   ts: number;
@@ -105,6 +131,46 @@ interface MatchState {
 interface TableMutationResult<T> {
   result: T;
   changed: boolean;
+}
+
+interface TimerMutationResult {
+  shouldBroadcast: boolean;
+  checkpointReasons: CheckpointWriteReason[];
+}
+
+interface MatchCheckpoint {
+  schemaVersion: number;
+  checkpointId: string;
+  tableId: string;
+  matchId: string;
+  writeReason: CheckpointWriteReason;
+  writeReasons: CheckpointWriteReason[];
+  writtenAtMs: number;
+  serverTimeMs: number;
+  expiresAtMs: number;
+  stateVersion: number;
+  eventSeq: number;
+  handId: string | null;
+  handNumber: number;
+  phase: string;
+  street: string | null;
+  tableBuyIn: number;
+  maxPlayers: number;
+  reconnectGraceMs: number;
+  seatSummaries: Array<Record<string, unknown> | null>;
+  playerConnections: Record<string, PlayerConnectionState>;
+  betweenHand: BetweenHandState | null;
+  recovery: {
+    policy: 'restore_from_checkpoint';
+    canRestore: boolean;
+    privateStateStored: boolean;
+  };
+  replayEvents: ReplayEvent[];
+  privateState: {
+    tableState: TableState;
+    lastSeqByPlayer: Record<string, number>;
+    replayEvents: ReplayEvent[];
+  };
 }
 
 interface EnsurePdhMatchInput {
@@ -577,6 +643,359 @@ function stateSnapshotForPresence(state: MatchState, table: PokerTable, playerId
   };
 }
 
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function compactCheckpointReasons(reasons: CheckpointWriteReason[]): CheckpointWriteReason[] {
+  return [...new Set(reasons)];
+}
+
+function boundedReplayEvents(events: ReplayEvent[]) {
+  return events.slice(-CHECKPOINT_MAX_REPLAY_EVENTS).map((event) => ({ ...event }));
+}
+
+function boundedTableState(tableState: TableState): TableState {
+  const copy = cloneJson(tableState);
+  copy.log = (copy.log ?? []).slice(-CHECKPOINT_MAX_LOG_ENTRIES);
+  if (copy.auditLog) {
+    copy.auditLog = copy.auditLog.slice(-CHECKPOINT_MAX_LOG_ENTRIES);
+  }
+  if (copy.auditHands) {
+    copy.auditHands = copy.auditHands.slice(-5).map((hand) => ({
+      ...hand,
+      entries: hand.entries.slice(-CHECKPOINT_MAX_LOG_ENTRIES),
+    }));
+  }
+  if (copy.hand) {
+    copy.hand.log = (copy.hand.log ?? []).slice(-CHECKPOINT_MAX_LOG_ENTRIES);
+    if (copy.hand.auditLog) {
+      copy.hand.auditLog = copy.hand.auditLog.slice(-CHECKPOINT_MAX_LOG_ENTRIES);
+    }
+  }
+  return copy;
+}
+
+function checkpointKeyForTable(tableId: string) {
+  return tableId;
+}
+
+function handNumberForCheckpoint(tableState: TableState) {
+  return (tableState.auditHands?.length ?? 0) + (tableState.hand ? 1 : 0);
+}
+
+function phaseForCheckpoint(state: MatchState, tableState: TableState) {
+  if (state.betweenHand) return 'between_hands';
+  if (tableState.hand) return tableState.hand.phase;
+  if (tableState.startGate) return 'start_gate';
+  return 'waiting';
+}
+
+function seatSummariesForCheckpoint(state: MatchState, tableState: TableState) {
+  return tableState.seats.map((seat) => {
+    if (!seat) return null;
+    const connection = playerConnectionForSnapshot(state, seat.id);
+    return {
+      seat: seat.seat,
+      playerId: seat.id,
+      name: seat.name,
+      stack: seat.stack,
+      status: seat.status ?? (seat.sittingOut ? 'sitting_out' : 'active'),
+      sittingOut: Boolean(seat.sittingOut),
+      buyInTotal: seat.buyInTotal ?? null,
+      rebuyCount: seat.rebuyCount ?? 0,
+      connectionStatus: connection.status,
+      graceDeadlineMs: connection.graceDeadlineMs,
+      lastSeenMs: connection.lastSeenMs,
+    };
+  });
+}
+
+function buildCheckpoint(
+  state: MatchState,
+  reason: CheckpointWriteReason,
+  now: number,
+  writeReasons: CheckpointWriteReason[] = [reason]
+): MatchCheckpoint {
+  const reasons = compactCheckpointReasons(writeReasons.length ? writeReasons : [reason]);
+  const tableState = boundedTableState(state.table);
+  const hand = tableState.hand;
+  const replayEvents = boundedReplayEvents(state.replay.events);
+  return {
+    schemaVersion: CHECKPOINT_SCHEMA_VERSION,
+    checkpointId: `${state.matchId}:${state.stateVersion}:${now}`,
+    tableId: tableState.id,
+    matchId: state.matchId,
+    writeReason: reason,
+    writeReasons: reasons,
+    writtenAtMs: now,
+    serverTimeMs: now,
+    expiresAtMs: now + CHECKPOINT_MAX_AGE_MS,
+    stateVersion: state.stateVersion,
+    eventSeq: state.replay.events.length,
+    handId: hand?.handId ?? state.betweenHand?.handId ?? null,
+    handNumber: handNumberForCheckpoint(tableState),
+    phase: phaseForCheckpoint(state, tableState),
+    street: hand?.street ?? null,
+    tableBuyIn: state.tableBuyIn,
+    maxPlayers: state.maxPlayers,
+    reconnectGraceMs: state.reconnectGraceMs,
+    seatSummaries: seatSummariesForCheckpoint(state, tableState),
+    playerConnections: cloneJson(state.playerConnections),
+    betweenHand: state.betweenHand ? cloneJson(state.betweenHand) : null,
+    recovery: {
+      policy: 'restore_from_checkpoint',
+      canRestore: true,
+      privateStateStored: true,
+    },
+    replayEvents,
+    privateState: {
+      tableState,
+      lastSeqByPlayer: cloneJson(state.lastSeqByPlayer),
+      replayEvents,
+    },
+  };
+}
+
+function normalizeLoadedCheckpoint(value: unknown): MatchCheckpoint | null {
+  if (!value || typeof value !== 'object') return null;
+  const checkpoint = value as Partial<MatchCheckpoint>;
+  if (checkpoint.schemaVersion !== CHECKPOINT_SCHEMA_VERSION) return null;
+  if (typeof checkpoint.tableId !== 'string' || !checkpoint.tableId) return null;
+  if (typeof checkpoint.matchId !== 'string' || !checkpoint.matchId) return null;
+  if (typeof checkpoint.stateVersion !== 'number' || !Number.isFinite(checkpoint.stateVersion)) {
+    return null;
+  }
+  if (typeof checkpoint.writtenAtMs !== 'number' || !Number.isFinite(checkpoint.writtenAtMs)) {
+    return null;
+  }
+  if (!checkpoint.privateState?.tableState) return null;
+  if (checkpoint.privateState.tableState.id !== checkpoint.tableId) return null;
+  if (checkpoint.recovery?.policy !== 'restore_from_checkpoint' || !checkpoint.recovery.canRestore) {
+    return null;
+  }
+  return checkpoint as MatchCheckpoint;
+}
+
+function isRecentCheckpoint(checkpoint: MatchCheckpoint, tableId: string, now: number) {
+  if (checkpoint.tableId !== tableId) return false;
+  if (checkpoint.expiresAtMs && now > checkpoint.expiresAtMs) return false;
+  return now - checkpoint.writtenAtMs <= CHECKPOINT_MAX_AGE_MS;
+}
+
+function readRecoverablePdhCheckpoint(
+  nk: nkruntime.Nakama,
+  tableId: string,
+  now = Date.now()
+): MatchCheckpoint | null {
+  if (typeof nk.storageRead !== 'function') return null;
+  const objects = nk.storageRead([
+    {
+      collection: PDH_CHECKPOINT_COLLECTION,
+      key: checkpointKeyForTable(tableId),
+      userId: SYSTEM_USER_ID,
+    },
+  ]);
+  const checkpoint = normalizeLoadedCheckpoint(objects?.[0]?.value);
+  if (!checkpoint || !isRecentCheckpoint(checkpoint, tableId, now)) {
+    return null;
+  }
+  return checkpoint;
+}
+
+export function hasRecoverablePdhCheckpoint(
+  nk: nkruntime.Nakama,
+  tableId: string,
+  now = Date.now()
+) {
+  try {
+    return Boolean(readRecoverablePdhCheckpoint(nk, tableId, now));
+  } catch {
+    return false;
+  }
+}
+
+function loadCheckpoint(
+  logger: nkruntime.Logger,
+  nk: nkruntime.Nakama,
+  tableId: string,
+  now: number
+): MatchCheckpoint | null {
+  if (typeof nk.storageRead !== 'function') {
+    logStructured(logger, 'warn', 'match.checkpoint.storage_unavailable', {
+      tableId,
+      operation: 'read',
+    });
+    return null;
+  }
+  try {
+    const checkpoint = readRecoverablePdhCheckpoint(nk, tableId, now);
+    if (!checkpoint) return null;
+    logStructured(logger, 'info', 'match.checkpoint.loaded', {
+      matchId: checkpoint.matchId,
+      tableId,
+      checkpointMatchId: checkpoint.matchId,
+      stateVersion: checkpoint.stateVersion,
+      handId: checkpoint.handId,
+      phase: checkpoint.phase,
+      ageMs: Math.max(0, now - checkpoint.writtenAtMs),
+    });
+    return checkpoint;
+  } catch (err) {
+    logStructured(logger, 'error', 'match.checkpoint.load_failed', {
+      tableId,
+      error: safeErrorMessage(err),
+    });
+    return null;
+  }
+}
+
+function seatedPlayerIds(tableState: TableState) {
+  return tableState.seats
+    .filter((seat): seat is Seat => Boolean(seat?.id))
+    .map((seat) => seat.id);
+}
+
+function recoveredConnections(
+  checkpoint: MatchCheckpoint,
+  tableState: TableState,
+  reconnectGraceMs: number,
+  now: number
+) {
+  const connections: Record<string, PlayerConnectionState> = {};
+  for (const playerId of seatedPlayerIds(tableState)) {
+    const previous = checkpoint.playerConnections[playerId];
+    if (previous?.status === 'disconnected') {
+      connections[playerId] = {
+        status: 'disconnected',
+        graceDeadlineMs: null,
+        lastSeenMs: previous.lastSeenMs ?? now,
+      };
+      continue;
+    }
+    connections[playerId] = {
+      status: 'reconnecting',
+      graceDeadlineMs: now + reconnectGraceMs,
+      lastSeenMs: now,
+    };
+  }
+  return connections;
+}
+
+function recoverFromCheckpoint(
+  logger: nkruntime.Logger,
+  checkpoint: MatchCheckpoint,
+  matchId: string,
+  tableId: string,
+  fallbackBuyIn: number,
+  fallbackMaxPlayers: number,
+  fallbackReconnectGraceMs: number,
+  now: number
+): MatchState | null {
+  const tableState = boundedTableState(checkpoint.privateState.tableState);
+  if (tableState.id !== tableId) {
+    logStructured(logger, 'warn', 'match.checkpoint.rejected', {
+      tableId,
+      checkpointTableId: tableState.id,
+      reason: 'table_id_mismatch',
+    });
+    return null;
+  }
+
+  const reconnectGraceMs = checkpoint.reconnectGraceMs || fallbackReconnectGraceMs;
+  const replayEvents = boundedReplayEvents(checkpoint.privateState.replayEvents ?? []);
+  const state: MatchState = {
+    matchId,
+    table: tableState,
+    stateVersion: Math.trunc(checkpoint.stateVersion) + 1,
+    tableBuyIn: checkpoint.tableBuyIn || fallbackBuyIn,
+    maxPlayers: checkpoint.maxPlayers || fallbackMaxPlayers,
+    reconnectGraceMs,
+    presences: {},
+    playerConnections: recoveredConnections(checkpoint, tableState, reconnectGraceMs, now),
+    lastSeqByPlayer: cloneJson(checkpoint.privateState.lastSeqByPlayer ?? {}),
+    lastReactionAtByPlayer: {},
+    lastChatAtByPlayer: {},
+    betweenHand: checkpoint.betweenHand ? cloneJson(checkpoint.betweenHand) : null,
+    replay: { maxEvents: REPLAY_MAX_EVENTS, events: replayEvents },
+    terminateRequested: false,
+    terminateReason: null,
+  };
+  replayByMatch.set(matchId, state.replay.events);
+  logStructured(logger, 'warn', 'match.checkpoint.restored', {
+    matchId,
+    previousMatchId: checkpoint.matchId,
+    tableId,
+    stateVersion: state.stateVersion,
+    checkpointStateVersion: checkpoint.stateVersion,
+    handId: tableState.hand?.handId ?? null,
+    phase: phaseForCheckpoint(state, tableState),
+    seatedPlayers: seatedPlayerIds(tableState).length,
+  });
+  return state;
+}
+
+function persistCheckpoint(
+  logger: nkruntime.Logger,
+  nk: nkruntime.Nakama,
+  state: MatchState,
+  reason: CheckpointWriteReason,
+  writeReasons: CheckpointWriteReason[] = [reason],
+  now = Date.now()
+) {
+  if (typeof nk.storageWrite !== 'function') {
+    logStructured(logger, 'error', 'match.checkpoint.persist_failed', {
+      matchId: state.matchId,
+      tableId: state.table.id,
+      stateVersion: state.stateVersion,
+      reason,
+      error: 'storage_write_unavailable',
+    });
+    return;
+  }
+  try {
+    const checkpoint = buildCheckpoint(state, reason, now, writeReasons);
+    nk.storageWrite([
+      {
+        collection: PDH_CHECKPOINT_COLLECTION,
+        key: checkpointKeyForTable(state.table.id),
+        userId: SYSTEM_USER_ID,
+        value: checkpoint as unknown as Record<string, unknown>,
+        permissionRead: 0,
+        permissionWrite: 0,
+      },
+    ]);
+    logStructured(logger, 'info', 'match.checkpoint.persisted', {
+      matchId: state.matchId,
+      tableId: state.table.id,
+      stateVersion: state.stateVersion,
+      handId: checkpoint.handId,
+      phase: checkpoint.phase,
+      reason,
+      reasons: checkpoint.writeReasons,
+    });
+  } catch (err) {
+    logStructured(logger, 'error', 'match.checkpoint.persist_failed', {
+      matchId: state.matchId,
+      tableId: state.table.id,
+      stateVersion: state.stateVersion,
+      reason,
+      error: safeErrorMessage(err),
+    });
+  }
+}
+
+function persistCheckpointForReasons(
+  logger: nkruntime.Logger,
+  nk: nkruntime.Nakama,
+  state: MatchState,
+  reasons: CheckpointWriteReason[]
+) {
+  const uniqueReasons = compactCheckpointReasons(reasons);
+  if (!uniqueReasons.length) return;
+  persistCheckpoint(logger, nk, state, uniqueReasons[0], uniqueReasons);
+}
+
 function sendToPresence(
   dispatcher: nkruntime.MatchDispatcher,
   presence: nkruntime.Presence,
@@ -742,6 +1161,28 @@ function handSnapshot(table: PokerTable) {
     street: hand?.street ?? null,
     phase: hand?.phase ?? null,
   };
+}
+
+function checkpointReasonsForTransition(
+  baseReason: CheckpointWriteReason,
+  before: ReturnType<typeof handSnapshot>,
+  table: PokerTable,
+  state: MatchState
+) {
+  const after = handSnapshot(table);
+  const reasons: CheckpointWriteReason[] = [baseReason];
+  if (before.handId !== after.handId && after.handId) {
+    reasons.push(before.handId ? 'next_hand_start' : 'hand_start');
+  }
+  if (before.phase !== 'showdown' && after.phase === 'showdown') {
+    reasons.push('showdown_settlement');
+  } else if (before.street !== after.street || before.phase !== after.phase) {
+    reasons.push('street_transition');
+  }
+  if (state.betweenHand && after.phase === 'showdown') {
+    reasons.push('between_hand_start');
+  }
+  return reasons;
 }
 
 export function findExistingAuthoritativeMatchId(
@@ -929,24 +1370,40 @@ function matchInit(ctx, logger, nk, params) {
   const tableBuyIn = parseMatchBuyIn(matchParams);
   const maxPlayers = parseMatchMaxPlayers(matchParams);
   const reconnectGraceMs = parseReconnectGraceMs(matchParams);
-  const table = new PokerTable(tableId, undefined, maxPlayers);
-  const state: MatchState = {
-    matchId,
-    table: table.state,
-    stateVersion: 0,
-    tableBuyIn,
-    maxPlayers,
-    reconnectGraceMs,
-    presences: {},
-    playerConnections: {},
-    lastSeqByPlayer: {},
-    lastReactionAtByPlayer: {},
-    lastChatAtByPlayer: {},
-    betweenHand: null,
-    replay: { maxEvents: REPLAY_MAX_EVENTS, events: [] },
-    terminateRequested: false,
-    terminateReason: null,
-  };
+  const now = Date.now();
+  const checkpoint = loadCheckpoint(logger, nk, tableId, now);
+  const recoveredState = checkpoint
+    ? recoverFromCheckpoint(
+        logger,
+        checkpoint,
+        matchId,
+        tableId,
+        tableBuyIn,
+        maxPlayers,
+        reconnectGraceMs,
+        now
+      )
+    : null;
+  const table = recoveredState ? null : new PokerTable(tableId, undefined, maxPlayers);
+  const state: MatchState =
+    recoveredState ??
+    ({
+      matchId,
+      table: table!.state,
+      stateVersion: 0,
+      tableBuyIn,
+      maxPlayers,
+      reconnectGraceMs,
+      presences: {},
+      playerConnections: {},
+      lastSeqByPlayer: {},
+      lastReactionAtByPlayer: {},
+      lastChatAtByPlayer: {},
+      betweenHand: null,
+      replay: { maxEvents: REPLAY_MAX_EVENTS, events: [] },
+      terminateRequested: false,
+      terminateReason: null,
+    } satisfies MatchState);
   replayByMatch.set(matchId, state.replay.events);
   logStructured(logger, 'info', 'match.init', {
     matchId,
@@ -954,8 +1411,13 @@ function matchInit(ctx, logger, nk, params) {
     tableBuyIn,
     maxPlayers,
     reconnectGraceMs,
+    recoveredFromCheckpoint: Boolean(recoveredState),
+    stateVersion: state.stateVersion,
     tickRate: 10,
   });
+  persistCheckpoint(logger, nk, state, recoveredState ? 'match_restore' : 'match_init', [
+    recoveredState ? 'match_restore' : 'match_init',
+  ]);
   return {
     state,
     tickRate: 10,
@@ -1002,6 +1464,11 @@ function matchJoin(ctx, logger, nk, dispatcher, tick, state, presences) {
   const startMutation = commitTableMutation(state, table, () => table.beginNextHandIfReady());
   shouldBroadcast = startMutation.changed || shouldBroadcast;
   state.table = table.state;
+  if (presences.length > 0 || shouldBroadcast) {
+    const reasons: CheckpointWriteReason[] = ['presence_joined'];
+    if (startMutation.changed) reasons.push('hand_start');
+    persistCheckpointForReasons(logger, nk, state, reasons);
+  }
   if (shouldBroadcast || presences.length > 0) {
     broadcastState(dispatcher, state);
   }
@@ -1036,6 +1503,11 @@ function matchLeave(ctx, logger, nk, dispatcher, tick, state, presences) {
     });
   }
   state.table = table.state;
+  if (presences.length > 0 || shouldBroadcast) {
+    const reasons: CheckpointWriteReason[] = ['presence_left'];
+    if (shouldBroadcast) reasons.push('reconnect_grace_changed');
+    persistCheckpointForReasons(logger, nk, state, reasons);
+  }
   if (shouldBroadcast || presences.length > 0) {
     broadcastState(dispatcher, state);
   }
@@ -1074,6 +1546,7 @@ function applyExpiredReconnectGrace(
   now: number
 ) {
   let shouldBroadcast = false;
+  const checkpointReasons: CheckpointWriteReason[] = [];
   const expiredUserIds = Object.entries(state.playerConnections)
     .filter(
       ([userId, connection]) =>
@@ -1087,10 +1560,17 @@ function applyExpiredReconnectGrace(
   for (const userId of expiredUserIds) {
     const previousDeadline = state.playerConnections[userId]?.graceDeadlineMs ?? null;
     shouldBroadcast = markPlayerDisconnected(state, userId, now) || shouldBroadcast;
+    const beforeExpiry = handSnapshot(table);
     const expiryMutation = commitTableMutation(state, table, () =>
       applyGraceExpiryPolicy(table, userId, now)
     );
     shouldBroadcast = expiryMutation.changed || shouldBroadcast;
+    checkpointReasons.push(
+      ...checkpointReasonsForTransition('reconnect_grace_changed', beforeExpiry, table, state)
+    );
+    if (expiryMutation.result.autoAction) {
+      checkpointReasons.push('auto_action');
+    }
     logStructured(logger, 'info', 'match.reconnect_grace.expired', {
       matchId: state.matchId,
       tableId: table.state.id,
@@ -1103,7 +1583,7 @@ function applyExpiredReconnectGrace(
     });
   }
 
-  return shouldBroadcast;
+  return { shouldBroadcast, checkpointReasons };
 }
 
 function applyExpiredTableTimers(
@@ -1114,6 +1594,7 @@ function applyExpiredTableTimers(
   now: number
 ) {
   let shouldBroadcast = false;
+  const checkpointReasons: CheckpointWriteReason[] = [];
 
   const startGateMutation = commitTableMutation(state, table, () => table.advanceStartGate(now));
   if (startGateMutation.changed) {
@@ -1126,8 +1607,10 @@ function applyExpiredTableTimers(
       stateVersion: state.stateVersion,
     });
     shouldBroadcast = true;
+    checkpointReasons.push(startGateMutation.result ? 'hand_start' : 'ready_for_hand');
   }
 
+  const beforePhase = handSnapshot(table);
   const phaseMutation = commitTableMutation(state, table, () => table.advancePendingPhase(now));
   if (phaseMutation.result || phaseMutation.changed) {
     const hand = table.state.hand;
@@ -1141,10 +1624,18 @@ function applyExpiredTableTimers(
       stateVersion: state.stateVersion,
     });
     shouldBroadcast = true;
+    if (hand?.phase === 'showdown') {
+      checkpointReasons.push('showdown_settlement');
+    } else if (beforePhase.phase !== hand?.phase || beforePhase.street !== hand?.street) {
+      checkpointReasons.push('street_transition');
+    }
   }
 
-  shouldBroadcast = applyExpiredReconnectGrace(logger, state, table, tick, now) || shouldBroadcast;
+  const graceResult = applyExpiredReconnectGrace(logger, state, table, tick, now);
+  shouldBroadcast = graceResult.shouldBroadcast || shouldBroadcast;
+  checkpointReasons.push(...graceResult.checkpointReasons);
 
+  const beforeAutoAction = handSnapshot(table);
   const autoActionMutation = commitTableMutation(state, table, () => table.autoAction(now));
   if (autoActionMutation.result) {
     const hand = table.state.hand;
@@ -1158,10 +1649,14 @@ function applyExpiredTableTimers(
       stateVersion: state.stateVersion,
     });
     shouldBroadcast = true;
+    checkpointReasons.push(
+      ...checkpointReasonsForTransition('auto_action', beforeAutoAction, table, state)
+    );
   } else if (autoActionMutation.changed) {
     shouldBroadcast = true;
   }
 
+  const beforeAutoDiscard = handSnapshot(table);
   const autoDiscardMutation = commitTableMutation(state, table, () => table.autoDiscard(now));
   if (autoDiscardMutation.changed) {
     const hand = table.state.hand;
@@ -1173,23 +1668,43 @@ function applyExpiredTableTimers(
       stateVersion: state.stateVersion,
     });
     shouldBroadcast = true;
+    checkpointReasons.push(
+      ...checkpointReasonsForTransition('auto_discard', beforeAutoDiscard, table, state)
+    );
   }
 
-  shouldBroadcast = advanceBetweenHandIfReady(logger, state, table, tick, now) || shouldBroadcast;
+  const beforeBetweenHand = state.betweenHand ? cloneJson(state.betweenHand) : null;
+  const beforeBetweenHandSnapshot = handSnapshot(table);
+  const betweenHandChanged = advanceBetweenHandIfReady(logger, state, table, tick, now);
+  shouldBroadcast = betweenHandChanged || shouldBroadcast;
+  if (betweenHandChanged) {
+    if (!beforeBetweenHand && state.betweenHand) {
+      checkpointReasons.push('between_hand_start');
+    } else if (
+      beforeBetweenHand &&
+      (!state.betweenHand || beforeBetweenHandSnapshot.handId !== table.state.hand?.handId)
+    ) {
+      checkpointReasons.push('next_hand_start');
+    } else {
+      checkpointReasons.push('between_hand_ready_changed');
+    }
+  }
 
   if (!table.state.hand) {
     if (state.betweenHand) {
       state.betweenHand = null;
       bumpStateVersion(state);
       shouldBroadcast = true;
+      checkpointReasons.push('between_hand_ready_changed');
     }
     const nextHandMutation = commitTableMutation(state, table, () => table.beginNextHandIfReady());
     if (nextHandMutation.changed) {
       shouldBroadcast = true;
+      checkpointReasons.push('hand_start');
     }
   }
 
-  return shouldBroadcast;
+  return { shouldBroadcast, checkpointReasons };
 }
 
 function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
@@ -1205,8 +1720,12 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
 
   const table = hydrateTable(state.table);
   let shouldBroadcast = false;
-  shouldBroadcast =
-    applyExpiredTableTimers(logger, state, table, tick, Date.now()) || shouldBroadcast;
+  const initialTimerResult = applyExpiredTableTimers(logger, state, table, tick, Date.now());
+  shouldBroadcast = initialTimerResult.shouldBroadcast || shouldBroadcast;
+  if (initialTimerResult.checkpointReasons.length) {
+    state.table = table.state;
+    persistCheckpointForReasons(logger, nk, state, initialTimerResult.checkpointReasons);
+  }
 
   for (const message of messages) {
     if (message.opCode !== MatchOpCode.ClientMessage) continue;
@@ -1287,6 +1806,7 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
                   }
                 : null;
     const before = handSnapshot(table);
+    let messageCheckpointReasons: CheckpointWriteReason[] = [];
 
     try {
       if (isMutatingClientMessage(data)) {
@@ -1310,14 +1830,19 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
             tableId: table.state.id,
           });
           shouldBroadcast = mutation.changed || shouldBroadcast;
+          if (mutation.changed) {
+            messageCheckpointReasons.push(
+              ...checkpointReasonsForTransition('player_joined', before, table, state)
+            );
+          }
           break;
         }
         case 'reconnect': {
           if (data.playerId !== presence.userId) {
             throw new Error('Reconnect identity mismatch');
           }
-          shouldBroadcast =
-            markPlayerConnected(state, presence.userId, Date.now()) || shouldBroadcast;
+          const connectionChanged = markPlayerConnected(state, presence.userId, Date.now());
+          shouldBroadcast = connectionChanged || shouldBroadcast;
           const mutation = commitTableMutation(state, table, () => {
             table.setSittingOut(presence.userId, false);
             table.beginNextHandIfReady();
@@ -1328,6 +1853,12 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
             tableId: table.state.id,
           });
           shouldBroadcast = mutation.changed || shouldBroadcast;
+          if (connectionChanged || mutation.changed) {
+            messageCheckpointReasons.push(
+              ...checkpointReasonsForTransition('presence_joined', before, table, state)
+            );
+            if (connectionChanged) messageCheckpointReasons.push('reconnect_grace_changed');
+          }
           break;
         }
         case 'action': {
@@ -1339,6 +1870,11 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
             })
           );
           shouldBroadcast = mutation.changed || shouldBroadcast;
+          if (mutation.changed) {
+            messageCheckpointReasons.push(
+              ...checkpointReasonsForTransition('accepted_action', before, table, state)
+            );
+          }
           break;
         }
         case 'discard': {
@@ -1347,6 +1883,11 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
             table.applyDiscard(presence.userId, data.index)
           );
           shouldBroadcast = mutation.changed || shouldBroadcast;
+          if (mutation.changed) {
+            messageCheckpointReasons.push(
+              ...checkpointReasonsForTransition('discard', before, table, state)
+            );
+          }
           break;
         }
         case 'nextHand': {
@@ -1360,6 +1901,11 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
             Date.now()
           );
           shouldBroadcast = mutationChanged || shouldBroadcast;
+          if (mutationChanged) {
+            messageCheckpointReasons.push(
+              ...checkpointReasonsForTransition('between_hand_ready_changed', before, table, state)
+            );
+          }
           break;
         }
         case 'rebuy': {
@@ -1368,12 +1914,22 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
             table.rebuy(presence.userId, state.tableBuyIn)
           );
           shouldBroadcast = mutation.changed || shouldBroadcast;
+          if (mutation.changed) {
+            messageCheckpointReasons.push(
+              ...checkpointReasonsForTransition('rebuy', before, table, state)
+            );
+          }
           break;
         }
         case 'sitOut': {
           ensurePlayerSeated(table, presence.userId);
           const mutation = commitTableMutation(state, table, () => table.sitOut(presence.userId));
           shouldBroadcast = mutation.changed || shouldBroadcast;
+          if (mutation.changed) {
+            messageCheckpointReasons.push(
+              ...checkpointReasonsForTransition('sit_out', before, table, state)
+            );
+          }
           break;
         }
         case 'readyForHand': {
@@ -1383,6 +1939,11 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
             table.advanceStartGate();
           });
           shouldBroadcast = mutation.changed || shouldBroadcast;
+          if (mutation.changed) {
+            messageCheckpointReasons.push(
+              ...checkpointReasonsForTransition('ready_for_hand', before, table, state)
+            );
+          }
           break;
         }
         case 'readyForNextHand': {
@@ -1396,6 +1957,11 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
             Date.now()
           );
           shouldBroadcast = mutationChanged || shouldBroadcast;
+          if (mutationChanged) {
+            messageCheckpointReasons.push(
+              ...checkpointReasonsForTransition('between_hand_ready_changed', before, table, state)
+            );
+          }
           break;
         }
         case 'reaction': {
@@ -1491,6 +2057,10 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
           stateVersion: state.stateVersion,
         });
       }
+      if (messageCheckpointReasons.length) {
+        state.table = table.state;
+        persistCheckpointForReasons(logger, nk, state, messageCheckpointReasons);
+      }
     } catch (err: any) {
       if (mutatingMeta) {
         const after = handSnapshot(table);
@@ -1541,10 +2111,13 @@ function matchLoop(ctx, logger, nk, dispatcher, tick, state, messages) {
     }
   }
 
-  shouldBroadcast =
-    applyExpiredTableTimers(logger, state, table, tick, Date.now()) || shouldBroadcast;
+  const finalTimerResult = applyExpiredTableTimers(logger, state, table, tick, Date.now());
+  shouldBroadcast = finalTimerResult.shouldBroadcast || shouldBroadcast;
 
   state.table = table.state;
+  if (finalTimerResult.checkpointReasons.length) {
+    persistCheckpointForReasons(logger, nk, state, finalTimerResult.checkpointReasons);
+  }
   if (shouldBroadcast) {
     broadcastState(dispatcher, state);
   }
