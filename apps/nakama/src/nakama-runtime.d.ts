@@ -31,6 +31,7 @@ declare module '@heroiclabs/nakama-runtime' {
     value: Record<string, unknown>;
     permissionRead: number;
     permissionWrite: number;
+    version?: string;
   }
 
   export interface Presence {

@@ -763,10 +763,18 @@ function normalizeLoadedCheckpoint(value: unknown): MatchCheckpoint | null {
   if (checkpoint.schemaVersion !== CHECKPOINT_SCHEMA_VERSION) return null;
   if (typeof checkpoint.tableId !== 'string' || !checkpoint.tableId) return null;
   if (typeof checkpoint.matchId !== 'string' || !checkpoint.matchId) return null;
-  if (typeof checkpoint.stateVersion !== 'number' || !Number.isFinite(checkpoint.stateVersion)) {
+  if (
+    typeof checkpoint.stateVersion !== 'number' ||
+    !Number.isFinite(checkpoint.stateVersion) ||
+    !Number.isInteger(checkpoint.stateVersion) ||
+    checkpoint.stateVersion < 0
+  ) {
     return null;
   }
   if (typeof checkpoint.writtenAtMs !== 'number' || !Number.isFinite(checkpoint.writtenAtMs)) {
+    return null;
+  }
+  if (typeof checkpoint.expiresAtMs !== 'number' || !Number.isFinite(checkpoint.expiresAtMs)) {
     return null;
   }
   if (!checkpoint.privateState?.tableState) return null;
@@ -788,6 +796,18 @@ function readRecoverablePdhCheckpoint(
   tableId: string,
   now = Date.now()
 ): MatchCheckpoint | null {
+  const object = readCheckpointObject(nk, tableId);
+  const checkpoint = normalizeLoadedCheckpoint(object?.value);
+  if (!checkpoint || !isRecentCheckpoint(checkpoint, tableId, now)) {
+    return null;
+  }
+  return checkpoint;
+}
+
+function readCheckpointObject(
+  nk: nkruntime.Nakama,
+  tableId: string
+): nkruntime.StorageObject | null {
   if (typeof nk.storageRead !== 'function') return null;
   const objects = nk.storageRead([
     {
@@ -796,11 +816,7 @@ function readRecoverablePdhCheckpoint(
       userId: SYSTEM_USER_ID,
     },
   ]);
-  const checkpoint = normalizeLoadedCheckpoint(objects?.[0]?.value);
-  if (!checkpoint || !isRecentCheckpoint(checkpoint, tableId, now)) {
-    return null;
-  }
-  return checkpoint;
+  return objects?.[0] ?? null;
 }
 
 export function hasRecoverablePdhCheckpoint(
@@ -902,14 +918,14 @@ function recoverFromCheckpoint(
     return null;
   }
 
-  const reconnectGraceMs = checkpoint.reconnectGraceMs || fallbackReconnectGraceMs;
+  const reconnectGraceMs = checkpoint.reconnectGraceMs ?? fallbackReconnectGraceMs;
   const replayEvents = boundedReplayEvents(checkpoint.privateState.replayEvents ?? []);
   const state: MatchState = {
     matchId,
     table: tableState,
     stateVersion: Math.trunc(checkpoint.stateVersion) + 1,
-    tableBuyIn: checkpoint.tableBuyIn || fallbackBuyIn,
-    maxPlayers: checkpoint.maxPlayers || fallbackMaxPlayers,
+    tableBuyIn: checkpoint.tableBuyIn ?? fallbackBuyIn,
+    maxPlayers: checkpoint.maxPlayers ?? fallbackMaxPlayers,
     reconnectGraceMs,
     presences: {},
     playerConnections: recoveredConnections(checkpoint, tableState, reconnectGraceMs, now),
@@ -955,16 +971,35 @@ function persistCheckpoint(
   }
   try {
     const checkpoint = buildCheckpoint(state, reason, now, writeReasons);
-    nk.storageWrite([
-      {
-        collection: PDH_CHECKPOINT_COLLECTION,
-        key: checkpointKeyForTable(state.table.id),
-        userId: SYSTEM_USER_ID,
-        value: checkpoint as unknown as Record<string, unknown>,
-        permissionRead: 0,
-        permissionWrite: 0,
-      },
-    ]);
+    const existingObject = readCheckpointObject(nk, state.table.id);
+    const existingCheckpoint = normalizeLoadedCheckpoint(existingObject?.value);
+    if (
+      existingCheckpoint &&
+      isRecentCheckpoint(existingCheckpoint, state.table.id, now) &&
+      existingCheckpoint.stateVersion > checkpoint.stateVersion
+    ) {
+      logStructured(logger, 'warn', 'match.checkpoint.persist_skipped', {
+        matchId: state.matchId,
+        tableId: state.table.id,
+        stateVersion: state.stateVersion,
+        existingStateVersion: existingCheckpoint.stateVersion,
+        reason,
+        skipReason: 'newer_checkpoint_exists',
+      });
+      return;
+    }
+    const writeRequest: nkruntime.StorageWriteRequest = {
+      collection: PDH_CHECKPOINT_COLLECTION,
+      key: checkpointKeyForTable(state.table.id),
+      userId: SYSTEM_USER_ID,
+      value: checkpoint as unknown as Record<string, unknown>,
+      permissionRead: 0,
+      permissionWrite: 0,
+    };
+    if (typeof existingObject?.version === 'string' && existingObject.version.length > 0) {
+      writeRequest.version = existingObject.version;
+    }
+    nk.storageWrite([writeRequest]);
     logStructured(logger, 'info', 'match.checkpoint.persisted', {
       matchId: state.matchId,
       tableId: state.table.id,

@@ -15,8 +15,15 @@ const logger = {
 
 function makeNakamaMock() {
   const storage = new Map<string, Record<string, unknown>>();
+  const storageVersions = new Map<string, string>();
   const storageKey = (object: { collection: string; key: string; userId: string }) =>
     `${object.collection}:${object.userId}:${object.key}`;
+  const nextStorageVersion = (key: string) => {
+    const current = Number(storageVersions.get(key) ?? '0');
+    const next = String(current + 1);
+    storageVersions.set(key, next);
+    return next;
+  };
   return {
     binaryToString: (data: Uint8Array) => new TextDecoder().decode(data),
     matchCreate: vi.fn(() => 'created-match-id'),
@@ -33,6 +40,7 @@ function makeNakamaMock() {
                 key: object.key,
                 userId: object.userId,
                 value,
+                version: storageVersions.get(storageKey(object)) ?? '1',
               }
             : null;
         })
@@ -45,19 +53,30 @@ function makeNakamaMock() {
           key: string;
           userId: string;
           value: Record<string, unknown>;
+          version?: string;
+          permissionRead?: number;
+          permissionWrite?: number;
         }>
       ) => {
         for (const object of objects) {
-          storage.set(storageKey(object), object.value);
+          const key = storageKey(object);
+          const currentVersion = storageVersions.get(key);
+          if (object.version !== undefined && currentVersion && object.version !== currentVersion) {
+            throw new Error('storage version conflict');
+          }
+          storage.set(key, object.value);
+          nextStorageVersion(key);
         }
         return objects.map((object) => ({
           collection: object.collection,
           key: object.key,
           userId: object.userId,
           value: object.value,
+          version: storageVersions.get(storageKey(object)) ?? '1',
         }));
       }
     ),
+    storageVersions,
   };
 }
 
@@ -108,17 +127,34 @@ function stateMessagesTo(broadcastMessage: ReturnType<typeof vi.fn>, playerId: s
     .filter((msg): msg is { type: 'state'; state: any } => Boolean(msg));
 }
 
+function checkpointStorageKey(tableId = 'main') {
+  return `pdh_match_checkpoints:00000000-0000-0000-0000-000000000000:${tableId}`;
+}
+
 function checkpointFromStorage(nk: ReturnType<typeof makeNakamaMock>, tableId = 'main') {
-  return nk.storage.get(
-    `pdh_match_checkpoints:00000000-0000-0000-0000-000000000000:${tableId}`
-  ) as any;
+  return nk.storage.get(checkpointStorageKey(tableId)) as any;
+}
+
+function setCheckpointInStorage(
+  nk: ReturnType<typeof makeNakamaMock>,
+  checkpoint: Record<string, unknown>,
+  tableId = 'main'
+) {
+  const key = checkpointStorageKey(tableId);
+  nk.storage.set(key, checkpoint);
+  if (!nk.storageVersions.get(key)) {
+    nk.storageVersions.set(key, '1');
+  }
 }
 
 function checkpointWriteValues(nk: ReturnType<typeof makeNakamaMock>) {
+  return checkpointWriteObjects(nk).map((object) => object.value);
+}
+
+function checkpointWriteObjects(nk: ReturnType<typeof makeNakamaMock>) {
   return nk.storageWrite.mock.calls
-    .flatMap((call) => call[0] as Array<{ collection: string; value: any }>)
-    .filter((object) => object.collection === 'pdh_match_checkpoints')
-    .map((object) => object.value);
+    .flatMap((call) => call[0] as Array<any>)
+    .filter((object) => object.collection === 'pdh_match_checkpoints');
 }
 
 function connectionFor(state: any, playerId: string) {
@@ -150,11 +186,11 @@ function expireStartGate(nk: any, dispatcher: any, state: any, tick = 3) {
   }
 }
 
-function setupThreePlayerMatch() {
+function setupThreePlayerMatch(matchParams: Record<string, unknown> = {}) {
   const nk = makeNakamaMock();
   const broadcastMessage = vi.fn();
   const dispatcher = { broadcastMessage };
-  const init = pdhMatchHandler.matchInit({}, logger, nk, { tableId: 'main' });
+  const init = pdhMatchHandler.matchInit({}, logger, nk, { tableId: 'main', ...matchParams });
   const state = init.state as any;
   const presences = [
     { userId: 'u1', sessionId: 's1' },
@@ -1009,6 +1045,17 @@ describe('pdhMatchHandler', () => {
     expect(checkpoint.privateState.tableState.hand.deck.length).toBeGreaterThan(0);
   });
 
+  it('stores checkpoints with server-only storage permissions', () => {
+    const { nk } = setupThreePlayerMatch();
+    const writes = checkpointWriteObjects(nk);
+
+    expect(writes.length).toBeGreaterThan(0);
+    for (const write of writes) {
+      expect(write.permissionRead).toBe(0);
+      expect(write.permissionWrite).toBe(0);
+    }
+  });
+
   it('writes a checkpoint after an accepted player action', () => {
     const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
     const hand = state.table.hand;
@@ -1024,6 +1071,7 @@ describe('pdhMatchHandler', () => {
     expect(writes.length).toBeGreaterThan(0);
     expect(writes.at(-1)?.writeReasons).toContain('accepted_action');
     expect(writes.at(-1)?.stateVersion).toBe(state.stateVersion);
+    expect(checkpointWriteObjects(nk).at(-1)?.version).toEqual(expect.any(String));
   });
 
   it('writes a checkpoint when showdown enters between-hand state', () => {
@@ -1069,6 +1117,36 @@ describe('pdhMatchHandler', () => {
     expect(errorLog).not.toContain('deck');
   });
 
+  it('skips checkpoint writes when a newer stored checkpoint already exists', () => {
+    const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
+    const checkpoint = checkpointFromStorage(nk);
+    setCheckpointInStorage(
+      nk,
+      {
+        ...checkpoint,
+        checkpointId: 'newer-checkpoint',
+        stateVersion: state.stateVersion + 10,
+        writtenAtMs: checkpoint.writtenAtMs + 10,
+        serverTimeMs: checkpoint.serverTimeMs + 10,
+      },
+      'main'
+    );
+    const hand = state.table.hand;
+    const actor = hand.players.find((p: any) => p.seat === hand.actionOnSeat);
+
+    logger.warn.mockClear();
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+      {
+        opCode: 1,
+        sender: presenceById.get(actor.id),
+        data: encode(actionPayloadFor(hand, actor.id, 1)),
+      },
+    ]);
+
+    expect(checkpointFromStorage(nk).checkpointId).toBe('newer-checkpoint');
+    expect(JSON.stringify(logger.warn.mock.calls)).toContain('match.checkpoint.persist_skipped');
+  });
+
   it('restores a recent checkpoint when an interrupted table is recreated', () => {
     const { nk, state } = setupThreePlayerMatch();
     const checkpoint = checkpointFromStorage(nk);
@@ -1095,6 +1173,109 @@ describe('pdhMatchHandler', () => {
       status: 'reconnecting',
       graceDeadlineMs: checkpoint.writtenAtMs + 16_000,
     });
+  });
+
+  it('preserves zero reconnect grace after checkpoint restore', () => {
+    const { nk } = setupThreePlayerMatch({ reconnectGraceMs: 0 });
+    const checkpoint = checkpointFromStorage(nk);
+    const restoredAt = checkpoint.writtenAtMs + 1_000;
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(restoredAt);
+    let restored: any;
+    try {
+      restored = pdhMatchHandler.matchInit(
+        { matchId: 'zero-grace-restored' },
+        logger,
+        nk,
+        { tableId: 'main', reconnectGraceMs: 0 }
+      ).state;
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(restored.reconnectGraceMs).toBe(0);
+    expect(restored.playerConnections.u1).toMatchObject({
+      status: 'reconnecting',
+      graceDeadlineMs: restoredAt,
+    });
+  });
+
+  it('ignores expired checkpoints and starts a fresh empty table', () => {
+    const { nk } = setupThreePlayerMatch();
+    const checkpoint = checkpointFromStorage(nk);
+    setCheckpointInStorage(
+      nk,
+      {
+        ...checkpoint,
+        writtenAtMs: 1_000,
+        serverTimeMs: 1_000,
+        expiresAtMs: 2_000,
+      },
+      'main'
+    );
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    let fresh: any;
+    try {
+      fresh = pdhMatchHandler.matchInit(
+        { matchId: 'fresh-after-expired' },
+        logger,
+        nk,
+        { tableId: 'main' }
+      ).state;
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(fresh.stateVersion).toBe(0);
+    expect(fresh.table.hand).toBeNull();
+    expect(fresh.playerConnections).toEqual({});
+  });
+
+  it('rejects unsupported checkpoint schema versions instead of migrating implicitly', () => {
+    const { nk } = setupThreePlayerMatch();
+    const checkpoint = checkpointFromStorage(nk);
+    setCheckpointInStorage(nk, { ...checkpoint, schemaVersion: 999 }, 'main');
+
+    const fresh = pdhMatchHandler.matchInit(
+      { matchId: 'fresh-after-unknown-schema' },
+      logger,
+      nk,
+      { tableId: 'main' }
+    ).state as any;
+
+    expect(fresh.stateVersion).toBe(0);
+    expect(fresh.table.hand).toBeNull();
+    expect(fresh.playerConnections).toEqual({});
+  });
+
+  it('bounds replay/debug events stored in checkpoints', () => {
+    const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
+    state.replay.events = Array.from({ length: 150 }, (_, index) => ({
+      ts: index,
+      tick: index,
+      matchId: state.matchId,
+      tableId: state.table.id,
+      userId: 'u1',
+      handIdBefore: state.table.hand.handId,
+      handIdAfter: state.table.hand.handId,
+      streetBefore: state.table.hand.street,
+      streetAfter: state.table.hand.street,
+      phaseBefore: state.table.hand.phase,
+      phaseAfter: state.table.hand.phase,
+      actionSeq: index + 1,
+      kind: 'action',
+      action: 'check',
+      outcome: 'accepted',
+    }));
+
+    pdhMatchHandler.matchLeave({}, logger, nk, dispatcher, 4, state, [presenceById.get('u1')]);
+    const checkpoint = checkpointFromStorage(nk);
+
+    expect(checkpoint.replayEvents).toHaveLength(100);
+    expect(checkpoint.privateState.replayEvents).toHaveLength(100);
+    expect(JSON.stringify(checkpoint.replayEvents)).not.toContain('holeCards');
+    expect(JSON.stringify(checkpoint.replayEvents)).not.toContain('deck');
   });
 
   it('does not expose other players hidden cards in recovery state snapshots', () => {

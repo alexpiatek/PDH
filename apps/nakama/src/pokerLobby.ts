@@ -1,5 +1,5 @@
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
-import { hasRecoverablePdhCheckpoint } from './pdhMatch';
+import { findExistingAuthoritativeMatchId, hasRecoverablePdhCheckpoint } from './pdhMatch';
 
 export const POKER_TABLE_MATCH_MODULE = 'poker_table';
 export const LOBBY_GAMEPLAY_MATCH_MODULE = 'pdh';
@@ -764,20 +764,24 @@ export function rpcJoinByCode(
   const snapshot = resolveMatchSnapshot(runtimeNakama, stored.matchId);
   if (snapshot.found === false) {
     if (hasRecoverablePdhCheckpoint(runtimeNakama, input.code)) {
-      const recoveredMatchId = nk.matchCreate(LOBBY_GAMEPLAY_MATCH_MODULE, {
-        tableId: input.code,
-        maxPlayers: stored.maxPlayers,
-        buyIn: stored.quickPlay?.buyIn ?? DEFAULT_QUICK_PLAY_BUY_IN,
-      });
+      const existingRecoveredMatchId = findExistingAuthoritativeMatchId(runtimeNakama, input.code);
+      const recoveredMatchId =
+        existingRecoveredMatchId ??
+        nk.matchCreate(LOBBY_GAMEPLAY_MATCH_MODULE, {
+          tableId: input.code,
+          maxPlayers: stored.maxPlayers,
+          buyIn: stored.quickPlay?.buyIn ?? DEFAULT_QUICK_PLAY_BUY_IN,
+        });
       writeTableByCode(runtimeNakama, input.code, {
         ...stored,
         matchId: recoveredMatchId,
       });
       logger.warn(
-        'Recovered interrupted table code=%v oldMatchId=%v newMatchId=%v',
+        'Recovered interrupted table code=%v oldMatchId=%v newMatchId=%v created=%v',
         input.code,
         stored.matchId,
-        recoveredMatchId
+        recoveredMatchId,
+        existingRecoveredMatchId === null
       );
       const result: JoinByCodeResult = { matchId: recoveredMatchId, recovered: true };
       return JSON.stringify(result);
