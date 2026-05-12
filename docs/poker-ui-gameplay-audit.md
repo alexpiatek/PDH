@@ -1,5 +1,32 @@
 # Poker UI Gameplay Audit
 
+## Implementation Note: Active Table UI Cleanup
+
+Date: 2026-05-12
+
+Changed in this slice:
+
+- The active table hamburger menu now exposes player-facing actions only: Hand History, Copy Table Code when a valid table code exists, Rules, and Exit Table.
+- Show Extras and Disconnect were removed from the normal player menu. Internal connection cleanup remains in place for unmount and Exit Table behavior.
+- Hand history is closed by default and opens as an on-demand panel, preserving the useful street/action formatting without permanently covering the table.
+- Rules now open inside the table as a lightweight overlay/sheet using concise "how it works" copy, with no navigation away from the game.
+- Copy Table Code appears only for valid 6-character table codes and gives lightweight copied feedback rather than a modal.
+- Seat cards now reserve a badge area for dealer/small blind/big blind chips so long names truncate instead of being covered.
+- The result banner, discard tray, and last-action toast were moved/simplified to avoid covering the board, hero cards, player cards, and action controls in covered states.
+
+Active-table UX rationale:
+
+- Cards, pot state, player cards, and action controls should remain dominant during a hand.
+- Logs, rules, and secondary details are still available, but only on demand.
+- Dealer/blind metadata belongs in a reserved part of the player card, not as floating chips over the player name.
+- Discard state should be communicated by selected-card highlighting and the action tray, not duplicate floating instruction text.
+
+Remaining active-table UX questions:
+
+- Whether chat/reaction controls should return later as a separate lightweight social panel, distinct from hand history.
+- Whether result details need a richer expandable showdown breakdown once multi-way side pots are more common.
+- Whether the last-action toast should become timed/animated in live play instead of staying snapshot-visible in tests.
+
 ## Implementation Note: Action-First Lobby
 
 Date: 2026-05-12

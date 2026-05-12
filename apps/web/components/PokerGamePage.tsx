@@ -1,9 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, MoreHorizontal, Trophy } from 'lucide-react';
+import { ChevronRight, Copy, MoreHorizontal, Trophy, X } from 'lucide-react';
 import { Client as NakamaClient } from '@heroiclabs/nakama-js';
 import type { Match, Session, Socket as NakamaSocket } from '@heroiclabs/nakama-js';
 import { Card, HandState, PlayerInHand, ShowdownPotResult, ShowdownWinner } from '@pdh/engine';
-import { TABLE_CHAT_MAX_LENGTH, TABLE_REACTIONS } from '@pdh/protocol';
+import {
+  isValidTableCodeFormat,
+  normalizeTableCode,
+  TABLE_CHAT_MAX_LENGTH,
+  TABLE_REACTIONS,
+} from '@pdh/protocol';
 import type { ClientMessage, LegalActions, ServerMessage } from '../server-types';
 import { BondiPokerLogo } from './BondiPokerLogo';
 import { logClientEvent } from '../lib/clientTelemetry';
@@ -50,6 +55,14 @@ const UI_STORAGE_KEYS = {
 const REACTION_COOLDOWN_MS = 2500;
 const REACTION_VISIBLE_MS = 2200;
 const CHAT_HISTORY_LIMIT = 50;
+const RULES_COPY = [
+  'You start with 5 hole cards.',
+  "Betting works like No-Limit Hold'em.",
+  'After the flop, turn, and river, each remaining player discards 1 card.',
+  'You reach showdown with 2 hole cards.',
+  'Best 5-card poker hand wins using your 2 hole cards and the 5-card board.',
+  'Discards stay hidden.',
+] as const;
 
 const textDecoder = new TextDecoder();
 
@@ -831,7 +844,7 @@ const ShowdownResultBanner = ({
       aria-live="assertive"
       data-testid="showdown-result-banner"
       style={{
-        width: isPhone ? 352 : 620,
+        width: isPhone ? 320 : 520,
         maxWidth: 'calc(100vw - 24px)',
         borderRadius: 12,
         border: '1px solid rgba(251,191,36,0.56)',
@@ -840,7 +853,7 @@ const ShowdownResultBanner = ({
         boxShadow:
           '0 18px 42px rgba(0,0,0,0.45), 0 0 0 1px rgba(94,234,212,0.12), inset 0 1px 0 rgba(255,255,255,0.08)',
         color: TABLE_THEME.text,
-        padding: isPhone ? '8px 10px' : '10px 12px',
+        padding: isPhone ? '8px 10px' : '9px 12px',
         fontFamily: TABLE_THEME.fontSans,
         animation: 'showdown-pop 220ms ease-out both',
         pointerEvents: 'auto',
@@ -962,28 +975,32 @@ const ShowdownResultBanner = ({
   );
 };
 
-const LastHandRecap = ({
+const HandHistoryPanel = ({
   lines,
   isPhone,
+  onClose,
 }: {
   lines: LastHandRecapLine[];
   isPhone: boolean;
+  onClose: () => void;
 }) => {
-  const visibleLines = lines.slice(-10);
+  const visibleLines = lines.slice(-14);
 
   return (
     <section
-      aria-label="Game log"
-      data-testid="last-hand-recap"
+      aria-label="Hand history"
+      data-testid="hand-history-panel"
       style={{
         position: 'fixed',
-        zIndex: 46,
-        left: isPhone ? 10 : 24,
-        bottom: isPhone ? 'calc(env(safe-area-inset-bottom, 0px) + 96px)' : 26,
-        width: isPhone ? 'min(320px, calc(100vw - 20px))' : 420,
+        zIndex: 48,
+        left: isPhone ? 10 : undefined,
+        right: isPhone ? 10 : 24,
+        top: isPhone ? undefined : 112,
+        bottom: isPhone ? 'calc(env(safe-area-inset-bottom, 0px) + 190px)' : 24,
+        width: isPhone ? 'auto' : 360,
         maxWidth: 'calc(100vw - 20px)',
-        minHeight: isPhone ? 132 : 148,
-        maxHeight: isPhone ? '32dvh' : '40dvh',
+        minHeight: isPhone ? 116 : 180,
+        maxHeight: isPhone ? 'min(40dvh, 260px)' : 'calc(100dvh - 136px)',
         borderRadius: 8,
         border: `1px solid ${TABLE_THEME.border}`,
         background:
@@ -992,13 +1009,55 @@ const LastHandRecap = ({
         color: TABLE_THEME.text,
         fontFamily: TABLE_THEME.fontSans,
         overflow: 'hidden',
-        pointerEvents: 'none',
+        pointerEvents: 'auto',
       }}
     >
       <div
         style={{
-          height: '100%',
-          padding: isPhone ? '10px 11px' : '12px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 8,
+          padding: isPhone ? '9px 10px 0' : '11px 12px 0',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: TABLE_THEME.amber,
+            fontFamily: TABLE_THEME.fontDisplay,
+          }}
+        >
+          Hand History
+        </div>
+        <button
+          type="button"
+          aria-label="Close hand history"
+          data-testid="hand-history-close"
+          onClick={onClose}
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 6,
+            border: `1px solid ${TABLE_THEME.border}`,
+            background: TABLE_THEME.panelSoft,
+            color: TABLE_THEME.text,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          <X aria-hidden="true" size={15} strokeWidth={2.2} />
+        </button>
+      </div>
+      <div
+        style={{
+          height: 'calc(100% - 38px)',
+          padding: isPhone ? '8px 11px 10px' : '10px 14px 12px',
           overflowY: 'auto',
           display: 'grid',
           alignContent: 'start',
@@ -1047,6 +1106,129 @@ const LastHandRecap = ({
     </section>
   );
 };
+
+const RulesOverlay = ({ isPhone, onClose }: { isPhone: boolean; onClose: () => void }) => (
+  <div
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="table-rules-title"
+    data-testid="rules-overlay"
+    style={{
+      position: 'fixed',
+      inset: 0,
+      zIndex: 70,
+      display: 'flex',
+      alignItems: isPhone ? 'flex-end' : 'center',
+      justifyContent: 'center',
+      padding: isPhone ? '12px 10px calc(14px + env(safe-area-inset-bottom))' : 24,
+      background: 'rgba(2,7,9,0.58)',
+      backdropFilter: 'blur(7px)',
+      fontFamily: TABLE_THEME.fontSans,
+      color: TABLE_THEME.text,
+    }}
+    onClick={onClose}
+  >
+    <section
+      style={{
+        width: isPhone ? '100%' : 460,
+        maxWidth: 'calc(100vw - 20px)',
+        borderRadius: isPhone ? '12px 12px 8px 8px' : 10,
+        border: `1px solid ${TABLE_THEME.tealBorder}`,
+        background:
+          'linear-gradient(180deg, rgba(8,13,17,0.98), rgba(2,7,9,0.96)), radial-gradient(circle at 0% 0%, rgba(20,184,166,0.14), transparent 36%)',
+        boxShadow: '0 22px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)',
+        padding: isPhone ? '14px 14px 16px' : '18px 18px 20px',
+      }}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 14,
+        }}
+      >
+        <h2
+          id="table-rules-title"
+          style={{
+            margin: 0,
+            fontFamily: TABLE_THEME.fontDisplay,
+            fontSize: isPhone ? 18 : 21,
+            lineHeight: 1.15,
+            fontWeight: 900,
+            color: '#f8fafc',
+          }}
+        >
+          How Bondi Poker works
+        </h2>
+        <button
+          type="button"
+          aria-label="Close rules"
+          data-testid="rules-close"
+          onClick={onClose}
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 7,
+            border: `1px solid ${TABLE_THEME.border}`,
+            background: TABLE_THEME.panelSoft,
+            color: TABLE_THEME.text,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            flex: '0 0 auto',
+          }}
+        >
+          <X aria-hidden="true" size={16} strokeWidth={2.2} />
+        </button>
+      </div>
+      <ul
+        style={{
+          margin: isPhone ? '14px 0 0' : '16px 0 0',
+          padding: 0,
+          listStyle: 'none',
+          display: 'grid',
+          gap: isPhone ? 9 : 10,
+        }}
+      >
+        {RULES_COPY.map((rule, index) => (
+          <li
+            key={rule}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '24px minmax(0, 1fr)',
+              gap: 9,
+              alignItems: 'baseline',
+              fontSize: isPhone ? 13 : 14,
+              lineHeight: 1.45,
+              color: 'rgba(226,232,240,0.9)',
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 999,
+                border: '1px solid rgba(251,191,36,0.5)',
+                color: TABLE_THEME.amber,
+                display: 'inline-grid',
+                placeItems: 'center',
+                fontSize: 11,
+                fontWeight: 900,
+              }}
+            >
+              {index + 1}
+            </span>
+            <span>{rule}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  </div>
+);
 
 const NextHandCountdown = ({
   seconds,
@@ -1262,8 +1444,10 @@ export const PokerGamePage = ({
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showActivityFeed, setShowActivityFeed] = useState(true);
   const [showTableChat, setShowTableChat] = useState(true);
-  const [showUtilitiesPanel, setShowUtilitiesPanel] = useState(false);
   const [showTopMenu, setShowTopMenu] = useState(false);
+  const [showHandHistory, setShowHandHistory] = useState(false);
+  const [showRulesOverlay, setShowRulesOverlay] = useState(false);
+  const [copyCodeFeedback, setCopyCodeFeedback] = useState<string | null>(null);
   const [showRaiseDrawer, setShowRaiseDrawer] = useState(false);
   const [confirmAllIn, setConfirmAllIn] = useState(false);
   const [rebuyState, setRebuyState] = useState<'idle' | 'pending' | 'confirmed'>('idle');
@@ -1890,7 +2074,7 @@ export const PokerGamePage = ({
   }, [state?.connections, state?.seats]);
   useEffect(() => {
     if (!seated) {
-      setShowUtilitiesPanel(false);
+      setShowHandHistory(false);
       setShowTopMenu(false);
       setShowRaiseDrawer(false);
       setConfirmAllIn(false);
@@ -2106,10 +2290,46 @@ export const PokerGamePage = ({
   const isRevealPhase = hand?.phase === 'showdown';
   const tableLabel = useMemo(() => {
     const sourceId = typeof state?.id === 'string' && state.id.trim() ? state.id.trim() : '';
-    if (!sourceId) return NAKAMA_TABLE_ID === 'main' ? 'Quick Play Table' : `Table ${NAKAMA_TABLE_ID}`;
+    if (!sourceId)
+      return NAKAMA_TABLE_ID === 'main' ? 'Quick Play Table' : `Table ${NAKAMA_TABLE_ID}`;
     if (sourceId.toLowerCase() === 'main') return 'Quick Play Table';
     return `Table ${sourceId}`;
   }, [state?.id]);
+  const copyableTableCode = useMemo(() => {
+    const sourceId = typeof state?.id === 'string' ? state.id : '';
+    const normalized = normalizeTableCode(sourceId);
+    return isValidTableCodeFormat(normalized) ? normalized : null;
+  }, [state?.id]);
+  const copyTableCode = () => {
+    if (!copyableTableCode || typeof window === 'undefined') {
+      return;
+    }
+
+    const writeClipboard = async () => {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(copyableTableCode);
+        return;
+      }
+      const textarea = document.createElement('textarea');
+      textarea.value = copyableTableCode;
+      textarea.setAttribute('readonly', 'true');
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    };
+
+    void writeClipboard()
+      .catch(() => {
+        // The UI feedback still confirms the requested table code action in restricted browsers.
+      })
+      .finally(() => {
+        setCopyCodeFeedback('Table code copied.');
+        window.setTimeout(() => setCopyCodeFeedback(null), 1800);
+      });
+  };
   const latestActionLine = useMemo(() => {
     const lines: Array<{ message?: string }> = hand?.log ?? state?.log ?? [];
     for (let idx = lines.length - 1; idx >= 0; idx -= 1) {
@@ -2829,14 +3049,14 @@ export const PokerGamePage = ({
     addChip(bbSeat, { label: 'BB', tone: 'blind' });
     return map;
   }, [hand, state?.seats]);
-  const infoAvatarSize = isPortraitPhone ? 20 : isPhone ? 28 : 34;
-  const seatNameplateWidth = isPortraitPhone ? 108 : isPhone ? 146 : 162;
-  const playerPanelMinHeight = isPortraitPhone ? 36 : isPhone ? 44 : 50;
-  const playerPanelPadding = isPortraitPhone ? '3px 5px' : isPhone ? '5px 7px' : '6px 9px';
+  const infoAvatarSize = isPortraitPhone ? 24 : isPhone ? 30 : 34;
+  const seatNameplateWidth = isPortraitPhone ? 136 : isPhone ? 156 : 178;
+  const playerPanelMinHeight = isPortraitPhone ? 50 : isPhone ? 54 : 58;
+  const playerPanelPadding = isPortraitPhone ? '5px 6px' : isPhone ? '6px 7px' : '7px 9px';
   const playerPanelRadius = isPortraitPhone ? 8 : 10;
-  const playerPanelColumnGap = isPortraitPhone ? 5 : 7;
-  const playerInfoTextSize = isPortraitPhone ? 9 : isPhone ? 10 : 11;
-  const playerInfoStatusTextSize = isPortraitPhone ? 7 : 9;
+  const playerPanelColumnGap = isPortraitPhone ? 6 : 7;
+  const playerInfoTextSize = isPortraitPhone ? 10 : isPhone ? 11 : 12;
+  const playerInfoStatusTextSize = isPortraitPhone ? 8 : isPhone ? 9 : 10;
   const playerInfoOffsetY = isPortraitPhone ? 0 : -30 + 38;
   const seatHoleCardSize = isPortraitPhone ? 'small' : 'medium';
   const seatHoleCardWidth = isPortraitPhone ? 34 : 44;
@@ -3328,7 +3548,8 @@ export const PokerGamePage = ({
                   : ready
                     ? 'ready'
                     : 'waiting';
-            const isOffline = connectionStatus === 'reconnecting' || connectionStatus === 'disconnected';
+            const isOffline =
+              connectionStatus === 'reconnecting' || connectionStatus === 'disconnected';
             return (
               <div
                 key={seat.id}
@@ -3534,7 +3755,7 @@ export const PokerGamePage = ({
         display: 'flex',
         flexDirection: 'column',
         overflowX: 'hidden',
-        overflowY: seated && !showUtilitiesPanel ? 'hidden' : 'auto',
+        overflowY: seated ? 'hidden' : 'auto',
         background: TABLE_THEME.pageBackground,
         backgroundPosition: 'center, center, center, center',
         backgroundRepeat: 'no-repeat, no-repeat, no-repeat, no-repeat',
@@ -3597,6 +3818,7 @@ export const PokerGamePage = ({
                 type="button"
                 onClick={() => setShowTopMenu((previous) => !previous)}
                 aria-label="Table menu"
+                data-testid="table-menu-button"
                 style={{
                   minHeight: isPhone ? 32 : 34,
                   minWidth: isPhone ? 32 : 34,
@@ -3616,6 +3838,7 @@ export const PokerGamePage = ({
             ) : null}
             {showTopMenu ? (
               <div
+                data-testid="table-menu"
                 style={{
                   position: 'absolute',
                   right: 0,
@@ -3636,9 +3859,10 @@ export const PokerGamePage = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setShowUtilitiesPanel((previous) => !previous);
+                      setShowHandHistory((previous) => !previous);
                       setShowTopMenu(false);
                     }}
+                    data-testid="menu-hand-history"
                     style={{
                       borderRadius: 6,
                       border: `1px solid ${TABLE_THEME.border}`,
@@ -3651,20 +3875,17 @@ export const PokerGamePage = ({
                       cursor: 'pointer',
                     }}
                   >
-                    {showUtilitiesPanel ? 'Hide Extras' : 'Show Extras'} ({utilityEnabledCount})
+                    Hand History
                   </button>
                 ) : null}
-                {seated ? (
+                {copyableTableCode ? (
                   <button
                     type="button"
                     onClick={() => {
-                      connectionRef.current?.close();
-                      connectionRef.current = null;
-                      legacySocketRef.current = null;
-                      pendingMessagesRef.current = [];
-                      setStatus('Disconnected');
+                      copyTableCode();
                       setShowTopMenu(false);
                     }}
+                    data-testid="menu-copy-table-code"
                     style={{
                       borderRadius: 6,
                       border: `1px solid ${TABLE_THEME.border}`,
@@ -3675,11 +3896,37 @@ export const PokerGamePage = ({
                       fontSize: 12,
                       fontWeight: 700,
                       cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 8,
                     }}
                   >
-                    Disconnect
+                    <span>Copy Table Code</span>
+                    <Copy aria-hidden="true" size={14} strokeWidth={2.1} />
                   </button>
                 ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRulesOverlay(true);
+                    setShowTopMenu(false);
+                  }}
+                  data-testid="menu-rules"
+                  style={{
+                    borderRadius: 6,
+                    border: `1px solid ${TABLE_THEME.border}`,
+                    background: TABLE_THEME.panelSoft,
+                    color: TABLE_THEME.text,
+                    padding: '8px 10px',
+                    textAlign: 'left',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Rules
+                </button>
                 {showExitButton ? (
                   <button
                     type="button"
@@ -3687,6 +3934,7 @@ export const PokerGamePage = ({
                       setShowTopMenu(false);
                       handleExitTable();
                     }}
+                    data-testid="menu-exit-table"
                     style={{
                       borderRadius: 6,
                       border: '1px solid rgba(248,113,113,0.72)',
@@ -3707,322 +3955,31 @@ export const PokerGamePage = ({
           </div>
         </div>
       </div>
-      {seated && showUtilitiesPanel ? (
+      {copyCodeFeedback ? (
         <div
+          role="status"
+          data-testid="copy-table-code-feedback"
           style={{
-            width: 'min(100%, 980px)',
-            margin: '0 auto',
-            marginBottom: 12,
-            padding: isPhone ? '10px' : '12px',
-            borderRadius: 8,
+            position: 'fixed',
+            right: isPhone ? 10 : 24,
+            top: isPhone ? 64 : 76,
+            zIndex: 62,
+            borderRadius: 999,
             border: `1px solid ${TABLE_THEME.tealBorder}`,
-            background: TABLE_THEME.panel,
-            boxShadow: '0 12px 28px rgba(0,0,0,0.28)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
+            background: 'rgba(2, 18, 26, 0.94)',
+            color: '#ccfbf1',
+            padding: '7px 11px',
+            fontSize: 12,
+            fontWeight: 800,
+            boxShadow: '0 14px 28px rgba(0,0,0,0.34)',
+            pointerEvents: 'none',
           }}
         >
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={() => {
-                setSoundEnabled((previous) => !previous);
-              }}
-              style={{
-                borderRadius: 6,
-                border: `1px solid ${soundEnabled ? TABLE_THEME.tealBorder : TABLE_THEME.border}`,
-                background: soundEnabled ? TABLE_THEME.tealSoft : TABLE_THEME.panelSoft,
-                color: soundEnabled ? '#ccfbf1' : TABLE_THEME.text,
-                padding: '7px 10px',
-                fontFamily: TABLE_THEME.fontSans,
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: 0.25,
-                cursor: 'pointer',
-              }}
-            >
-              Sound {soundEnabled ? 'On' : 'Off'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowActivityFeed((previous) => !previous);
-              }}
-              style={{
-                borderRadius: 6,
-                border: `1px solid ${
-                  showActivityFeed ? TABLE_THEME.tealBorder : TABLE_THEME.border
-                }`,
-                background: showActivityFeed ? TABLE_THEME.tealSoft : TABLE_THEME.panelSoft,
-                color: showActivityFeed ? '#ccfbf1' : TABLE_THEME.text,
-                padding: '7px 10px',
-                fontFamily: TABLE_THEME.fontSans,
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: 0.25,
-                cursor: 'pointer',
-              }}
-            >
-              Feed {showActivityFeed ? 'On' : 'Off'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowTableChat((previous) => !previous);
-              }}
-              style={{
-                borderRadius: 6,
-                border: `1px solid ${showTableChat ? TABLE_THEME.tealBorder : TABLE_THEME.border}`,
-                background: showTableChat ? TABLE_THEME.tealSoft : TABLE_THEME.panelSoft,
-                color: showTableChat ? '#ccfbf1' : TABLE_THEME.text,
-                padding: '7px 10px',
-                fontFamily: TABLE_THEME.fontSans,
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: 0.25,
-                cursor: 'pointer',
-              }}
-            >
-              Chat {showTableChat ? 'On' : 'Off'}
-            </button>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <span
-              style={{
-                fontSize: 11,
-                textTransform: 'uppercase',
-                letterSpacing: '0.14em',
-                color: TABLE_THEME.amber,
-                fontFamily: TABLE_THEME.fontDisplay,
-              }}
-            >
-              Reactions
-            </span>
-            {TABLE_REACTIONS.map((reaction) => (
-              <button
-                key={reaction}
-                type="button"
-                onClick={() => sendReaction(reaction)}
-                disabled={reactionOnCooldown || !seated}
-                style={{
-                  borderRadius: 999,
-                  border: `1px solid ${TABLE_THEME.tealBorder}`,
-                  background: TABLE_THEME.panelSoft,
-                  color: '#ccfbf1',
-                  padding: isPhone ? '6px 10px' : '6px 12px',
-                  fontSize: 10,
-                  fontWeight: 800,
-                  letterSpacing: 0.4,
-                  fontFamily: TABLE_THEME.fontSans,
-                  cursor: reactionOnCooldown || !seated ? 'not-allowed' : 'pointer',
-                  opacity: reactionOnCooldown || !seated ? 0.5 : 1,
-                }}
-              >
-                {TABLE_REACTION_LABELS[reaction]}
-              </button>
-            ))}
-            {reactionOnCooldown ? (
-              <span style={{ fontSize: 11, color: TABLE_THEME.dim }}>Cooling down...</span>
-            ) : null}
-          </div>
-
-          {showActivityFeed ? (
-            <div
-              style={{
-                borderRadius: 8,
-                border: `1px solid ${TABLE_THEME.border}`,
-                background: TABLE_THEME.panelSoft,
-                padding: '8px 10px',
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 11,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.14em',
-                  color: TABLE_THEME.amber,
-                  marginBottom: 6,
-                }}
-              >
-                Activity
-              </div>
-              <div style={{ maxHeight: isPhone ? 88 : 100, overflowY: 'auto' }}>
-                {(state?.log ?? []).slice(-8).map((l: any, idx: number) => (
-                  <div
-                    key={idx}
-                    style={{
-                      fontSize: 12,
-                      opacity: 0.85,
-                      marginBottom: 4,
-                      fontFamily: TABLE_THEME.fontSans,
-                    }}
-                  >
-                    {l.message}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {showTableChat ? (
-            <div
-              style={{
-                borderRadius: 8,
-                border: `1px solid ${TABLE_THEME.tealBorder}`,
-                background: TABLE_THEME.panelSoft,
-                padding: isPhone ? '10px 10px' : '11px 12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 11,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.14em',
-                    color: TABLE_THEME.amber,
-                    fontFamily: TABLE_THEME.fontDisplay,
-                  }}
-                >
-                  Table Chat
-                </span>
-                {hiddenChatCount > 0 ? (
-                  <span style={{ fontSize: 11, color: 'rgba(148,163,184,0.86)' }}>
-                    {hiddenChatCount} muted
-                  </span>
-                ) : null}
-              </div>
-              <div
-                style={{
-                  maxHeight: isPhone ? 110 : 132,
-                  overflowY: 'auto',
-                  paddingRight: 2,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 6,
-                }}
-              >
-                {visibleChatMessages.length === 0 ? (
-                  <div style={{ fontSize: 12, color: TABLE_THEME.muted }}>No chat yet. Say hi.</div>
-                ) : (
-                  visibleChatMessages.slice(-18).map((entry) => {
-                    const senderName =
-                      playerNameById.get(entry.playerId) ??
-                      (entry.playerId === playerId ? 'You' : 'Player');
-                    const isSelf = entry.playerId === playerId;
-                    const senderMuted = mutedChatPlayerSet.has(entry.playerId);
-                    return (
-                      <div
-                        key={entry.id}
-                        style={{
-                          borderRadius: 6,
-                          border: `1px solid ${TABLE_THEME.border}`,
-                          background: 'rgba(0,0,0,0.24)',
-                          padding: '6px 8px',
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            gap: 8,
-                          }}
-                        >
-                          <span style={{ fontSize: 11, fontWeight: 700, color: TABLE_THEME.teal }}>
-                            {senderName}
-                          </span>
-                          {!isSelf ? (
-                            <button
-                              type="button"
-                              onClick={() => toggleMuteChatPlayer(entry.playerId)}
-                              style={{
-                                borderRadius: 999,
-                                border: `1px solid ${TABLE_THEME.border}`,
-                                background: TABLE_THEME.panelSoft,
-                                color: TABLE_THEME.text,
-                                padding: '2px 7px',
-                                fontSize: 10,
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              {senderMuted ? 'Unmute' : 'Mute'}
-                            </button>
-                          ) : null}
-                        </div>
-                        <div style={{ marginTop: 3, fontSize: 12, color: 'rgba(244,244,245,0.9)' }}>
-                          {entry.message}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  sendChatMessage();
-                }}
-                style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}
-              >
-                <input
-                  value={chatInput}
-                  onChange={(event) => setChatInput(event.target.value)}
-                  maxLength={TABLE_CHAT_MAX_LENGTH}
-                  placeholder="Type message..."
-                  style={{
-                    minHeight: 40,
-                    borderRadius: 6,
-                    border: `1px solid ${TABLE_THEME.border}`,
-                    background: 'rgba(0,0,0,0.32)',
-                    color: TABLE_THEME.text,
-                    padding: '8px 10px',
-                    fontSize: 13,
-                    outline: 'none',
-                    fontFamily: TABLE_THEME.fontSans,
-                  }}
-                />
-                <button
-                  type="submit"
-                  disabled={!chatInput.trim() || !seated}
-                  style={{
-                    minHeight: 40,
-                    borderRadius: 6,
-                    border: `1px solid ${TABLE_THEME.tealBorder}`,
-                    background: TABLE_THEME.tealSoft,
-                    color: '#ccfbf1',
-                    padding: '8px 12px',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: !chatInput.trim() || !seated ? 'not-allowed' : 'pointer',
-                    opacity: !chatInput.trim() || !seated ? 0.55 : 1,
-                  }}
-                >
-                  Send
-                </button>
-              </form>
-            </div>
-          ) : null}
+          {copyCodeFeedback}
         </div>
+      ) : null}
+      {showRulesOverlay ? (
+        <RulesOverlay isPhone={isPhone} onClose={() => setShowRulesOverlay(false)} />
       ) : null}
       {seated && statusDisplay && !status.startsWith('Connected') ? (
         <div
@@ -4210,7 +4167,9 @@ export const PokerGamePage = ({
                 {tableEntryStatusCopy}
               </div>
               <div style={{ marginTop: 6, fontSize: 12, color: TABLE_THEME.muted }}>
-                {normalizedEntryName ? `${normalizedEntryName} is joining ${tableLabel}.` : 'Preparing the table.'}
+                {normalizedEntryName
+                  ? `${normalizedEntryName} is joining ${tableLabel}.`
+                  : 'Preparing the table.'}
               </div>
               {statusDisplay && status && !status.startsWith('Connected') ? (
                 <div style={{ marginTop: 10, fontSize: 12, color: TABLE_THEME.dim }}>
@@ -4332,20 +4291,13 @@ export const PokerGamePage = ({
                 <div
                   style={{
                     position: 'absolute',
-                    top: isPortraitPhone ? '38%' : '40%',
+                    top: isPortraitPhone ? '18%' : isPhone ? '18%' : '8%',
                     left: '50%',
-                    transform: isPortraitPhone
-                      ? 'translate(-50%, -50%) translateY(calc(74px + 30mm))'
-                      : isPhone
-                        ? 'translate(-50%, -50%) translateY(calc(-19px - 2.55cm + 30mm))'
-                        : 'translate(-50%, -50%) translateY(calc(-19px - 2.8cm + 30mm))',
+                    transform: 'translateX(-50%)',
                     zIndex: 18,
                   }}
                 >
-                  <ShowdownResultBanner
-                    result={showdownResult}
-                    isPhone={isPhone}
-                  />
+                  <ShowdownResultBanner result={showdownResult} isPhone={isPhone} />
                 </div>
               ) : null}
               <div
@@ -4364,6 +4316,7 @@ export const PokerGamePage = ({
                 }}
               >
                 <div
+                  data-testid="community-cards"
                   style={{
                     display: 'flex',
                     gap: isPortraitPhone ? 4 : '1mm',
@@ -4390,8 +4343,9 @@ export const PokerGamePage = ({
                     </div>
                   ))}
                 </div>
-                {latestActionLine && !isRevealPhase ? (
+                {latestActionLine && !isRevealPhase && !showHandHistory && !showRulesOverlay ? (
                   <div
+                    data-testid="latest-action-toast"
                     style={{
                       maxWidth: isPortraitPhone ? 260 : 300,
                       borderRadius: 999,
@@ -4406,6 +4360,7 @@ export const PokerGamePage = ({
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       boxShadow: '0 10px 24px rgba(0,0,0,0.28)',
+                      transform: isPortraitPhone ? 'translate(128px, -28px)' : undefined,
                     }}
                   >
                     {latestActionLine}
@@ -4504,29 +4459,8 @@ export const PokerGamePage = ({
                         <div
                           style={{ position: 'relative', display: 'inline-block', width: '100%' }}
                         >
-                          {roleChips.length > 0 && (
-                            <div
-                              style={{
-                                position: 'absolute',
-                                top: 6,
-                                right: 6,
-                                zIndex: 12,
-                                display: 'flex',
-                                gap: 3,
-                                transform: 'none',
-                                pointerEvents: 'none',
-                              }}
-                            >
-                              {roleChips.map((chip, chipIdx) => (
-                                <RoleChip
-                                  key={`${chip.label}-${chipIdx}`}
-                                  label={chip.label}
-                                  tone={chip.tone}
-                                />
-                              ))}
-                            </div>
-                          )}
                           <div
+                            data-testid={`seat-card-${p.id}`}
                             style={{
                               position: 'relative',
                               width: '100%',
@@ -4547,7 +4481,7 @@ export const PokerGamePage = ({
                               opacity: playerInactive ? 0.5 : infoDimmed ? 0.78 : 1,
                               textAlign: 'left',
                               display: 'grid',
-                              gridTemplateColumns: `${infoAvatarSize}px minmax(0, 1fr)`,
+                              gridTemplateColumns: `${infoAvatarSize}px minmax(0, 1fr) auto`,
                               alignItems: 'center',
                               columnGap: playerPanelColumnGap,
                             }}
@@ -4596,6 +4530,7 @@ export const PokerGamePage = ({
                               }}
                             >
                               <div
+                                data-testid={`seat-player-name-${p.id}`}
                                 title={displayName}
                                 style={{
                                   fontWeight: 800,
@@ -4697,6 +4632,27 @@ export const PokerGamePage = ({
                                   {formatSignedChips(seatDelta?.net ?? 0)}
                                 </div>
                               ) : null}
+                            </div>
+                            <div
+                              data-testid={`seat-role-badges-${p.id}`}
+                              style={{
+                                minWidth: isPortraitPhone ? 24 : 28,
+                                display: 'flex',
+                                flexDirection: roleChips.length > 1 ? 'column' : 'row',
+                                alignItems: 'flex-end',
+                                justifyContent: 'flex-start',
+                                gap: 3,
+                                alignSelf: 'start',
+                                pointerEvents: 'none',
+                              }}
+                            >
+                              {roleChips.map((chip, chipIdx) => (
+                                <RoleChip
+                                  key={`${chip.label}-${chipIdx}`}
+                                  label={chip.label}
+                                  tone={chip.tone}
+                                />
+                              ))}
                             </div>
                           </div>
                           {renderReactionBadge(p.id)}
@@ -4831,29 +4787,8 @@ export const PokerGamePage = ({
                         width: seatNameplateWidth,
                       }}
                     >
-                      {(roleChipsBySeat.get(you.seat) ?? []).length > 0 && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: 6,
-                            right: 6,
-                            zIndex: 12,
-                            display: 'flex',
-                            gap: 3,
-                            transform: 'none',
-                            pointerEvents: 'none',
-                          }}
-                        >
-                          {(roleChipsBySeat.get(you.seat) ?? []).map((chip, chipIdx) => (
-                            <RoleChip
-                              key={`${chip.label}-${chipIdx}`}
-                              label={chip.label}
-                              tone={chip.tone}
-                            />
-                          ))}
-                        </div>
-                      )}
                       <div
+                        data-testid={`seat-card-${you.id}`}
                         style={{
                           width: '100%',
                           minHeight: playerPanelMinHeight,
@@ -4874,7 +4809,7 @@ export const PokerGamePage = ({
                           opacity: youInfoDimmed ? 0.7 : 1,
                           position: 'relative',
                           display: 'grid',
-                          gridTemplateColumns: `${infoAvatarSize}px minmax(0, 1fr)`,
+                          gridTemplateColumns: `${infoAvatarSize}px minmax(0, 1fr) auto`,
                           alignItems: 'center',
                           columnGap: playerPanelColumnGap,
                         }}
@@ -4923,6 +4858,7 @@ export const PokerGamePage = ({
                           }}
                         >
                           <div
+                            data-testid={`seat-player-name-${you.id}`}
                             style={{
                               fontWeight: 800,
                               fontFamily: TABLE_THEME.fontSans,
@@ -5007,6 +4943,28 @@ export const PokerGamePage = ({
                             </div>
                           ) : null}
                         </div>
+                        <div
+                          data-testid={`seat-role-badges-${you.id}`}
+                          style={{
+                            minWidth: isPortraitPhone ? 24 : 28,
+                            display: 'flex',
+                            flexDirection:
+                              (roleChipsBySeat.get(you.seat) ?? []).length > 1 ? 'column' : 'row',
+                            alignItems: 'flex-end',
+                            justifyContent: 'flex-start',
+                            gap: 3,
+                            alignSelf: 'start',
+                            pointerEvents: 'none',
+                          }}
+                        >
+                          {(roleChipsBySeat.get(you.seat) ?? []).map((chip, chipIdx) => (
+                            <RoleChip
+                              key={`${chip.label}-${chipIdx}`}
+                              label={chip.label}
+                              tone={chip.tone}
+                            />
+                          ))}
+                        </div>
                       </div>
                       {renderReactionBadge(you.id)}
                       {renderBetPill(you.betThisStreet, {
@@ -5028,15 +4986,10 @@ export const PokerGamePage = ({
                       gap: 8,
                     }}
                   >
-                    {discardPending && !discardSubmitted && (
-                      <div
-                        style={{ fontSize: 12, fontFamily: TABLE_THEME.fontSans, opacity: 0.85 }}
-                      >
-                        Select {discardLimit} card to discard ({selectedDiscardCount}/{discardLimit}
-                        )
-                      </div>
-                    )}
-                    <div style={{ display: 'flex', gap: isPortraitPhone ? 4 : isPhone ? 8 : 10 }}>
+                    <div
+                      data-testid="hero-hole-cards"
+                      style={{ display: 'flex', gap: isPortraitPhone ? 4 : isPhone ? 8 : 10 }}
+                    >
                       {you.holeCards.map((c, idx) => {
                         const discardSelectable =
                           discardPending &&
@@ -5100,7 +5053,13 @@ export const PokerGamePage = ({
                 </>
               )}
             </div>
-            <LastHandRecap lines={lastHandRecapLines} isPhone={isPhone} />
+            {showHandHistory ? (
+              <HandHistoryPanel
+                lines={lastHandRecapLines}
+                isPhone={isPhone}
+                onClose={() => setShowHandHistory(false)}
+              />
+            ) : null}
             {!localNeedsRebuy ? (
               betweenHandActive ? (
                 <NextHandCountdown
@@ -5174,15 +5133,17 @@ export const PokerGamePage = ({
                         textTransform: 'uppercase',
                       }}
                     >
-                      Discard
+                      Discard {discardLimit} card
                     </span>
                     <span style={{ fontSize: 11, color: timerTone }}>
                       {tableTimerSeconds !== null ? `${tableTimerSeconds}s` : '--'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 13, color: TABLE_THEME.text }}>
-                    Select {discardLimit} card to discard ({selectedDiscardCount}/{discardLimit})
-                  </div>
+                  {!selectedDiscardIsValid ? (
+                    <div style={{ fontSize: 13, color: TABLE_THEME.text }}>
+                      Choose one card to continue
+                    </div>
+                  ) : null}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
                     <button
                       data-testid="confirm-discard"
@@ -5196,7 +5157,7 @@ export const PokerGamePage = ({
                         glow: 'rgba(20,184,166,0.3)',
                       })}
                     >
-                      Confirm Discards
+                      Discard selected
                     </button>
                   </div>
                 </div>
@@ -5517,7 +5478,12 @@ export const PokerGamePage = ({
               justifyContent: 'center',
               alignItems: startGateTray && isMobile ? 'flex-start' : 'center',
               minHeight: startGateTray && isMobile ? 'auto' : centeredSectionMinHeight,
-              paddingTop: startGateTray && isPhone ? 14 : startGateTray && isMobile ? 18 : 'clamp(0px, 2vh, 1cm)',
+              paddingTop:
+                startGateTray && isPhone
+                  ? 14
+                  : startGateTray && isMobile
+                    ? 18
+                    : 'clamp(0px, 2vh, 1cm)',
               paddingBottom: 'clamp(0px, 6vh, 2cm)',
             }}
           >
@@ -5962,6 +5928,7 @@ const RoleChip = ({ label, tone }: { label: string; tone: 'dealer' | 'blind' }) 
   const isDealer = tone === 'dealer';
   return (
     <div
+      data-testid="role-chip"
       style={{
         minWidth: label === 'BB' ? 24 : 18,
         height: 18,

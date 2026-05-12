@@ -90,7 +90,9 @@ test.describe('poker action tray viewport regressions', () => {
 
     const tray = page.getByTestId('action-tray');
     await expectWithinViewport(page, tray);
-    await expect(tray.getByText(/Select 1 card to discard/)).toBeVisible();
+    await expect(tray.getByText('Discard 1 card')).toBeVisible();
+    await expect(tray.getByText('Choose one card to continue')).toBeVisible();
+    await expect(page.getByText(/Select 1 card to discard/)).toHaveCount(0);
     await expect(page.getByTestId('confirm-discard')).toBeVisible();
     await expect(page.getByTestId('confirm-discard')).toBeDisabled();
 
@@ -101,6 +103,8 @@ test.describe('poker action tray viewport regressions', () => {
 
     const confirm = page.getByTestId('confirm-discard');
     await expect(confirm).toBeEnabled();
+    await expect(tray.getByText('Choose one card to continue')).toHaveCount(0);
+    await expect(confirm).toHaveText('Discard selected');
     await expectWithinViewport(page, confirm);
     await confirm.click({ trial: true });
   });
@@ -111,7 +115,7 @@ test.describe('poker action tray viewport regressions', () => {
     await openScenario(page, 'showdown', { width: 390, height: 844 });
 
     await expectWithinViewport(page, page.getByTestId('showdown-result-banner'));
-    await expect(page.getByTestId('last-hand-recap')).toBeVisible();
+    await expect(page.getByTestId('hand-history-panel')).toHaveCount(0);
 
     const countdown = page.getByTestId('next-hand-countdown');
     await expectWithinViewport(page, countdown);

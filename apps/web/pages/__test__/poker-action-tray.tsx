@@ -8,6 +8,7 @@ type Scenario =
   | 'betting-check-allin'
   | 'discard'
   | 'showdown'
+  | 'long-names'
   | 'start-gate'
   | 'start-gate-ready'
   | 'join-fallback'
@@ -28,6 +29,7 @@ const scenarios = new Set<Scenario>([
   'betting-check-allin',
   'discard',
   'showdown',
+  'long-names',
   'start-gate',
   'start-gate-ready',
   'join-fallback',
@@ -205,9 +207,15 @@ const bettingCheckAllInState = (now: number): PublicState =>
       discardDeadline: null,
       showdownWinners: [],
       showdownPots: [],
-      log: [{ message: 'Starting betting on flop', ts: now - 3000 }],
+      log: [
+        { message: 'Starting betting on flop', ts: now - 4000 },
+        { message: 'Sam checked', ts: now - 3000 },
+      ],
     },
-    log: [{ message: 'Starting betting on flop', ts: now - 3000 }],
+    log: [
+      { message: 'Starting betting on flop', ts: now - 4000 },
+      { message: 'Sam checked', ts: now - 3000 },
+    ],
     legalActions: {
       phase: 'betting',
       isActor: true,
@@ -372,6 +380,34 @@ const showdownState = (now: number): PublicState =>
     legalActions: { phase: 'between_hands', isActor: false, reason: 'between_hands' },
   });
 
+const longNamesState = (now: number): PublicState => {
+  const state = bettingCallState(now);
+  const heroName = 'Alex Chrome Long Table Name';
+  const villainName = 'Samantha Big Blind Long Name';
+  state.seats = state.seats.map((seat) =>
+    seat.id === HERO_ID
+      ? { ...seat, name: heroName }
+      : seat.id === VILLAIN_ID
+        ? { ...seat, name: villainName }
+        : seat
+  );
+  if (state.hand) {
+    state.hand.players = state.hand.players.map((player: any) =>
+      player.id === HERO_ID
+        ? { ...player, name: heroName }
+        : player.id === VILLAIN_ID
+          ? { ...player, name: villainName }
+          : player
+    );
+    state.hand.log = [
+      { message: `${villainName} posts big blind 800`, ts: now - 5000 },
+      { message: `${heroName} called 400`, ts: now - 3000 },
+    ];
+  }
+  state.log = state.hand?.log ?? state.log;
+  return state;
+};
+
 const startGateState = (now: number, readyPlayerIds: string[] = []): PublicState =>
   baseState('start-gate', now, {
     id: 'RZ587G',
@@ -400,6 +436,8 @@ const buildState = (scenario: Scenario, now: number): PublicState | null => {
       return discardState(now);
     case 'showdown':
       return showdownState(now);
+    case 'long-names':
+      return longNamesState(now);
     case 'betting-call':
     default:
       return bettingCallState(now);
@@ -415,11 +453,16 @@ export const getServerSideProps: GetServerSideProps<TestPageProps> = async ({ qu
   const scenario = scenarios.has(rawScenario as Scenario)
     ? (rawScenario as Scenario)
     : 'betting-call';
+  const rawTableId = Array.isArray(query.tableId) ? query.tableId[0] : query.tableId;
+  const state = buildState(scenario, Date.now());
+  if (state && typeof rawTableId === 'string') {
+    state.id = rawTableId;
+  }
 
   return {
     props: {
       scenario,
-      state: buildState(scenario, Date.now()),
+      state,
       playerId: scenario === 'join-fallback' || scenario === 'joining-known-name' ? null : HERO_ID,
       debugStatus:
         scenario === 'joining-known-name' ? 'Connecting to Nakama...' : 'Connected (test snapshot)',
@@ -440,7 +483,7 @@ export default function PokerActionTrayTestPage({
       </Head>
       <PokerGamePage
         forcedMatchId={`test-${scenario}`}
-        showExitButton={false}
+        showExitButton
         debugInitialState={state}
         debugPlayerId={playerId}
         debugDisableNetwork
