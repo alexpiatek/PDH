@@ -48,7 +48,7 @@ Run from repo root:
 pnpm install
 cp -n .env.example .env
 cp -n apps/web/.env.local.example apps/web/.env.local
-pnpm run dev:full
+pnpm run dev
 ```
 
 Open `http://localhost:3001`.
@@ -112,10 +112,11 @@ pnpm run test:integration
 ## Standard Commands
 
 ```bash
-pnpm run dev        # legacy websocket stack
+pnpm run dev        # default Nakama + Postgres + Next.js stack
 pnpm run up         # start Postgres + Nakama (Docker)
 pnpm run dev:web    # start Next.js client only
 pnpm run dev:full   # start backend then Next.js client
+pnpm run dev:legacy # optional legacy websocket stack
 pnpm run test
 pnpm run lint
 pnpm run typecheck

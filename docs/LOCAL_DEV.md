@@ -35,14 +35,15 @@ Open `http://localhost:3001`.
 One-command boot (backend + frontend):
 
 ```bash
-pnpm run dev:full
+pnpm run dev
 ```
 
 ## Daily Commands
 
 - Start backend (Postgres + Nakama + migrations): `pnpm run up` (or `make up`)
 - Start frontend dev server: `pnpm run dev:web` (or `make dev`)
-- One-command boot: `pnpm run dev:full`
+- One-command boot: `pnpm run dev` (same Nakama stack as `pnpm run dev:full`)
+- Optional legacy websocket stack: `pnpm run dev:legacy`
 - Tail backend logs: `pnpm run logs` (or `make logs`)
 - Stop backend: `pnpm run down` (or `make down`)
 - Run tests: `pnpm run test` (or `make test`)
@@ -66,4 +67,3 @@ pnpm run dev:full
 - If auth fails on first run: verify the keys match:
   - `grep -n '^NAKAMA_SOCKET_SERVER_KEY=' .env`
   - `grep -n '^NEXT_PUBLIC_NAKAMA_CLIENT_KEY=' apps/web/.env.local`
-  - fallback accepted: `NEXT_PUBLIC_NAKAMA_SERVER_KEY`

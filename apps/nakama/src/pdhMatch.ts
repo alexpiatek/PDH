@@ -200,6 +200,78 @@ type NakamaWithMatchSignal = nkruntime.Nakama & {
   matchSignal?: (matchId: string, data: string) => string | void;
 };
 
+type RuntimeContext = {
+  userId?: unknown;
+  user_id?: unknown;
+  username?: unknown;
+  env?: Record<string, unknown>;
+};
+
+const ADMIN_RPC_ENABLE_ENV = 'PDH_ENABLE_ADMIN_RPCS';
+const ADMIN_RPC_ALLOWLIST_ENV = 'PDH_ADMIN_USER_IDS';
+
+function readRuntimeEnvValue(ctx: unknown, key: string): string {
+  const runtimeEnv = (ctx as RuntimeContext | null | undefined)?.env;
+  const value = runtimeEnv && typeof runtimeEnv === 'object' ? runtimeEnv[key] : undefined;
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  const processEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } })
+    .process?.env;
+  return processEnv?.[key]?.trim() ?? '';
+}
+
+function isTruthyEnv(value: string): boolean {
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
+function readCallerUserId(ctx: unknown): string {
+  const c = (ctx ?? {}) as RuntimeContext;
+  if (typeof c.userId === 'string' && c.userId.trim()) {
+    return c.userId.trim();
+  }
+  if (typeof c.user_id === 'string' && c.user_id.trim()) {
+    return c.user_id.trim();
+  }
+  return '';
+}
+
+function readAdminAllowlist(ctx: unknown): Set<string> {
+  return new Set(
+    readRuntimeEnvValue(ctx, ADMIN_RPC_ALLOWLIST_ENV)
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  );
+}
+
+export function arePdhAdminRpcsEnabled(ctx: unknown): boolean {
+  return isTruthyEnv(readRuntimeEnvValue(ctx, ADMIN_RPC_ENABLE_ENV));
+}
+
+function assertPdhAdminRpcCaller(ctx: unknown): string {
+  if (!arePdhAdminRpcsEnabled(ctx)) {
+    throw new Error('PDH admin RPCs are disabled.');
+  }
+
+  const adminUserIds = readAdminAllowlist(ctx);
+  if (adminUserIds.size === 0) {
+    throw new Error('PDH admin RPC allowlist is empty.');
+  }
+
+  const userId = readCallerUserId(ctx);
+  if (!userId) {
+    throw new Error('PDH admin RPC requires an authenticated admin user.');
+  }
+
+  if (!adminUserIds.has(userId)) {
+    throw new Error('PDH admin RPC forbidden for this user.');
+  }
+
+  return userId;
+}
+
 function readMatchId(ctx: unknown): string | null {
   const c = (ctx ?? {}) as { matchId?: unknown; match_id?: unknown };
   if (typeof c.matchId === 'string' && c.matchId.length > 0) {
@@ -1314,6 +1386,7 @@ export function rpcGetPdhReplay(
   nk: nkruntime.Nakama,
   payload: string | undefined
 ) {
+  const adminUserId = assertPdhAdminRpcCaller(ctx);
   let input: GetReplayInput | undefined;
 
   if (payload && payload.trim()) {
@@ -1340,6 +1413,7 @@ export function rpcGetPdhReplay(
     tableId,
     limit,
     returned: events.length,
+    adminUserId,
   });
   return JSON.stringify({
     matchId: resolvedMatchId,
@@ -1355,6 +1429,7 @@ export function rpcTerminatePdhMatch(
   nk: nkruntime.Nakama,
   payload: string | undefined
 ) {
+  const adminUserId = assertPdhAdminRpcCaller(ctx);
   if (!payload || !payload.trim()) {
     throw new Error('matchId is required');
   }
@@ -1389,6 +1464,7 @@ export function rpcTerminatePdhMatch(
   logStructured(logger, 'warn', 'rpc.admin.terminate_match', {
     matchId,
     reason: reason || 'admin rpc',
+    adminUserId,
   });
 
   return JSON.stringify({

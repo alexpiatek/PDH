@@ -124,9 +124,10 @@ main() {
 
   ensure_service_workdir_matches_repo
 
-  local backend_key frontend_key frontend_host frontend_port frontend_ssl signup_webhook_url
+  local backend_key frontend_key legacy_frontend_key frontend_host frontend_port frontend_ssl signup_webhook_url
   backend_key="$(read_env_value "$ENV_FILE" "NAKAMA_SOCKET_SERVER_KEY" || true)"
-  frontend_key="$(read_env_value "$WEB_ENV_FILE" "NEXT_PUBLIC_NAKAMA_SERVER_KEY" || true)"
+  frontend_key="$(read_env_value "$WEB_ENV_FILE" "NEXT_PUBLIC_NAKAMA_CLIENT_KEY" || true)"
+  legacy_frontend_key="$(read_env_value "$WEB_ENV_FILE" "NEXT_PUBLIC_NAKAMA_SERVER_KEY" || true)"
   frontend_host="$(read_env_value "$WEB_ENV_FILE" "NEXT_PUBLIC_NAKAMA_HOST" || true)"
   frontend_port="$(read_env_value "$WEB_ENV_FILE" "NEXT_PUBLIC_NAKAMA_PORT" || true)"
   frontend_ssl="$(read_env_value "$WEB_ENV_FILE" "NEXT_PUBLIC_NAKAMA_USE_SSL" || true)"
@@ -136,7 +137,8 @@ main() {
   fi
 
   [[ -n "$backend_key" ]] || die "NAKAMA_SOCKET_SERVER_KEY missing in $ENV_FILE"
-  [[ -n "$frontend_key" ]] || die "NEXT_PUBLIC_NAKAMA_SERVER_KEY missing in $WEB_ENV_FILE"
+  [[ -n "$frontend_key" ]] || die "NEXT_PUBLIC_NAKAMA_CLIENT_KEY missing in $WEB_ENV_FILE"
+  [[ -z "$legacy_frontend_key" ]] || die "NEXT_PUBLIC_NAKAMA_SERVER_KEY is deprecated. Use NEXT_PUBLIC_NAKAMA_CLIENT_KEY for the public Nakama socket client key."
   [[ -n "$frontend_host" ]] || die "NEXT_PUBLIC_NAKAMA_HOST missing in $WEB_ENV_FILE"
   [[ -n "$frontend_port" ]] || die "NEXT_PUBLIC_NAKAMA_PORT missing in $WEB_ENV_FILE"
   [[ -n "$frontend_ssl" ]] || die "NEXT_PUBLIC_NAKAMA_USE_SSL missing in $WEB_ENV_FILE"
@@ -146,7 +148,18 @@ main() {
     die "Socket server key looks like a placeholder in .env or apps/web/.env.local."
   fi
 
-  [[ "$frontend_key" == "$backend_key" ]] || die "Key mismatch: NEXT_PUBLIC_NAKAMA_SERVER_KEY != NAKAMA_SOCKET_SERVER_KEY."
+  for browser_secret in \
+    NEXT_PUBLIC_NAKAMA_RUNTIME_HTTP_KEY \
+    NEXT_PUBLIC_NAKAMA_SESSION_ENCRYPTION_KEY \
+    NEXT_PUBLIC_NAKAMA_SESSION_REFRESH_ENCRYPTION_KEY \
+    NEXT_PUBLIC_NAKAMA_CONSOLE_SIGNING_KEY \
+    NEXT_PUBLIC_NAKAMA_CONSOLE_PASSWORD; do
+    if [[ -n "$(read_env_value "$WEB_ENV_FILE" "$browser_secret" || true)" ]]; then
+      die "$browser_secret must not be set in browser env."
+    fi
+  done
+
+  [[ "$frontend_key" == "$backend_key" ]] || die "Key mismatch: NEXT_PUBLIC_NAKAMA_CLIENT_KEY != NAKAMA_SOCKET_SERVER_KEY."
   [[ "$frontend_host" == "$EXPECTED_NAKAMA_HOST" ]] || die "Bad NEXT_PUBLIC_NAKAMA_HOST=$frontend_host (expected $EXPECTED_NAKAMA_HOST)."
   [[ "$frontend_port" == "$EXPECTED_NAKAMA_PORT" ]] || die "Bad NEXT_PUBLIC_NAKAMA_PORT=$frontend_port (expected $EXPECTED_NAKAMA_PORT)."
   [[ "$frontend_ssl" == "$EXPECTED_NAKAMA_USE_SSL" ]] || die "Bad NEXT_PUBLIC_NAKAMA_USE_SSL=$frontend_ssl (expected $EXPECTED_NAKAMA_USE_SSL)."

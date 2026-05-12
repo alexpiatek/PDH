@@ -28,10 +28,7 @@ const resolveNetworkBackend = () => {
 const NETWORK_BACKEND = resolveNetworkBackend();
 const NAKAMA_HOST = process.env.NEXT_PUBLIC_NAKAMA_HOST || '127.0.0.1';
 const NAKAMA_PORT = process.env.NEXT_PUBLIC_NAKAMA_PORT || '7350';
-const NAKAMA_CLIENT_KEY =
-  process.env.NEXT_PUBLIC_NAKAMA_CLIENT_KEY ||
-  process.env.NEXT_PUBLIC_NAKAMA_SERVER_KEY ||
-  'defaultkey';
+const NAKAMA_CLIENT_KEY = process.env.NEXT_PUBLIC_NAKAMA_CLIENT_KEY || 'defaultkey';
 const NAKAMA_MATCH_MODULE = process.env.NEXT_PUBLIC_NAKAMA_MATCH_MODULE || 'pdh';
 const NAKAMA_TABLE_ID = process.env.NEXT_PUBLIC_NAKAMA_TABLE_ID || 'main';
 const NAKAMA_MATCH_ID = process.env.NEXT_PUBLIC_NAKAMA_MATCH_ID;

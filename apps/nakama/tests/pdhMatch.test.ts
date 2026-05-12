@@ -13,6 +13,22 @@ const logger = {
   error: vi.fn(),
 };
 
+const adminCtx = {
+  userId: 'admin-user',
+  env: {
+    PDH_ENABLE_ADMIN_RPCS: 'true',
+    PDH_ADMIN_USER_IDS: 'admin-user',
+  },
+};
+
+const nonAdminCtx = {
+  userId: 'player-user',
+  env: {
+    PDH_ENABLE_ADMIN_RPCS: 'true',
+    PDH_ADMIN_USER_IDS: 'admin-user',
+  },
+};
+
 function makeNakamaMock() {
   const storage = new Map<string, Record<string, unknown>>();
   const storageVersions = new Map<string, string>();
@@ -861,7 +877,7 @@ describe('pdhMatchHandler', () => {
     expect(signalPayload.events[1].outcome).toBe('rejected');
 
     const replayRpc = rpcGetPdhReplay(
-      {},
+      adminCtx,
       logger as any,
       nk as any,
       JSON.stringify({ matchId: state.matchId, limit: 1 })
@@ -1487,7 +1503,7 @@ describe('pdhMatchHandler', () => {
   it('signals and terminates a match via admin RPC/signal path', () => {
     const nk = makeNakamaMock();
     const rpcPayload = rpcTerminatePdhMatch(
-      {},
+      adminCtx,
       logger as any,
       nk as any,
       JSON.stringify({ matchId: 'match-123', reason: 'stuck table' })
@@ -1522,5 +1538,57 @@ describe('pdhMatchHandler', () => {
       []
     );
     expect(loopResult).toBeNull();
+  });
+
+  it('denies replay and terminate RPCs to non-admin callers', () => {
+    const nk = makeNakamaMock();
+
+    expect(() =>
+      rpcGetPdhReplay(
+        nonAdminCtx,
+        logger as any,
+        nk as any,
+        JSON.stringify({ matchId: 'match-123', limit: 1 })
+      )
+    ).toThrow(/forbidden/i);
+
+    expect(() =>
+      rpcTerminatePdhMatch(
+        nonAdminCtx,
+        logger as any,
+        nk as any,
+        JSON.stringify({ matchId: 'match-123', reason: 'test' })
+      )
+    ).toThrow(/forbidden/i);
+    expect(nk.matchSignal).not.toHaveBeenCalled();
+  });
+
+  it('keeps admin RPCs disabled unless explicitly enabled', () => {
+    const nk = makeNakamaMock();
+    const disabledAdminCtx = {
+      userId: 'admin-user',
+      env: {
+        PDH_ADMIN_USER_IDS: 'admin-user',
+      },
+    };
+
+    expect(() =>
+      rpcGetPdhReplay(
+        disabledAdminCtx,
+        logger as any,
+        nk as any,
+        JSON.stringify({ matchId: 'match-123', limit: 1 })
+      )
+    ).toThrow(/disabled/i);
+
+    expect(() =>
+      rpcTerminatePdhMatch(
+        disabledAdminCtx,
+        logger as any,
+        nk as any,
+        JSON.stringify({ matchId: 'match-123', reason: 'test' })
+      )
+    ).toThrow(/disabled/i);
+    expect(nk.matchSignal).not.toHaveBeenCalled();
   });
 });

@@ -4,6 +4,7 @@ import {
   PDH_RPC_GET_REPLAY,
   PDH_RPC_ENSURE_MATCH,
   PDH_RPC_TERMINATE_MATCH,
+  arePdhAdminRpcsEnabled,
   ensureDefaultMatchAfterAuthenticate,
   pdhMatchHandler,
   rpcGetPdhReplay,
@@ -29,7 +30,7 @@ import {
   rpcQuickPlay,
 } from './pokerLobby';
 
-const InitModule: nkruntime.InitModule = (ctx, logger, nk, initializer) => {
+export const InitModule: nkruntime.InitModule = (ctx, logger, nk, initializer) => {
   const maybeRegisterAfterAuthenticateDevice = (
     initializer as unknown as { registerAfterAuthenticateDevice?: (...args: any[]) => void }
   ).registerAfterAuthenticateDevice;
@@ -42,8 +43,12 @@ const InitModule: nkruntime.InitModule = (ctx, logger, nk, initializer) => {
 
   initializer.registerMatch(DEFAULT_MATCH_MODULE, pdhMatchHandler);
   initializer.registerRpc(PDH_RPC_ENSURE_MATCH, rpcEnsurePdhMatch);
-  initializer.registerRpc(PDH_RPC_GET_REPLAY, rpcGetPdhReplay);
-  initializer.registerRpc(PDH_RPC_TERMINATE_MATCH, rpcTerminatePdhMatch);
+  if (arePdhAdminRpcsEnabled(ctx)) {
+    initializer.registerRpc(PDH_RPC_GET_REPLAY, rpcGetPdhReplay);
+    initializer.registerRpc(PDH_RPC_TERMINATE_MATCH, rpcTerminatePdhMatch);
+  } else {
+    logger.warn('PDH admin/debug RPCs disabled; set PDH_ENABLE_ADMIN_RPCS and PDH_ADMIN_USER_IDS to enable.');
+  }
   initializer.registerMatch(SMOKE_MATCH_MODULE, smokeMatchHandler);
   initializer.registerRpc(SMOKE_RPC_ENSURE_MATCH, rpcEnsureSmokeMatch);
   initializer.registerMatch(POKER_TABLE_MATCH_MODULE, pokerTableMatchHandler);

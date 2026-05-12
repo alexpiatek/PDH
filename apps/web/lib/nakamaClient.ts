@@ -220,11 +220,7 @@ export function getNakamaConfig(): NakamaClientConfig {
       process.env.NEXT_PUBLIC_NAKAMA_USE_SSL || process.env.NAKAMA_USE_SSL,
       false
     ),
-    clientKey:
-      process.env.NEXT_PUBLIC_NAKAMA_CLIENT_KEY ||
-      process.env.NEXT_PUBLIC_NAKAMA_SERVER_KEY ||
-      process.env.NAKAMA_CLIENT_KEY ||
-      'defaultkey',
+    clientKey: process.env.NEXT_PUBLIC_NAKAMA_CLIENT_KEY || 'defaultkey',
   };
 }
 

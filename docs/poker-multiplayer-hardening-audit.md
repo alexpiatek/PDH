@@ -278,7 +278,7 @@ Recommended ownership:
 - The web client queues pending messages while disconnected. That is convenient, but stale mutating messages need action ids and state-version preconditions to make replay behavior explicit.
 - Nakama protocol validation is duplicated manually in `apps/nakama/src/protocol.ts` while the canonical package uses Zod in `packages/protocol/src/index.ts`.
 - `packages/engine/src/protocol.ts` appears to be an older protocol artifact and is not the app-facing source of truth.
-- `NEXT_PUBLIC_NAKAMA_SERVER_KEY` fallback naming is confusing. For production, only the intended public Nakama client/socket key should ever be exposed in browser env.
+- Browser config now uses `NEXT_PUBLIC_NAKAMA_CLIENT_KEY` for the public Nakama socket client key; the deprecated `NEXT_PUBLIC_NAKAMA_SERVER_KEY` fallback should stay removed.
 - `poker_table` match handler exists as a presence-only lobby table, but current create/quick-play paths create gameplay `pdh` matches. This may be historical code or future scaffolding; document or remove ambiguity.
 - Tick rate is 10 Hz. That is fine but higher than poker strictly needs. The bigger issue is deadline semantics, not tick frequency.
 
@@ -543,7 +543,7 @@ Major gaps:
 - No durable hand audit checkpoint. If a dispute happens after restart, the in-memory replay and audit trail can be gone.
 - Reconnect/leave policy is exploitable or punitive. A player can be forced into a fold by connection instability.
 - Actions after deadline can be accepted in a small race window.
-- Browser env naming can expose `NEXT_PUBLIC_NAKAMA_SERVER_KEY`. Even if this is intended as the public socket key, the name invites future secret leakage.
+- Browser env must expose only `NEXT_PUBLIC_NAKAMA_CLIENT_KEY` for the public Nakama socket client key; runtime HTTP, session encryption, console signing, and admin secrets must stay server-only.
 
 ### Medium Risks
 
@@ -564,7 +564,7 @@ Major gaps:
 - Move timeout enforcement before action mutation.
 - Add reconnect grace with clear player status.
 - Strictly type public state and private hero state.
-- Rename env vars to distinguish public Nakama socket key from runtime/admin secrets.
+- Keep public Nakama socket client key naming distinct from runtime/admin secrets and reject deprecated browser `SERVER_KEY` env names during deploy validation.
 - Treat real-money readiness as a separate security/compliance program: KYC/age gates, jurisdiction blocking, responsible gaming controls, anti-collusion, bot detection, rake accounting, wallet ledger, audit logs, regulator-grade RNG certification, and incident response.
 
 ### Files/Functions To Review

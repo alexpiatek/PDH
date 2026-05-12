@@ -34,6 +34,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    environment:
+      PDH_ENABLE_ADMIN_RPCS: ${PDH_ENABLE_ADMIN_RPCS:-false}
+      PDH_ADMIN_USER_IDS: ${PDH_ADMIN_USER_IDS:-}
     ports:
       - '${NAKAMA_HTTP_PORT:-17350}:7350'
       - '${NAKAMA_CONSOLE_PORT:-17351}:7351'

@@ -93,13 +93,14 @@ Response contains `{ type: "replay", count, events }`.
 
 RPC id: `pdh_debug_get_replay`
 
-Example (trusted network; do not expose HTTP key publicly):
+This RPC is disabled by default. For local diagnostics only, enable it in Nakama runtime env with
+`PDH_ENABLE_ADMIN_RPCS=true` and set `PDH_ADMIN_USER_IDS` to a comma-separated allowlist of Nakama
+user IDs. Production should leave it disabled unless there is a deliberate admin access path.
 
-```bash
-curl -sS -X POST \
-  "http://127.0.0.1:7350/v2/rpc/pdh_debug_get_replay?http_key=${NAKAMA_SOCKET_SERVER_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"tableId":"main","limit":50}'
+Example authenticated admin payload:
+
+```json
+{ "tableId": "main", "limit": 50 }
 ```
 
 You can also pass `matchId` directly:
@@ -113,11 +114,11 @@ You can also pass `matchId` directly:
 1. Confirm server health and websocket reachability.
 2. Tail Nakama logs and find `matchId` for affected users.
 3. Inspect `match.action.rejected` entries for turn/phase/seq violations.
-4. Pull replay stream (`pdh_debug_get_replay`) and verify action ordering.
+4. If admin RPCs are explicitly enabled for diagnostics, pull replay stream (`pdh_debug_get_replay`) and verify action ordering.
 5. Check browser logs for disconnect/reconnect loops and client parse errors.
 
 ## Logging Safety Rules
 
-- Never log secrets (`NAKAMA_SERVER_KEY`, auth tokens, cookies).
+- Never log auth tokens, cookies, runtime HTTP keys, session encryption keys, or console credentials.
 - Log only bounded error text (`message`) and whitelisted metadata.
 - Keep action logs to protocol fields, not raw payload dumps.
