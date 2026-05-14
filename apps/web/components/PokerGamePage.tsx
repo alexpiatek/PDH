@@ -3128,6 +3128,8 @@ export const PokerGamePage = ({
         { left: '24%', top: '51%' },
         { left: '68%', top: '65%' },
         { left: '32%', top: '65%' },
+        { left: '50%', top: '14%' },
+        { left: '50%', top: '66%' },
       ]
     : [
         { left: '50%', top: '82%' },
@@ -3137,6 +3139,8 @@ export const PokerGamePage = ({
         { left: '8%', top: '52%' },
         { left: '80%', top: '78%' },
         { left: '20%', top: '78%' },
+        { left: '50%', top: '14%' },
+        { left: '50%', top: '66%' },
       ];
   const seatBetOffsets: React.CSSProperties[] = isPortraitPhone
     ? [
@@ -3147,6 +3151,8 @@ export const PokerGamePage = ({
         { left: '50%', top: 'calc(100% + 4px)', transform: 'translate(-50%, 0)' },
         { left: '50%', top: -20, transform: 'translate(-50%, -100%)' },
         { left: '50%', top: -20, transform: 'translate(-50%, -100%)' },
+        { left: '50%', top: 'calc(100% + 4px)', transform: 'translate(-50%, 0)' },
+        { left: '50%', top: -20, transform: 'translate(-50%, -100%)' },
       ]
     : [
         { left: '50%', top: -30, transform: 'translate(-50%, -100%)' },
@@ -3156,6 +3162,8 @@ export const PokerGamePage = ({
         { left: 'calc(100% + 8px)', top: '50%', transform: 'translate(0, -50%)' },
         { left: '44%', top: -30, transform: 'translate(-50%, -100%)' },
         { left: '56%', top: -30, transform: 'translate(-50%, -100%)' },
+        { left: '50%', top: 'calc(100% + 6px)', transform: 'translate(-50%, 0)' },
+        { left: '50%', top: -30, transform: 'translate(-50%, -100%)' },
       ];
   const orderedPlayers = hand
     ? [...(you ? [you] : []), ...hand.players.filter((p) => p.id !== playerId)]
