@@ -78,6 +78,21 @@ function activePlayers(hand: HandState): PlayerInHand[] {
   return hand.players.filter((p) => !['folded', 'out', 'busted', 'sitting_out'].includes(p.status));
 }
 
+function maxOpponentContestableTotal(hand: HandState, player: PlayerInHand): number {
+  const opponentTotals = activePlayers(hand)
+    .filter((p) => p.id !== player.id && p.status === 'active' && p.stack > 0)
+    .map((p) => p.betThisStreet + p.stack);
+  return opponentTotals.length ? Math.max(...opponentTotals) : hand.currentBet;
+}
+
+function maxContestableTotalForPlayer(hand: HandState, player: PlayerInHand): number {
+  return Math.min(player.betThisStreet + player.stack, maxOpponentContestableTotal(hand, player));
+}
+
+function canAddContestableChips(hand: HandState, player: PlayerInHand): boolean {
+  return maxContestableTotalForPlayer(hand, player) > hand.currentBet;
+}
+
 function validChipAmount(amount: unknown, message: string, allowZero: boolean): number {
   if (
     typeof amount !== 'number' ||
@@ -97,7 +112,16 @@ function validActionAmount(amount: unknown): number {
 
 function bettingLocked(hand: HandState): boolean {
   const active = activePlayers(hand);
-  return active.length > 0 && active.every((p) => p.status === 'allIn' || p.stack === 0);
+  if (active.length === 0) return true;
+
+  const playersWithChips = active.filter((p) => p.status === 'active' && p.stack > 0);
+  if (playersWithChips.length === 0) return true;
+
+  if (playersWithChips.some((p) => p.betThisStreet < hand.currentBet)) {
+    return false;
+  }
+
+  return !playersWithChips.some((p) => canAddContestableChips(hand, p));
 }
 
 function playerBySeat(hand: HandState, seat: number): PlayerInHand {
@@ -253,17 +277,22 @@ export function computeLegalActionsForPlayer(
     return emptyLegalActions('betting', 'waiting_for_next_phase');
   }
 
+  if (bettingLocked(hand)) {
+    return emptyLegalActions('betting', 'waiting_for_next_phase');
+  }
+
   if (player.seat !== hand.actionOnSeat) {
     return emptyLegalActions('betting', 'not_your_turn');
   }
 
   const toCall = Math.max(0, hand.currentBet - player.betThisStreet);
   const allInAmount = player.betThisStreet + player.stack;
+  const maxContestableTotal = maxContestableTotalForPlayer(hand, player);
   const raiseCapReached = hand.raisesThisStreet >= 2;
   const minBet = hand.currentBet === 0 ? table.config.bigBlind : null;
-  const maxBet = hand.currentBet === 0 ? allInAmount : null;
+  const maxBet = hand.currentBet === 0 ? maxContestableTotal : null;
   const minRaiseTo = hand.currentBet > 0 ? hand.currentBet + hand.minRaise : null;
-  const maxRaiseTo = hand.currentBet > 0 ? allInAmount : null;
+  const maxRaiseTo = hand.currentBet > 0 ? maxContestableTotal : null;
   const canBet =
     minBet !== null && maxBet !== null && !raiseCapReached && player.stack > 0 && maxBet >= minBet;
   const canRaise =
@@ -275,7 +304,7 @@ export function computeLegalActionsForPlayer(
   const canAllIn =
     player.stack > 0 &&
     (allInAmount > hand.currentBet
-      ? !raiseCapReached
+      ? !raiseCapReached && allInAmount <= maxContestableTotal
       : toCall > 0 && allInAmount > player.betThisStreet);
 
   return {
@@ -728,6 +757,9 @@ export class PokerTable {
         if (amount > player.betThisStreet + player.stack) {
           throw new Error('Bet exceeds available stack');
         }
+        if (amount > maxContestableTotalForPlayer(hand, player)) {
+          throw new Error('Bet exceeds contestable chips');
+        }
         if (amount < this.state.config.bigBlind) throw new Error('Bet below minimum');
         this.placeRaise(hand, player, amount, 'bet');
         break;
@@ -736,6 +768,9 @@ export class PokerTable {
         const amount = validActionAmount(action.amount);
         if (amount > player.betThisStreet + player.stack) {
           throw new Error('Raise exceeds available stack');
+        }
+        if (amount > maxContestableTotalForPlayer(hand, player)) {
+          throw new Error('Raise exceeds contestable chips');
         }
         if (amount <= hand.currentBet) throw new Error('Raise must exceed current bet');
         const raiseBy = amount - hand.currentBet;
@@ -768,6 +803,9 @@ export class PokerTable {
           player.hasActed = true;
           logPush(hand.log, `${player.name} called all-in for ${pay}`);
         } else {
+          if (newTotal > maxContestableTotalForPlayer(hand, player)) {
+            throw new Error('All-in exceeds contestable chips');
+          }
           // all-in raise
           this.placeRaise(hand, player, newTotal, 'allIn');
         }
@@ -827,6 +865,9 @@ export class PokerTable {
     if (hand.raisesThisStreet >= 2) {
       throw new Error('Raise cap reached');
     }
+    if (actualTotal > hand.currentBet && actualTotal > maxContestableTotalForPlayer(hand, player)) {
+      throw new Error('Raise exceeds contestable chips');
+    }
     const pay = actualTotal - player.betThisStreet;
     this.commitBet(hand, player, pay);
     if (actualTotal > hand.currentBet) {
@@ -872,6 +913,7 @@ export class PokerTable {
   }
 
   private isBettingRoundComplete(hand: HandState): boolean {
+    if (bettingLocked(hand)) return true;
     const active = hand.players.filter((p) => p.status === 'active');
     if (active.length === 0) return true;
     const canAct = active.filter((p) => p.stack > 0);

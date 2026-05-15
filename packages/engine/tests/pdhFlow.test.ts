@@ -144,6 +144,55 @@ describe('PDH flow contract', () => {
     }
   });
 
+  it('keeps zero-stack all-in players discard-eligible across turn and river without a refresh', () => {
+    const table = createTableWithPlayers(2, 10000, 0x5555aaab);
+    let hand = table.state.hand!;
+
+    const opener = hand.players.find((p) => p.seat === hand.actionOnSeat)!;
+    table.applyAction(opener.id, { type: 'allIn' });
+    hand = table.state.hand!;
+    const caller = hand.players.find((p) => p.status === 'active')!;
+    table.applyAction(caller.id, { type: 'call' });
+
+    hand = table.state.hand!;
+    table.advancePendingPhase(hand.pendingNextPhaseAt ?? Date.now());
+    hand = table.state.hand!;
+    expect(hand.street).toBe('flop');
+    expect(hand.phase).toBe('discard');
+
+    for (const playerId of [...hand.discardPending].filter((id) => id !== opener.id)) {
+      table.applyDiscard(playerId, 0);
+    }
+    table.applyDiscard(opener.id, 0);
+
+    hand = table.state.hand!;
+    expect(hand.street).toBe('turn');
+    expect(hand.phase).toBe('discard');
+    expect(hand.discardPending).toContain(opener.id);
+    expect(hand.players.find((p) => p.id === opener.id)?.holeCards).toHaveLength(4);
+    expect(table.getLegalActionsForPlayer(opener.id)).toMatchObject({
+      phase: 'discard',
+      isActor: true,
+      discard: { validIndexes: [0, 1, 2, 3] },
+    });
+
+    for (const playerId of [...hand.discardPending].filter((id) => id !== opener.id)) {
+      table.applyDiscard(playerId, 0);
+    }
+    table.applyDiscard(opener.id, 0);
+
+    hand = table.state.hand!;
+    expect(hand.street).toBe('river');
+    expect(hand.phase).toBe('discard');
+    expect(hand.discardPending).toContain(opener.id);
+    expect(hand.players.find((p) => p.id === opener.id)?.holeCards).toHaveLength(3);
+    expect(table.getLegalActionsForPlayer(opener.id)).toMatchObject({
+      phase: 'discard',
+      isActor: true,
+      discard: { validIndexes: [0, 1, 2] },
+    });
+  });
+
   it('does not keep disconnected all-in players pending in discard phases', () => {
     const table = createTableWithPlayers(2, 10000, 0x5555aaaa);
     let hand = table.state.hand!;

@@ -1,5 +1,6 @@
 import Head from 'next/head';
 import type { GetServerSideProps } from 'next';
+import { useState } from 'react';
 import PokerGamePage from '../../components/PokerGamePage';
 import type { PublicState } from '../../server-types';
 
@@ -7,6 +8,7 @@ type Scenario =
   | 'betting-call'
   | 'betting-check-allin'
   | 'discard'
+  | 'all-in-discard-transition'
   | 'all-in-discard-stale-seat'
   | 'showdown'
   | 'showdown-long'
@@ -35,6 +37,7 @@ const scenarios = new Set<Scenario>([
   'betting-call',
   'betting-check-allin',
   'discard',
+  'all-in-discard-transition',
   'all-in-discard-stale-seat',
   'showdown',
   'showdown-long',
@@ -381,6 +384,110 @@ const allInDiscardStaleSeatState = (now: number): PublicState =>
     },
   });
 
+const allInDiscardTransitionState = (
+  now: number,
+  street: 'flop' | 'turn' | 'river',
+  heroHoleCardsLength: number,
+  stateVersion: number
+): PublicState => {
+  const board =
+    street === 'flop'
+      ? [card('2', 'S'), card('7', 'D'), card('T', 'H')]
+      : street === 'turn'
+        ? [card('2', 'S'), card('7', 'D'), card('T', 'H'), card('4', 'C')]
+        : [card('2', 'S'), card('7', 'D'), card('T', 'H'), card('4', 'C'), card('9', 'S')];
+  return baseState('all-in-discard-transition', now, {
+    id: 'LIVE1',
+    stateVersion,
+    seats: [
+      {
+        seat: 0,
+        id: HERO_ID,
+        name: 'Alex',
+        stack: 0,
+        status: 'active',
+        sittingOut: false,
+        buyInTotal: 10000,
+        rebuyCount: 0,
+        connectionStatus: 'connected',
+      },
+      {
+        seat: 1,
+        id: VILLAIN_ID,
+        name: 'Sam',
+        stack: 0,
+        status: 'active',
+        sittingOut: false,
+        buyInTotal: 10000,
+        rebuyCount: 0,
+        connectionStatus: 'connected',
+      },
+    ],
+    hand: {
+      handId: 'hand-all-in-transition',
+      buttonSeat: 1,
+      street,
+      phase: 'discard',
+      board,
+      deck: [],
+      players: [
+        {
+          seat: 0,
+          id: HERO_ID,
+          name: 'Alex',
+          stack: 0,
+          status: 'allIn',
+          holeCards: heroCards.slice(0, heroHoleCardsLength),
+          betThisStreet: 0,
+          totalCommitted: 10000,
+          hasActed: true,
+        },
+        {
+          seat: 1,
+          id: VILLAIN_ID,
+          name: 'Sam',
+          stack: 0,
+          status: 'allIn',
+          holeCards: hiddenCards.slice(0, heroHoleCardsLength),
+          betThisStreet: 0,
+          totalCommitted: 10000,
+          hasActed: true,
+        },
+      ],
+      pots: [],
+      currentBet: 0,
+      minRaise: 800,
+      raisesThisStreet: 0,
+      actionOnSeat: -1,
+      actionDeadline: null,
+      lastAggressorSeat: null,
+      pendingNextPhaseAt: null,
+      discardPending: [HERO_ID],
+      discardDeadline: now + 25000,
+      showdownWinners: [],
+      showdownPots: [],
+      log: [
+        { message: 'All players are all-in', ts: now - 9000 },
+        { message: `Discard phase started on ${street}`, ts: now - 3000 },
+      ],
+    },
+    log: [
+      { message: 'All players are all-in', ts: now - 9000 },
+      { message: `Discard phase started on ${street}`, ts: now - 3000 },
+    ],
+    legalActions: {
+      phase: 'discard',
+      isActor: true,
+      discard: {
+        required: true,
+        count: 1,
+        validIndexes: Array.from({ length: heroHoleCardsLength }, (_, index) => index),
+        deadlineMs: now + 25000,
+      },
+    },
+  });
+};
+
 const showdownState = (now: number): PublicState =>
   baseState('showdown', now, {
     hand: {
@@ -614,13 +721,7 @@ const showdownLongState = (now: number): PublicState => {
       {
         playerId: HERO_ID,
         amount: 16750,
-        bestFive: [
-          card('A', 'H'),
-          card('K', 'H'),
-          card('Q', 'H'),
-          card('J', 'H'),
-          card('T', 'H'),
-        ],
+        bestFive: [card('A', 'H'), card('K', 'H'), card('Q', 'H'), card('J', 'H'), card('T', 'H')],
         handLabel: 'Straight Flush',
         potIds: ['pot-0', 'pot-1'],
         potLabels: ['Main pot', 'Side pot 1'],
@@ -642,9 +743,7 @@ const showdownLongState = (now: number): PublicState => {
         winners: [{ playerId: HERO_ID, amount: 4750, handLabel: 'Straight Flush' }],
       },
     ];
-    state.hand.log = [
-      { message: `${winnerName} wins 16750 with straight flush`, ts: now - 2000 },
-    ];
+    state.hand.log = [{ message: `${winnerName} wins 16750 with straight flush`, ts: now - 2000 }];
   }
   state.log = state.hand?.log ?? state.log;
   return state;
@@ -723,12 +822,18 @@ const outOfChipsState = (now: number, betweenHand: boolean): PublicState =>
         : [],
       log: [
         { message: 'Alex Mobile is out of chips', ts: now - 3000 },
-        { message: betweenHand ? 'Brad Mobile wins 2800 with one pair' : 'Brad Mobile checked', ts: now - 1500 },
+        {
+          message: betweenHand ? 'Brad Mobile wins 2800 with one pair' : 'Brad Mobile checked',
+          ts: now - 1500,
+        },
       ],
     },
     log: [
       { message: 'Alex Mobile is out of chips', ts: now - 3000 },
-      { message: betweenHand ? 'Brad Mobile wins 2800 with one pair' : 'Brad Mobile checked', ts: now - 1500 },
+      {
+        message: betweenHand ? 'Brad Mobile wins 2800 with one pair' : 'Brad Mobile checked',
+        ts: now - 1500,
+      },
     ],
     betweenHandStartedAtMs: betweenHand ? now : null,
     betweenHandMinUntilMs: betweenHand ? now + 6000 : null,
@@ -766,6 +871,8 @@ const buildState = (scenario: Scenario, now: number): PublicState | null => {
       return bettingCheckAllInState(now);
     case 'discard':
       return discardState(now);
+    case 'all-in-discard-transition':
+      return allInDiscardTransitionState(now, 'flop', 5, 1);
     case 'all-in-discard-stale-seat':
       return allInDiscardStaleSeatState(now);
     case 'showdown-long':
@@ -827,15 +934,58 @@ export default function PokerActionTrayTestPage({
   playerId,
   debugStatus,
 }: TestPageProps) {
+  const [debugState, setDebugState] = useState<PublicState | null>(state);
+  const advanceAllInDiscard = (street: 'turn' | 'river', holeCardsLength: number) => {
+    setDebugState(
+      allInDiscardTransitionState(Date.now(), street, holeCardsLength, street === 'turn' ? 2 : 3)
+    );
+  };
+  const pushUnrelatedUpdate = () => {
+    setDebugState((previous) =>
+      previous
+        ? {
+            ...previous,
+            stateVersion: (previous.stateVersion ?? 1) + 1,
+            log: [...previous.log, { message: 'Unrelated table update', ts: Date.now() }],
+          }
+        : previous
+    );
+  };
+
   return (
     <>
       <Head>
         <title>Action Tray Test - {scenario}</title>
       </Head>
+      {scenario === 'all-in-discard-transition' ? (
+        <div style={{ position: 'fixed', left: 0, top: 0, zIndex: 9999, opacity: 0.01 }}>
+          <button
+            type="button"
+            data-testid="debug-advance-turn-discard"
+            onClick={() => advanceAllInDiscard('turn', 4)}
+          >
+            Advance turn discard
+          </button>
+          <button
+            type="button"
+            data-testid="debug-advance-river-discard"
+            onClick={() => advanceAllInDiscard('river', 3)}
+          >
+            Advance river discard
+          </button>
+          <button
+            type="button"
+            data-testid="debug-unrelated-discard-update"
+            onClick={pushUnrelatedUpdate}
+          >
+            Unrelated update
+          </button>
+        </div>
+      ) : null}
       <PokerGamePage
         forcedMatchId={`test-${scenario}`}
         showExitButton
-        debugInitialState={state}
+        debugInitialState={debugState}
         debugPlayerId={playerId}
         debugDisableNetwork
         debugStatus={debugStatus}

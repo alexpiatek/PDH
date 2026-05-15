@@ -15,6 +15,7 @@ import { logClientEvent } from '../lib/clientTelemetry';
 import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
 import { getPlayerInitials } from '../lib/playerInitials';
 import { resolveBettingActionControls } from '../lib/actionControls';
+import { discardConfirmDisabledReason, discardObligationKey } from '../lib/discardControls';
 import { nextAppliedStateVersion, shouldApplyStateSnapshot } from '../lib/stateVersion';
 import {
   canSubmitNextHandIntentNow,
@@ -1429,6 +1430,7 @@ export const PokerGamePage = ({
   const pendingMessagesRef = useRef<ClientMessage[]>([]);
   const nextMutatingSeqRef = useRef(1);
   const discardTimerRef = useRef<number | null>(null);
+  const lastDiscardObligationKeyRef = useRef<string | null>(null);
   const holeDealTimerRef = useRef<number | null>(null);
   const joinTimeoutRef = useRef<number | null>(null);
   const copyFeedbackTimerRef = useRef<number | null>(null);
@@ -1973,7 +1975,8 @@ export const PokerGamePage = ({
 
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(STORAGE_KEYS.matchId);
-      const tableIdForIntent = typeof state?.id === 'string' ? state.id : resolvedForcedMatchId || null;
+      const tableIdForIntent =
+        typeof state?.id === 'string' ? state.id : resolvedForcedMatchId || null;
       clearStoredNextHandIntent(window.localStorage, tableIdForIntent, playerId);
     }
     updateQueuedNextHandIntent(null);
@@ -2177,13 +2180,33 @@ export const PokerGamePage = ({
   const youBusted = Boolean(you && (you.status === 'busted' || you.status === 'sitting_out'));
   const serverDiscardActions =
     serverLegalActions?.phase === 'discard' ? serverLegalActions.discard : undefined;
+  const localHoleCardsLength = you?.holeCards.length ?? 0;
+  const localPendingDiscard = Boolean(
+    hand &&
+    you &&
+    hand.phase === 'discard' &&
+    hand.discardPending.includes(you.id) &&
+    localHoleCardsLength > 2
+  );
+  const serverPendingDiscard = Boolean(
+    serverLegalActions?.phase === 'discard' &&
+    serverLegalActions.isActor &&
+    serverDiscardActions?.required
+  );
   const serverDiscardValidIndexes =
     serverDiscardActions?.validIndexes && Array.isArray(serverDiscardActions.validIndexes)
       ? new Set(serverDiscardActions.validIndexes)
       : null;
   const discardPending = serverLegalActions
-    ? Boolean(serverLegalActions.isActor && serverDiscardActions?.required)
-    : Boolean(hand && you && hand.phase === 'discard' && hand.discardPending.includes(you.id));
+    ? Boolean(serverPendingDiscard || localPendingDiscard)
+    : localPendingDiscard;
+  const currentDiscardObligationKey = discardObligationKey({
+    handId: hand?.handId,
+    street: hand?.street,
+    playerId: you?.id,
+    pending: discardPending,
+    holeCardsLength: localHoleCardsLength,
+  });
   const isShowdown = hand?.phase === 'showdown';
   const currentStreetLabel = hand ? formatStreetLabel(hand.street) : '';
   const actionOnPlayer = useMemo(() => {
@@ -2624,6 +2647,18 @@ export const PokerGamePage = ({
 
   useEffect(() => {
     if (!discardPending) {
+      lastDiscardObligationKeyRef.current = null;
+      setDiscardFlashIndex(null);
+      setDiscardSubmitted(false);
+      setSelectedDiscardIndex(null);
+      if (discardTimerRef.current) {
+        window.clearTimeout(discardTimerRef.current);
+        discardTimerRef.current = null;
+      }
+      return;
+    }
+    if (lastDiscardObligationKeyRef.current !== currentDiscardObligationKey) {
+      lastDiscardObligationKeyRef.current = currentDiscardObligationKey;
       setDiscardFlashIndex(null);
       setDiscardSubmitted(false);
       setSelectedDiscardIndex(null);
@@ -2632,7 +2667,7 @@ export const PokerGamePage = ({
         discardTimerRef.current = null;
       }
     }
-  }, [discardPending, hand?.handId]);
+  }, [discardPending, currentDiscardObligationKey]);
 
   useIsomorphicLayoutEffect(() => {
     if (!hand?.handId) return;
@@ -3224,10 +3259,7 @@ export const PokerGamePage = ({
   const playerInfoOffsetY = isPortraitPhone ? 0 : -30 + 38;
   const mobileSeatSafeHalfWidth = Math.ceil(seatNameplateWidth / 2 + 8);
   const mobileSeatSafeHalfHeight = Math.ceil(playerPanelMinHeight / 2 + 8);
-  const safeSeatCoordinate = (
-    value: string | number,
-    axis: 'x' | 'y'
-  ): string | number => {
+  const safeSeatCoordinate = (value: string | number, axis: 'x' | 'y'): string | number => {
     if (!isPhone || typeof value !== 'string') {
       return value;
     }
@@ -3362,7 +3394,9 @@ export const PokerGamePage = ({
       ? clampedRaiseTo
       : Math.min(clampedRaiseTo, manualMaxRaiseTo);
   const selectedRaiseIsAllIn = Boolean(
-    maxRaiseTo !== null && selectedRaiseTo >= maxRaiseTo && (allInPresetSelected || onlyAllInRaiseAmount)
+    maxRaiseTo !== null &&
+    selectedRaiseTo >= maxRaiseTo &&
+    (allInPresetSelected || onlyAllInRaiseAmount)
   );
   const rangeRaiseValue =
     manualMaxRaiseTo !== null ? Math.min(selectedRaiseTo, manualMaxRaiseTo) : selectedRaiseTo;
@@ -3413,10 +3447,50 @@ export const PokerGamePage = ({
 
   const discardLimit = serverDiscardActions?.count ?? 1;
   const isDiscardIndexAllowed = (idx: number) =>
-    !serverDiscardValidIndexes || serverDiscardValidIndexes.has(idx);
+    Number.isInteger(idx) &&
+    idx >= 0 &&
+    idx < localHoleCardsLength &&
+    (!serverDiscardValidIndexes || serverDiscardValidIndexes.has(idx));
   const selectedDiscardIsValid =
     selectedDiscardIndex !== null && isDiscardIndexAllowed(selectedDiscardIndex);
-  const canConfirmDiscard = discardPending && selectedDiscardIsValid && !discardSubmitted;
+  const confirmDiscardDisabledReason = discardConfirmDisabledReason({
+    pending: discardPending,
+    selectedIndex: selectedDiscardIndex,
+    selectedIndexValid: selectedDiscardIsValid,
+    requestInFlight: discardSubmitted,
+    disconnected: !debugMode && status === 'Disconnected',
+  });
+  const canConfirmDiscard = confirmDiscardDisabledReason === null;
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return;
+    if (!isDiscardPhase && !discardPending) return;
+    // Keep this aggregate-only: no card faces or hidden opponent data.
+    console.debug('[pdh:discard-gate]', {
+      localPlayerId: playerId,
+      handId: hand?.handId ?? null,
+      phase: hand?.phase ?? null,
+      street: hand?.street ?? null,
+      discardPendingIds: hand?.discardPending ?? [],
+      localPendingDiscard,
+      legalActions: serverLegalActions,
+      selectedDiscardIndex,
+      localHoleCardsLength,
+      confirmDiscardDisabledReason,
+    });
+  }, [
+    confirmDiscardDisabledReason,
+    discardPending,
+    hand?.discardPending,
+    hand?.handId,
+    hand?.phase,
+    hand?.street,
+    isDiscardPhase,
+    localHoleCardsLength,
+    localPendingDiscard,
+    playerId,
+    selectedDiscardIndex,
+    serverLegalActions,
+  ]);
   const quickRaiseOptions = useMemo(() => {
     if (!hand || minRaiseTo === null || maxRaiseTo === null) {
       return [] as Array<{ label: string; value: number; requiresConfirm?: boolean }>;
@@ -5221,6 +5295,8 @@ export const PokerGamePage = ({
                         return (
                           <div
                             data-testid={`hero-hole-card-${idx}`}
+                            data-discard-selectable={discardSelectable ? 'true' : 'false'}
+                            data-discard-selected={discardSelected ? 'true' : 'false'}
                             key={`${dealAnimationKey}-hole-${idx}`}
                             style={
                               (animateHoleDeal
@@ -5381,6 +5457,8 @@ export const PokerGamePage = ({
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
                     <button
                       data-testid="confirm-discard"
+                      data-discard-disabled-reason={confirmDiscardDisabledReason ?? 'none'}
+                      data-selected-discard-index={selectedDiscardIndex ?? ''}
                       type="button"
                       onClick={confirmDiscardSelection}
                       disabled={!canConfirmDiscard}
@@ -5702,22 +5780,16 @@ export const PokerGamePage = ({
                               disabled={!canRaise}
                               onClick={submitRaiseAction}
                               style={turnActionStyle(canRaise, {
-                                border:
-                                  selectedRaiseIsAllIn
-                                    ? 'rgba(248,113,113,0.9)'
-                                    : 'rgba(94,234,212,0.78)',
-                                background:
-                                  selectedRaiseIsAllIn
-                                    ? 'rgba(127,29,29,0.58)'
-                                    : 'rgba(20,184,166,0.28)',
-                                color:
-                                  selectedRaiseIsAllIn
-                                    ? '#fee2e2'
-                                    : '#ccfbf1',
-                                glow:
-                                  selectedRaiseIsAllIn
-                                    ? 'rgba(248,113,113,0.35)'
-                                    : 'rgba(20,184,166,0.3)',
+                                border: selectedRaiseIsAllIn
+                                  ? 'rgba(248,113,113,0.9)'
+                                  : 'rgba(94,234,212,0.78)',
+                                background: selectedRaiseIsAllIn
+                                  ? 'rgba(127,29,29,0.58)'
+                                  : 'rgba(20,184,166,0.28)',
+                                color: selectedRaiseIsAllIn ? '#fee2e2' : '#ccfbf1',
+                                glow: selectedRaiseIsAllIn
+                                  ? 'rgba(248,113,113,0.35)'
+                                  : 'rgba(20,184,166,0.3)',
                               })}
                             >
                               {raiseSubmitLabel}

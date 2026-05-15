@@ -1166,6 +1166,84 @@ describe('pdhMatchHandler', () => {
     expect(nonActorSnapshot?.legalActions.betting).toBeUndefined();
   });
 
+  it('broadcasts the same all-in discard eligibility on live update and request-state snapshot', () => {
+    const { nk, dispatcher, state, presenceById, broadcastMessage } = setupThreePlayerMatch();
+    const hand = state.table.hand;
+    const player = hand.players.find((p: any) => p.id === 'u1');
+    const opponents = hand.players.filter((p: any) => p.id !== player.id);
+
+    hand.street = 'flop';
+    hand.phase = 'discard';
+    hand.board = [
+      { rank: '2', suit: 'S' },
+      { rank: '7', suit: 'D' },
+      { rank: 'T', suit: 'H' },
+    ];
+    hand.actionOnSeat = -1;
+    hand.actionDeadline = null;
+    hand.pendingNextPhaseAt = null;
+    hand.discardPending = [player.id];
+    hand.discardDeadline = Date.now() + 40_000;
+    player.status = 'allIn';
+    player.stack = 0;
+    player.holeCards = player.holeCards.slice(0, 5);
+    state.table.seats[player.seat].stack = 0;
+    state.table.seats[player.seat].status = 'active';
+    state.table.seats[player.seat].sittingOut = false;
+    for (const opponent of opponents) {
+      opponent.status = 'allIn';
+      opponent.stack = 0;
+      opponent.holeCards = opponent.holeCards.slice(0, 4);
+      state.table.seats[opponent.seat].stack = 0;
+      state.table.seats[opponent.seat].status = 'active';
+      state.table.seats[opponent.seat].sittingOut = false;
+    }
+
+    const summarizeEligibility = (snapshot: any) => {
+      const local = snapshot.hand.players.find((p: any) => p.id === player.id);
+      return {
+        phase: snapshot.hand.phase,
+        street: snapshot.hand.street,
+        discardPending: snapshot.hand.discardPending,
+        localHoleCardsLength: local.holeCards.length,
+        legalActions: snapshot.legalActions,
+        actionOnSeat: snapshot.hand.actionOnSeat,
+        playerStatus: local.status,
+        playerStack: local.stack,
+      };
+    };
+
+    broadcastMessage.mockClear();
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 3, state, [
+      {
+        opCode: 1,
+        sender: presenceById.get(player.id),
+        data: encode({ type: 'discard', index: 0, seq: 1 }),
+      },
+    ]);
+
+    const liveSnapshot = stateMessagesTo(broadcastMessage, player.id).at(-1)?.state;
+    expect(liveSnapshot?.hand.street).toBe('turn');
+    expect(liveSnapshot?.hand.phase).toBe('discard');
+    expect(liveSnapshot?.legalActions).toMatchObject({
+      phase: 'discard',
+      isActor: true,
+      discard: { validIndexes: [0, 1, 2, 3] },
+    });
+
+    broadcastMessage.mockClear();
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 4, state, [
+      {
+        opCode: 1,
+        sender: presenceById.get(player.id),
+        data: encode({ type: 'requestState' }),
+      },
+    ]);
+    const requestStateSnapshot = stateMessagesTo(broadcastMessage, player.id).at(-1)?.state;
+
+    expect(summarizeEligibility(requestStateSnapshot)).toEqual(summarizeEligibility(liveSnapshot));
+  });
+
   it('writes a durable checkpoint when a hand starts', () => {
     const { nk, state } = setupThreePlayerMatch();
     const checkpoint = checkpointFromStorage(nk);
@@ -1290,12 +1368,9 @@ describe('pdhMatchHandler', () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(checkpoint.writtenAtMs + 1_000);
     let restored: any;
     try {
-      restored = pdhMatchHandler.matchInit(
-        { matchId: 'recreated-match-id' },
-        logger,
-        nk,
-        { tableId: 'main' }
-      ).state;
+      restored = pdhMatchHandler.matchInit({ matchId: 'recreated-match-id' }, logger, nk, {
+        tableId: 'main',
+      }).state;
     } finally {
       nowSpy.mockRestore();
     }
@@ -1318,12 +1393,10 @@ describe('pdhMatchHandler', () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(restoredAt);
     let restored: any;
     try {
-      restored = pdhMatchHandler.matchInit(
-        { matchId: 'zero-grace-restored' },
-        logger,
-        nk,
-        { tableId: 'main', reconnectGraceMs: 0 }
-      ).state;
+      restored = pdhMatchHandler.matchInit({ matchId: 'zero-grace-restored' }, logger, nk, {
+        tableId: 'main',
+        reconnectGraceMs: 0,
+      }).state;
     } finally {
       nowSpy.mockRestore();
     }
@@ -1352,12 +1425,9 @@ describe('pdhMatchHandler', () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(10_000);
     let fresh: any;
     try {
-      fresh = pdhMatchHandler.matchInit(
-        { matchId: 'fresh-after-expired' },
-        logger,
-        nk,
-        { tableId: 'main' }
-      ).state;
+      fresh = pdhMatchHandler.matchInit({ matchId: 'fresh-after-expired' }, logger, nk, {
+        tableId: 'main',
+      }).state;
     } finally {
       nowSpy.mockRestore();
     }
@@ -1372,12 +1442,9 @@ describe('pdhMatchHandler', () => {
     const checkpoint = checkpointFromStorage(nk);
     setCheckpointInStorage(nk, { ...checkpoint, schemaVersion: 999 }, 'main');
 
-    const fresh = pdhMatchHandler.matchInit(
-      { matchId: 'fresh-after-unknown-schema' },
-      logger,
-      nk,
-      { tableId: 'main' }
-    ).state as any;
+    const fresh = pdhMatchHandler.matchInit({ matchId: 'fresh-after-unknown-schema' }, logger, nk, {
+      tableId: 'main',
+    }).state as any;
 
     expect(fresh.stateVersion).toBe(0);
     expect(fresh.table.hand).toBeNull();
@@ -1420,12 +1487,9 @@ describe('pdhMatchHandler', () => {
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(checkpoint.writtenAtMs + 1_000);
     let restored: any;
     try {
-      restored = pdhMatchHandler.matchInit(
-        { matchId: 'recreated-match-id' },
-        logger,
-        nk,
-        { tableId: 'main' }
-      ).state;
+      restored = pdhMatchHandler.matchInit({ matchId: 'recreated-match-id' }, logger, nk, {
+        tableId: 'main',
+      }).state;
     } finally {
       nowSpy.mockRestore();
     }

@@ -250,6 +250,46 @@ describe('betting rules', () => {
     expect(table.state.seats[actor.seat]?.stack).toBe(0);
   });
 
+  it('rejects chip-leader raises that no remaining opponent can contest', () => {
+    const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
+    table.seatPlayer(0, { id: 'p0', name: 'Leader', stack: 10000 });
+    table.seatPlayer(1, { id: 'p1', name: 'Short 1', stack: 1000 });
+    table.seatPlayer(2, { id: 'p2', name: 'Short 2', stack: 1000 });
+    table.startHand(rng);
+    const hand = table.state.hand!;
+    const leader = hand.players.find((player) => player.id === 'p0')!;
+    const opponents = hand.players.filter((player) => player.id !== leader.id);
+
+    hand.street = 'turn';
+    hand.phase = 'betting';
+    hand.currentBet = 1000;
+    hand.minRaise = table.state.config.bigBlind;
+    hand.raisesThisStreet = 0;
+    hand.actionOnSeat = leader.seat;
+    hand.actionDeadline = 123_456;
+    hand.pendingNextPhaseAt = null;
+    leader.status = 'active';
+    leader.stack = 9000;
+    leader.betThisStreet = 0;
+    leader.hasActed = false;
+    for (const opponent of opponents) {
+      opponent.status = 'allIn';
+      opponent.stack = 0;
+      opponent.betThisStreet = 1000;
+      opponent.hasActed = true;
+    }
+
+    expect(() => table.applyAction(leader.id, { type: 'raise', amount: 2000 })).toThrow(
+      'Raise exceeds contestable chips'
+    );
+    expect(() => table.applyAction(leader.id, { type: 'allIn' })).toThrow(
+      'All-in exceeds contestable chips'
+    );
+
+    table.applyAction(leader.id, { type: 'call' });
+    expect(hand.pendingNextPhaseAt).toBeTruthy();
+  });
+
   it('builds side pots correctly for staggered all-ins', () => {
     const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
     table.seatPlayer(0, { id: 'p0', name: 'Short', stack: 1000 });

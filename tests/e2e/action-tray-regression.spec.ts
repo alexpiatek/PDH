@@ -3,6 +3,8 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 type Viewport = { width: number; height: number };
 
 const scenarioUrl = (scenario: string) => `/__test__/poker-action-tray?scenario=${scenario}`;
+const e2eBaseURL =
+  process.env.E2E_BASE_URL ?? `http://127.0.0.1:${process.env.E2E_WEB_PORT ?? '3001'}`;
 
 async function openScenario(page: Page, scenario: string, viewport: Viewport) {
   await page.setViewportSize(viewport);
@@ -103,6 +105,10 @@ test.describe('poker action tray viewport regressions', () => {
     await expect(page.getByText(/Select 1 card to discard/)).toHaveCount(0);
     await expect(page.getByTestId('confirm-discard')).toBeVisible();
     await expect(page.getByTestId('confirm-discard')).toBeDisabled();
+    await expect(page.getByTestId('confirm-discard')).toHaveAttribute(
+      'data-discard-disabled-reason',
+      'no_selected_card'
+    );
 
     await page.waitForTimeout(1500);
     const firstCard = page.getByTestId('hero-hole-card-0');
@@ -111,10 +117,70 @@ test.describe('poker action tray viewport regressions', () => {
 
     const confirm = page.getByTestId('confirm-discard');
     await expect(confirm).toBeEnabled();
+    await expect(confirm).toHaveAttribute('data-discard-disabled-reason', 'none');
     await expect(tray.getByText('Choose one card to continue')).toHaveCount(0);
     await expect(confirm).toHaveText('Discard selected');
     await expectWithinViewport(page, confirm);
     await confirm.click({ trial: true });
+  });
+
+  test('all-in turn and river discard remain selectable across live updates', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      baseURL: e2eBaseURL,
+      hasTouch: true,
+      isMobile: true,
+    });
+    const page = await context.newPage();
+    await openScenario(page, 'all-in-discard-transition', { width: 390, height: 844 });
+    try {
+      await page.waitForTimeout(1500);
+
+      await page.getByTestId('hero-hole-card-0').tap();
+      await expect(page.getByTestId('confirm-discard')).toBeEnabled();
+      await page.getByTestId('confirm-discard').click();
+      await expect(page.getByTestId('confirm-discard')).toHaveAttribute(
+        'data-discard-disabled-reason',
+        'request_in_flight'
+      );
+
+      await page.getByTestId('debug-advance-turn-discard').click();
+      await expect(page.getByTestId('confirm-discard')).toHaveAttribute(
+        'data-discard-disabled-reason',
+        'no_selected_card'
+      );
+      await page.getByTestId('hero-hole-card-1').tap();
+      await expect(page.getByTestId('confirm-discard')).toBeEnabled();
+      await page.getByTestId('confirm-discard').click();
+
+      await page.getByTestId('debug-advance-river-discard').click();
+      await expect(page.getByTestId('confirm-discard')).toHaveAttribute(
+        'data-discard-disabled-reason',
+        'no_selected_card'
+      );
+      await page.getByTestId('hero-hole-card-2').tap();
+      await expect(page.getByTestId('confirm-discard')).toBeEnabled();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('discard selection survives unrelated table updates while the index remains valid', async ({
+    page,
+  }) => {
+    await openScenario(page, 'all-in-discard-transition', { width: 1280, height: 720 });
+    await page.waitForTimeout(1500);
+
+    await page.getByTestId('hero-hole-card-2').click();
+    await expect(page.getByTestId('confirm-discard')).toBeEnabled();
+
+    await page.getByTestId('debug-unrelated-discard-update').click();
+    await expect(page.getByTestId('hero-hole-card-2')).toHaveAttribute(
+      'data-discard-selected',
+      'true'
+    );
+    await expect(page.getByTestId('confirm-discard')).toBeEnabled();
   });
 
   test('showdown keeps result summary and server-owned between-hand state visible', async ({

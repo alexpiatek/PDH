@@ -96,6 +96,72 @@ describe('server legal actions', () => {
     });
   });
 
+  it('does not offer unmatched raises when all opponents are already all-in', () => {
+    const table = createThreePlayerTable([10000, 1000, 1000]);
+    const hand = table.state.hand!;
+    const leader = hand.players.find((player) => player.id === 'p0')!;
+    const opponents = hand.players.filter((player) => player.id !== leader.id);
+
+    hand.street = 'turn';
+    hand.phase = 'betting';
+    hand.currentBet = 0;
+    hand.minRaise = table.state.config.bigBlind;
+    hand.raisesThisStreet = 0;
+    hand.actionOnSeat = leader.seat;
+    hand.actionDeadline = 123_456;
+    hand.pendingNextPhaseAt = null;
+    leader.status = 'active';
+    leader.stack = 9000;
+    leader.betThisStreet = 0;
+    leader.hasActed = false;
+    for (const opponent of opponents) {
+      opponent.status = 'allIn';
+      opponent.stack = 0;
+      opponent.betThisStreet = 0;
+      opponent.hasActed = true;
+    }
+
+    expect(table.getLegalActionsForPlayer(leader.id)).toMatchObject({
+      phase: 'betting',
+      isActor: false,
+      reason: 'waiting_for_next_phase',
+    });
+  });
+
+  it('allows a call but not an extra all-in when no opponent can contest the raise', () => {
+    const table = createThreePlayerTable([10000, 1000, 1000]);
+    const hand = table.state.hand!;
+    const leader = hand.players.find((player) => player.id === 'p0')!;
+    const opponents = hand.players.filter((player) => player.id !== leader.id);
+
+    hand.street = 'turn';
+    hand.phase = 'betting';
+    hand.currentBet = 1000;
+    hand.minRaise = table.state.config.bigBlind;
+    hand.raisesThisStreet = 0;
+    hand.actionOnSeat = leader.seat;
+    hand.actionDeadline = 123_456;
+    hand.pendingNextPhaseAt = null;
+    leader.status = 'active';
+    leader.stack = 9000;
+    leader.betThisStreet = 0;
+    leader.hasActed = false;
+    for (const opponent of opponents) {
+      opponent.status = 'allIn';
+      opponent.stack = 0;
+      opponent.betThisStreet = 1000;
+      opponent.hasActed = true;
+    }
+
+    expect(table.getLegalActionsForPlayer(leader.id).betting).toMatchObject({
+      canCall: true,
+      callAmount: 1000,
+      canRaise: false,
+      canAllIn: false,
+      maxRaiseTo: 1000,
+    });
+  });
+
   it('returns no betting actions for a non-actor', () => {
     const table = createThreePlayerTable();
 
