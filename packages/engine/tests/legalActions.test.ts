@@ -121,6 +121,7 @@ describe('server legal actions', () => {
     bustedTable.state.seats[0]!.stack = 0;
     bustedTable.state.seats[0]!.status = 'busted';
     bustedTable.state.seats[0]!.sittingOut = true;
+    bustedTable.state.hand!.players.find((player) => player.id === 'p0')!.status = 'busted';
     expect(bustedTable.getLegalActionsForPlayer('p0')).toMatchObject({
       isActor: false,
       reason: 'busted',
@@ -129,6 +130,8 @@ describe('server legal actions', () => {
     const sittingOutTable = createThreePlayerTable();
     sittingOutTable.state.seats[0]!.status = 'sitting_out';
     sittingOutTable.state.seats[0]!.sittingOut = true;
+    sittingOutTable.state.hand!.players.find((player) => player.id === 'p0')!.status =
+      'sitting_out';
     expect(sittingOutTable.getLegalActionsForPlayer('p0')).toMatchObject({
       isActor: false,
       reason: 'sitting_out',
@@ -171,6 +174,55 @@ describe('server legal actions', () => {
       reason: 'not_your_turn',
     });
     expect(waiting.discard).toBeUndefined();
+  });
+
+  it('allows an all-in zero-stack player to discard even if seat state is stale busted', () => {
+    const table = createThreePlayerTable();
+    const hand = table.state.hand!;
+    const player = hand.players.find((candidate) => candidate.id === 'p0')!;
+    const seat = table.state.seats[player.seat]!;
+
+    hand.phase = 'discard';
+    hand.actionOnSeat = -1;
+    hand.actionDeadline = null;
+    hand.discardPending = ['p0'];
+    hand.discardDeadline = 123_456;
+    player.status = 'allIn';
+    player.stack = 0;
+    player.holeCards = player.holeCards.slice(0, 3);
+    seat.stack = 0;
+    seat.status = 'busted';
+    seat.sittingOut = true;
+
+    expect(table.getLegalActionsForPlayer('p0')).toEqual({
+      phase: 'discard',
+      isActor: true,
+      discard: {
+        required: true,
+        count: 1,
+        validIndexes: [0, 1, 2],
+        deadlineMs: 123_456,
+      },
+    });
+  });
+
+  it('does not mark an in-hand zero-stack player busted when they sit back in mid-hand', () => {
+    const table = createThreePlayerTable();
+    const hand = table.state.hand!;
+    const player = hand.players.find((candidate) => candidate.id === 'p0')!;
+    const seat = table.state.seats[player.seat]!;
+
+    player.status = 'allIn';
+    player.stack = 0;
+    seat.stack = 0;
+    seat.status = 'sitting_out';
+    seat.sittingOut = true;
+
+    table.setSittingOut('p0', false);
+
+    expect(seat.status).toBe('active');
+    expect(seat.sittingOut).toBe(false);
+    expect(player.status).toBe('allIn');
   });
 
   it('returns no betting actions during showdown, between-hand, and waiting states', () => {

@@ -7,6 +7,7 @@ type Scenario =
   | 'betting-call'
   | 'betting-check-allin'
   | 'discard'
+  | 'all-in-discard-stale-seat'
   | 'showdown'
   | 'showdown-long'
   | 'long-names'
@@ -34,6 +35,7 @@ const scenarios = new Set<Scenario>([
   'betting-call',
   'betting-check-allin',
   'discard',
+  'all-in-discard-stale-seat',
   'showdown',
   'showdown-long',
   'long-names',
@@ -283,6 +285,97 @@ const discardState = (now: number): PublicState =>
         required: true,
         count: 1,
         validIndexes: [0, 1, 2, 3, 4],
+        deadlineMs: now + 25000,
+      },
+    },
+  });
+
+const allInDiscardStaleSeatState = (now: number): PublicState =>
+  baseState('all-in-discard-stale-seat', now, {
+    id: 'LIVE0',
+    seats: [
+      {
+        seat: 0,
+        id: HERO_ID,
+        name: 'Alex',
+        stack: 0,
+        status: 'busted',
+        sittingOut: true,
+        buyInTotal: 10000,
+        rebuyCount: 0,
+        connectionStatus: 'connected',
+      },
+      {
+        seat: 1,
+        id: VILLAIN_ID,
+        name: 'Sam',
+        stack: 9200,
+        status: 'active',
+        sittingOut: false,
+        buyInTotal: 10000,
+        rebuyCount: 0,
+        connectionStatus: 'connected',
+      },
+    ],
+    hand: {
+      handId: 'hand-all-in-discard',
+      buttonSeat: 1,
+      street: 'river',
+      phase: 'discard',
+      board: [card('2', 'S'), card('7', 'D'), card('T', 'H'), card('4', 'C'), card('9', 'S')],
+      deck: [],
+      players: [
+        {
+          seat: 0,
+          id: HERO_ID,
+          name: 'Alex',
+          stack: 0,
+          status: 'allIn',
+          holeCards: [card('A', 'S'), card('K', 'D'), card('Q', 'H')],
+          betThisStreet: 0,
+          totalCommitted: 10000,
+          hasActed: true,
+        },
+        {
+          seat: 1,
+          id: VILLAIN_ID,
+          name: 'Sam',
+          stack: 9200,
+          status: 'allIn',
+          holeCards: hiddenCards.slice(0, 3),
+          betThisStreet: 0,
+          totalCommitted: 10000,
+          hasActed: true,
+        },
+      ],
+      pots: [],
+      currentBet: 0,
+      minRaise: 800,
+      raisesThisStreet: 0,
+      actionOnSeat: -1,
+      actionDeadline: null,
+      lastAggressorSeat: null,
+      pendingNextPhaseAt: null,
+      discardPending: [HERO_ID],
+      discardDeadline: now + 25000,
+      showdownWinners: [],
+      showdownPots: [],
+      log: [
+        { message: 'Sam all-in to 10000', ts: now - 9000 },
+        { message: 'Discard phase started on river', ts: now - 3000 },
+      ],
+    },
+    log: [
+      { message: 'Sam all-in to 10000', ts: now - 9000 },
+      { message: 'Discard phase started on river', ts: now - 3000 },
+    ],
+    legalActions: {
+      phase: 'discard',
+      isActor: true,
+      discard: {
+        required: true,
+        count: 1,
+        validIndexes: [0, 1, 2],
         deadlineMs: now + 25000,
       },
     },
@@ -673,6 +766,8 @@ const buildState = (scenario: Scenario, now: number): PublicState | null => {
       return bettingCheckAllInState(now);
     case 'discard':
       return discardState(now);
+    case 'all-in-discard-stale-seat':
+      return allInDiscardStaleSeatState(now);
     case 'showdown-long':
       return showdownLongState(now);
     case 'showdown':
@@ -705,6 +800,7 @@ export const getServerSideProps: GetServerSideProps<TestPageProps> = async ({ qu
     ? (rawScenario as Scenario)
     : 'betting-call';
   const rawTableId = Array.isArray(query.tableId) ? query.tableId[0] : query.tableId;
+  const rawStatus = Array.isArray(query.status) ? query.status[0] : query.status;
   const state = buildState(scenario, Date.now());
   if (state && typeof rawTableId === 'string') {
     state.id = rawTableId;
@@ -716,7 +812,11 @@ export const getServerSideProps: GetServerSideProps<TestPageProps> = async ({ qu
       state,
       playerId: scenario === 'join-fallback' || scenario === 'joining-known-name' ? null : HERO_ID,
       debugStatus:
-        scenario === 'joining-known-name' ? 'Connecting to Nakama...' : 'Connected (test snapshot)',
+        typeof rawStatus === 'string'
+          ? rawStatus
+          : scenario === 'joining-known-name'
+            ? 'Connecting to Nakama...'
+            : 'Connected (test snapshot)',
     },
   };
 };

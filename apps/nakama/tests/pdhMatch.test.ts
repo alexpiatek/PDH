@@ -828,6 +828,63 @@ describe('pdhMatchHandler', () => {
     expect(state.stateVersion).toBeGreaterThan(graceVersion);
   });
 
+  it('keeps a reconnecting all-in zero-stack player discard-eligible during a live hand', () => {
+    const { nk, dispatcher, state, presenceById, broadcastMessage } = setupThreePlayerMatch();
+    const hand = state.table.hand;
+    const player = hand.players.find((p: any) => p.id === 'u1');
+    const otherPending = hand.players.find((p: any) => p.id !== player.id);
+    const seat = state.table.seats[player.seat];
+
+    hand.street = 'river';
+    hand.phase = 'discard';
+    hand.board = [
+      { rank: '2', suit: 'S' },
+      { rank: '7', suit: 'D' },
+      { rank: 'T', suit: 'H' },
+      { rank: '4', suit: 'C' },
+      { rank: '9', suit: 'S' },
+    ];
+    hand.actionOnSeat = -1;
+    hand.actionDeadline = null;
+    hand.discardPending = [player.id, otherPending.id];
+    hand.discardDeadline = Date.now() + 40_000;
+    player.status = 'allIn';
+    player.stack = 0;
+    player.holeCards = player.holeCards.slice(0, 3);
+    seat.stack = 0;
+    seat.status = 'busted';
+    seat.sittingOut = true;
+
+    broadcastMessage.mockClear();
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 5, state, [
+      {
+        opCode: 1,
+        sender: presenceById.get(player.id),
+        data: encode({ type: 'reconnect', playerId: player.id }),
+      },
+    ]);
+
+    expect(state.table.seats[player.seat]).toMatchObject({
+      stack: 0,
+      status: 'active',
+      sittingOut: false,
+    });
+    expect(state.table.hand.players.find((p: any) => p.id === player.id).status).toBe('allIn');
+
+    broadcastMessage.mockClear();
+    pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 6, state, [
+      {
+        opCode: 1,
+        sender: presenceById.get(player.id),
+        data: encode({ type: 'discard', index: 0, seq: 1 }),
+      },
+    ]);
+
+    expect(errorMessagesFrom(broadcastMessage)).toEqual([]);
+    expect(state.table.hand.discardPending).not.toContain(player.id);
+    expect(state.table.hand.players.find((p: any) => p.id === player.id).holeCards).toHaveLength(2);
+  });
+
   it('expires reconnect grace with deterministic auto-action and sit-out policy', () => {
     const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
     const actor = state.table.hand.players.find(

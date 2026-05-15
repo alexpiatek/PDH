@@ -2062,9 +2062,12 @@ export const PokerGamePage = ({
         ? 'sitting_out'
         : 'active';
   const localPlayerName = you?.name ?? localSeat?.name ?? name;
+  const handAllowsPostHandControls =
+    !hand || hand.phase === 'showdown' || hand.phase === 'complete';
   const localNeedsRebuy = Boolean(
     seated &&
     localSeat &&
+    handAllowsPostHandControls &&
     localSeatStack <= 0 &&
     (localSeatStatus === 'busted' ||
       localSeatStatus === 'sitting_out' ||
@@ -2339,6 +2342,7 @@ export const PokerGamePage = ({
       : Math.max(1, Math.ceil((state?.config?.actionTimeoutMs ?? 30_000) / 1000));
   const isBettingPhase = hand?.phase === 'betting';
   const isDiscardPhase = hand?.phase === 'discard';
+  const isActiveHandPhase = isBettingPhase || isDiscardPhase;
   const isRevealPhase = hand?.phase === 'showdown';
   const tableLabel = useMemo(() => {
     const sourceId = typeof state?.id === 'string' && state.id.trim() ? state.id.trim() : '';
@@ -3242,11 +3246,13 @@ export const PokerGamePage = ({
     animation: 'ellipsis-blink 1.2s infinite',
     animationDelay: `${delayMs}ms`,
   });
+  const showDiscardWaitingTray = Boolean(you && isDiscardPhase && !discardPending);
   const hasBottomActionTray = Boolean(
     localNeedsRebuy ||
     (!USE_NAKAMA_BACKEND && localReadyBetweenHands) ||
     canReadyForNextHand ||
-    (you && ((isBettingPhase && isMyTurn) || isDiscardPhase || isRevealPhase))
+    (you &&
+      ((isBettingPhase && isMyTurn) || discardPending || showDiscardWaitingTray || isRevealPhase))
   );
   const centeredSectionMinHeight = isMobile ? 'calc(100dvh - 160px)' : 'calc(100vh - 220px)';
   const heroInfoBottomOffset = isPhone
@@ -3976,6 +3982,14 @@ export const PokerGamePage = ({
     </>
   );
   const statusDisplay = friendlyStatus(status);
+  const isQueuedNextHandStatus = /^(rebuy queued|sit out queued)\.?$/i.test(status.trim());
+  const tableNoticeDisplay =
+    seated &&
+    statusDisplay &&
+    !status.startsWith('Connected') &&
+    !(isActiveHandPhase && isQueuedNextHandStatus)
+      ? statusDisplay
+      : null;
   const normalizedEntryName = normalizePlayerName(name);
   const shouldShowTableEntryForm = !seated && nameHydrated && !normalizedEntryName;
   const tableEntryStatusCopy = status.startsWith('Connected')
@@ -4202,7 +4216,7 @@ export const PokerGamePage = ({
       {showRulesOverlay ? (
         <RulesOverlay isPhone={isPhone} onClose={() => setShowRulesOverlay(false)} />
       ) : null}
-      {seated && statusDisplay && !status.startsWith('Connected') ? (
+      {tableNoticeDisplay ? (
         <div
           role="status"
           data-testid="table-notice"
@@ -4225,9 +4239,9 @@ export const PokerGamePage = ({
             fontFamily: TABLE_THEME.fontSans,
           }}
         >
-          <div style={{ fontSize: 12, fontWeight: 900 }}>{statusDisplay.title}</div>
+          <div style={{ fontSize: 12, fontWeight: 900 }}>{tableNoticeDisplay.title}</div>
           <div style={{ marginTop: 3, fontSize: 12, color: TABLE_THEME.muted }}>
-            {statusDisplay.detail}
+            {tableNoticeDisplay.detail}
           </div>
         </div>
       ) : null}
@@ -5318,7 +5332,7 @@ export const PokerGamePage = ({
               }}
             >
               {rebuyTray}
-              {isDiscardPhase ? (
+              {discardPending ? (
                 <div
                   style={{
                     borderRadius: 8,
@@ -5380,6 +5394,26 @@ export const PokerGamePage = ({
                       Discard selected
                     </button>
                   </div>
+                </div>
+              ) : showDiscardWaitingTray ? (
+                <div
+                  style={{
+                    borderRadius: 8,
+                    border: `1px solid ${TABLE_THEME.border}`,
+                    background: TABLE_THEME.panelStrong,
+                    padding: isPhone ? '10px 12px' : '12px 14px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 10,
+                    color: TABLE_THEME.muted,
+                    fontSize: isPhone ? 12 : 13,
+                  }}
+                >
+                  <span>Waiting for discards</span>
+                  <span style={{ color: timerTone }}>
+                    {tableTimerSeconds !== null ? `${tableTimerSeconds}s` : '--'}
+                  </span>
                 </div>
               ) : null}
               {isBettingPhase ? (

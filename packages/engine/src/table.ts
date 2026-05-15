@@ -185,25 +185,36 @@ export function computeLegalActionsForPlayer(
     return emptyLegalActions(phase, 'disconnected');
   }
 
-  const seatReason = inactiveSeatReason(seat);
-  if (seatReason) {
-    return emptyLegalActions(phase, seatReason);
-  }
-
   if (!hand || hand.phase === 'complete') {
+    const seatReason = inactiveSeatReason(seat);
+    if (seatReason) {
+      return emptyLegalActions(phase, seatReason);
+    }
     return emptyLegalActions(phase, 'waiting_for_players');
   }
 
   if (context.betweenHand) {
+    const seatReason = inactiveSeatReason(seat);
+    if (seatReason) {
+      return emptyLegalActions('between_hands', seatReason);
+    }
     return emptyLegalActions('between_hands', 'between_hands');
   }
 
   if (hand.phase === 'showdown') {
+    const seatReason = inactiveSeatReason(seat);
+    if (seatReason) {
+      return emptyLegalActions('showdown', seatReason);
+    }
     return emptyLegalActions('showdown', 'showdown');
   }
 
   const player = hand.players.find((candidate) => candidate.id === playerId);
   if (!player) {
+    const seatReason = inactiveSeatReason(seat);
+    if (seatReason) {
+      return emptyLegalActions(phase, seatReason);
+    }
     return emptyLegalActions(phase, 'not_your_turn');
   }
 
@@ -213,7 +224,7 @@ export function computeLegalActionsForPlayer(
       return emptyLegalActions('discard', inactiveReason);
     }
 
-    if (!hand.discardPending.includes(player.id)) {
+    if (!hand.discardPending.includes(player.id) || player.holeCards.length <= 2) {
       return emptyLegalActions('discard', 'not_your_turn');
     }
 
@@ -368,6 +379,15 @@ export class PokerTable {
     if (sittingOut) {
       seat.sittingOut = true;
       seat.status = seat.stack > 0 ? 'sitting_out' : 'busted';
+      return;
+    }
+    const liveHandPlayer =
+      this.state.hand?.phase !== 'showdown'
+        ? this.state.hand?.players.find((player) => player.id === playerId)
+        : null;
+    if (liveHandPlayer) {
+      seat.sittingOut = false;
+      seat.status = 'active';
       return;
     }
     if (seat.stack <= 0) {

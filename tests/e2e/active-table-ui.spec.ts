@@ -224,6 +224,32 @@ test.describe('active table layout safety', () => {
     await expect(tray.getByText(/0\/1/)).toHaveCount(0);
   });
 
+  test('all-in discard does not show rebuy or queued sit-out as active-hand UI', async ({
+    page,
+  }) => {
+    await openScenario(
+      page,
+      'all-in-discard-stale-seat',
+      { width: 390, height: 844 },
+      {
+        status: 'Sit out queued.',
+      }
+    );
+
+    const tray = page.getByTestId('action-tray');
+    await expect(tray.getByText('Discard 1 card')).toBeVisible();
+    await expect(page.getByTestId('confirm-discard')).toBeDisabled();
+    await expect(page.getByTestId('rebuy-status')).toHaveCount(0);
+    await expect(page.getByTestId('rebuy-next-hand')).toHaveCount(0);
+    await expect(page.getByTestId('sit-out-next-hand')).toHaveCount(0);
+    await expect(page.getByTestId('table-notice')).toHaveCount(0);
+
+    await page.getByTestId('hero-hole-card-0').click();
+    await expect(page.getByTestId('confirm-discard')).toBeEnabled();
+    await expect(page.getByTestId('confirm-discard')).toBeVisible();
+    await expect(page.getByTestId('rebuy-status')).toHaveCount(0);
+  });
+
   test('last-action ticker uses one stable safe lane', async ({
     page,
   }) => {
@@ -245,24 +271,22 @@ test.describe('active table layout safety', () => {
     await expect(page.getByTestId('latest-action-ticker')).toHaveCount(0);
   });
 
-  test('queued rebuy and sit-out intent can be changed and persists until it can apply', async ({
-    page,
-  }) => {
+  test('rebuy and sit-out controls wait until the hand is resolved', async ({ page }) => {
     await openScenario(page, 'out-of-chips-active', { width: 390, height: 844 });
 
+    await expect(page.getByTestId('rebuy-status')).toHaveCount(0);
+    await expect(page.getByTestId('rebuy-next-hand')).toHaveCount(0);
+    await expect(page.getByTestId('sit-out-next-hand')).toHaveCount(0);
+    await expect(page.getByTestId('table-notice')).toHaveCount(0);
+
+    await openScenario(page, 'out-of-chips-between', { width: 390, height: 844 });
     await expect(page.getByTestId('rebuy-status')).toHaveText("You're out of chips");
     await expect(page.getByText('Choose what happens next hand.')).toBeVisible();
-    await page.getByTestId('rebuy-next-hand').click();
-    await expect(page.getByTestId('rebuy-status')).toHaveText('Rebuy queued');
-    await expect(page.getByTestId('rebuy-next-hand')).toHaveText('Rebuy queued');
-    await expect(page.getByTestId('table-notice')).toContainText('Rebuy queued.');
+    await expect(page.getByTestId('rebuy-next-hand')).toBeVisible();
+    await expect(page.getByTestId('sit-out-next-hand')).toBeVisible();
     await expect(page.getByText('Rebuy is only available between hands')).toHaveCount(0);
 
     await page.getByTestId('sit-out-next-hand').click();
-    await expect(page.getByTestId('rebuy-status')).toHaveText('Sit out queued');
-    await expect(page.getByTestId('sit-out-next-hand')).toHaveText('Sit out queued');
-
-    await openScenario(page, 'out-of-chips-between', { width: 390, height: 844 });
     await expect(page.getByTestId('rebuy-status')).toHaveText('Applying queued sit out');
     await expect(page.getByText('Applying queued sit out...')).toBeVisible();
   });
