@@ -1,7 +1,14 @@
+x-json-log-limits: &json-log-limits
+  driver: json-file
+  options:
+    max-size: ${DOCKER_LOG_MAX_SIZE:-10m}
+    max-file: ${DOCKER_LOG_MAX_FILE:-5}
+
 services:
   postgres:
     image: postgres:${POSTGRES_VERSION:-15}
     restart: unless-stopped
+    logging: *json-log-limits
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-nakama}
       POSTGRES_USER: ${POSTGRES_USER:-nakama}
@@ -19,6 +26,7 @@ services:
   nakama-migrate:
     image: heroiclabs/nakama:${NAKAMA_VERSION:-3.17.0}
     restart: 'no'
+    logging: *json-log-limits
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,6 +41,7 @@ services:
   nakama:
     image: heroiclabs/nakama:${NAKAMA_VERSION:-3.17.0}
     restart: unless-stopped
+    logging: *json-log-limits
     depends_on:
       postgres:
         condition: service_healthy
