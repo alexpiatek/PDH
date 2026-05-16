@@ -16,7 +16,11 @@ import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../l
 import { getPlayerInitials } from '../lib/playerInitials';
 import { resolveBettingActionControls } from '../lib/actionControls';
 import { discardConfirmDisabledReason, discardObligationKey } from '../lib/discardControls';
-import { nextAppliedStateVersion, shouldApplyStateSnapshot } from '../lib/stateVersion';
+import {
+  nextAppliedStateVersion,
+  shouldApplyStateSnapshot,
+  type StateSnapshotVersionCursor,
+} from '../lib/stateVersion';
 import {
   canSubmitNextHandIntentNow,
   clearStoredNextHandIntent,
@@ -1434,7 +1438,10 @@ export const PokerGamePage = ({
   const holeDealTimerRef = useRef<number | null>(null);
   const joinTimeoutRef = useRef<number | null>(null);
   const copyFeedbackTimerRef = useRef<number | null>(null);
-  const latestAppliedStateVersionRef = useRef<number | null>(null);
+  const latestAppliedStateVersionRef = useRef<StateSnapshotVersionCursor>({
+    tableId: null,
+    stateVersion: null,
+  });
   const serverTimeOffsetMsRef = useRef(0);
   const tableRef = useRef<HTMLDivElement | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(resolvedDebugPlayerId);
@@ -1616,16 +1623,22 @@ export const PokerGamePage = ({
   };
 
   useEffect(() => {
+    latestAppliedStateVersionRef.current = { tableId: null, stateVersion: null };
+    serverTimeOffsetMsRef.current = 0;
+    pendingMessagesRef.current = [];
+
     if (debugMode) {
       connectionRef.current = null;
       legacySocketRef.current = null;
-      pendingMessagesRef.current = [];
       setPlayerId(resolvedDebugPlayerId);
       setState(debugInitialState);
       setStatus(debugStatus);
       setHasReceivedState(Boolean(debugInitialState));
       return;
     }
+
+    setState(null);
+    setHasReceivedState(false);
 
     const existing =
       typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.playerId) : null;
@@ -1924,8 +1937,9 @@ export const PokerGamePage = ({
 
       setStatus('Connected (nakama)');
       flushPendingMessages();
-      if (existing) {
-        connectionRef.current.send({ type: 'reconnect', playerId: existing });
+      const reconnectPlayerId = sessionUserId ?? existing;
+      if (reconnectPlayerId) {
+        connectionRef.current.send({ type: 'reconnect', playerId: reconnectPlayerId });
       } else {
         connectionRef.current.send({ type: 'requestState' });
       }
