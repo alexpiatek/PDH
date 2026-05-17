@@ -4,6 +4,7 @@ import {
   clearStoredNextHandIntent,
   nextHandIntentStorageKey,
   readStoredNextHandIntent,
+  shouldClearQueuedNextHandIntent,
   writeStoredNextHandIntent,
 } from '../lib/nextHandIntent';
 
@@ -79,6 +80,50 @@ describe('next hand intent submission window', () => {
     ).toBe(true);
     expect(
       canSubmitNextHandIntentNow({ betweenHandActive: false, hasHand: false, handPhase: null })
+    ).toBe(true);
+  });
+});
+
+describe('next hand intent resolution', () => {
+  const baseResolution = {
+    handAllowsPostHandControls: true,
+    hasLocalSeat: true,
+    localNeedsRebuy: true,
+    localSeatStack: 0,
+    localSeatStatus: 'busted',
+    queuedIntentApplying: null,
+    queuedNextHandIntent: 'rebuy' as const,
+    seated: true,
+  };
+
+  it('does not clear a queued rebuy while an active hand snapshot hides the rebuy prompt', () => {
+    expect(
+      shouldClearQueuedNextHandIntent({
+        ...baseResolution,
+        handAllowsPostHandControls: false,
+        localNeedsRebuy: false,
+      })
+    ).toBe(false);
+  });
+
+  it('clears queued intents once post-hand state confirms the player no longer needs a choice', () => {
+    expect(
+      shouldClearQueuedNextHandIntent({
+        ...baseResolution,
+        localNeedsRebuy: false,
+        localSeatStack: 10000,
+      })
+    ).toBe(true);
+  });
+
+  it('clears queued sit out after the submitted sit-out intent is reflected by the seat', () => {
+    expect(
+      shouldClearQueuedNextHandIntent({
+        ...baseResolution,
+        localSeatStatus: 'sitting_out',
+        queuedIntentApplying: 'sitOut',
+        queuedNextHandIntent: 'sitOut',
+      })
     ).toBe(true);
   });
 });
