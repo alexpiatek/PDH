@@ -19,7 +19,10 @@ export type QueuedNextHandIntentResolution = {
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
-export const nextHandIntentStorageKey = (tableId: string | null | undefined, playerId: string | null | undefined) => {
+export const nextHandIntentStorageKey = (
+  tableId: string | null | undefined,
+  playerId: string | null | undefined
+) => {
   const normalizedTableId = tableId?.trim();
   const normalizedPlayerId = playerId?.trim();
   if (!normalizedTableId || !normalizedPlayerId) {
