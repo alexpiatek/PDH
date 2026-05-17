@@ -21,6 +21,7 @@ import {
   canSubmitNextHandIntentNow,
   clearStoredNextHandIntent,
   readStoredNextHandIntent,
+  shouldClearQueuedNextHandIntent,
   writeStoredNextHandIntent,
   type NextHandIntent,
 } from '../lib/nextHandIntent';
@@ -2581,15 +2582,18 @@ export const PokerGamePage = ({
       return;
     }
 
-    const rebuyApplied =
-      queuedNextHandIntent === 'rebuy' && seated && !localNeedsRebuy && localSeatStack > 0;
-    const sitOutApplied =
-      queuedNextHandIntent === 'sitOut' &&
-      queuedIntentApplying === 'sitOut' &&
-      localSeatStatus === 'sitting_out';
-    const noLongerNeedsChoice = seated && localSeat && !localNeedsRebuy;
-
-    if (!rebuyApplied && !sitOutApplied && !noLongerNeedsChoice) {
+    if (
+      !shouldClearQueuedNextHandIntent({
+        handAllowsPostHandControls,
+        hasLocalSeat: Boolean(localSeat),
+        localNeedsRebuy,
+        localSeatStack,
+        localSeatStatus,
+        queuedIntentApplying,
+        queuedNextHandIntent,
+        seated,
+      })
+    ) {
       return;
     }
 
@@ -2597,6 +2601,7 @@ export const PokerGamePage = ({
     setQueuedIntentApplying(null);
     setQueuedIntentError(null);
   }, [
+    handAllowsPostHandControls,
     localNeedsRebuy,
     localSeat,
     localSeatStack,
