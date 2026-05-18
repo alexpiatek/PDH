@@ -251,8 +251,9 @@ describe('PDH flow contract', () => {
   });
 
   it('does not fold or settle twice when a disconnect completes river discard', () => {
-    const table = createTableWithPlayers(2, 10000, 0x5dccaa12);
-    const totalChips = table.state.seats.reduce((sum, seat) => sum + (seat?.stack ?? 0), 0);
+    const startingStack = 10000;
+    const table = createTableWithPlayers(2, startingStack, 0x5dccaa12);
+    const totalChips = startingStack * 2;
 
     settleBettingStreetWithCalls(table);
     settleBettingStreetWithCalls(table);
