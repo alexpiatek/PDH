@@ -21,6 +21,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Disconnecting during a discard phase no longer folds the player after auto-discarding or risks settling the same hand twice.
 - Root lint and changelog checks now run from Windows-friendly Node entrypoints.
 
 ### Security
