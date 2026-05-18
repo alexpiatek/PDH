@@ -255,6 +255,7 @@ describe('PDH flow contract', () => {
     const totalChips = table.state.seats.reduce((sum, seat) => sum + (seat?.stack ?? 0), 0);
 
     settleBettingStreetWithCalls(table);
+    settleBettingStreetWithCalls(table);
     discardAllPending(table);
     settleBettingStreetWithCalls(table);
     discardAllPending(table);
