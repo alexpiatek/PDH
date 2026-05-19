@@ -2598,7 +2598,6 @@ export const PokerGamePage = ({
     setQueuedIntentError(null);
   }, [
     localNeedsRebuy,
-    localSeat,
     localSeatStack,
     localSeatStatus,
     queuedIntentApplying,

@@ -4,6 +4,7 @@ import {
   clearStoredNextHandIntent,
   nextHandIntentStorageKey,
   readStoredNextHandIntent,
+  shouldClearNextHandIntent,
   writeStoredNextHandIntent,
 } from '../lib/nextHandIntent';
 
@@ -79,6 +80,47 @@ describe('next hand intent submission window', () => {
     ).toBe(true);
     expect(
       canSubmitNextHandIntentNow({ betweenHandActive: false, hasHand: false, handPhase: null })
+    ).toBe(true);
+  });
+});
+
+describe('next hand intent completion', () => {
+  it('keeps a queued rebuy when an active hand hides rebuy controls before stack changes', () => {
+    expect(
+      shouldClearNextHandIntent({
+        applying: 'rebuy',
+        intent: 'rebuy',
+        needsRebuy: false,
+        seatStack: 0,
+        seatStatus: 'busted',
+        seated: true,
+      })
+    ).toBe(false);
+  });
+
+  it('clears a queued rebuy only after the stack is restored', () => {
+    expect(
+      shouldClearNextHandIntent({
+        applying: 'rebuy',
+        intent: 'rebuy',
+        needsRebuy: false,
+        seatStack: 10000,
+        seatStatus: 'active',
+        seated: true,
+      })
+    ).toBe(true);
+  });
+
+  it('clears a queued sit-out after the seat is confirmed sitting out', () => {
+    expect(
+      shouldClearNextHandIntent({
+        applying: 'sitOut',
+        intent: 'sitOut',
+        needsRebuy: true,
+        seatStack: 0,
+        seatStatus: 'sitting_out',
+        seated: true,
+      })
     ).toBe(true);
   });
 });
