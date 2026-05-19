@@ -57,7 +57,9 @@ describe('next hand intent persistence', () => {
     };
 
     expect(readStoredNextHandIntent(throwingStorage, 'table-1', 'player-1')).toBeNull();
-    expect(() => writeStoredNextHandIntent(throwingStorage, 'table-1', 'player-1', 'rebuy')).not.toThrow();
+    expect(() =>
+      writeStoredNextHandIntent(throwingStorage, 'table-1', 'player-1', 'rebuy')
+    ).not.toThrow();
     expect(() => clearStoredNextHandIntent(throwingStorage, 'table-1', 'player-1')).not.toThrow();
   });
 });
