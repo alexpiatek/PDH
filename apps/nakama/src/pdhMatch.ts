@@ -1748,6 +1748,31 @@ function applyExpiredReconnectGrace(
   return { shouldBroadcast, checkpointReasons };
 }
 
+function playerHasActiveReconnectGrace(state: MatchState, playerId: string, now: number) {
+  const connection = state.playerConnections[playerId];
+  return Boolean(
+    connection?.status === 'reconnecting' &&
+      connection.graceDeadlineMs !== null &&
+      now < connection.graceDeadlineMs &&
+      !hasActivePresenceForUser(state, playerId)
+  );
+}
+
+function autoActionBlockedByReconnectGrace(state: MatchState, table: PokerTable, now: number) {
+  const hand = table.state.hand;
+  if (!hand || hand.phase !== 'betting') return false;
+  const actor = hand.players.find((p) => p.seat === hand.actionOnSeat && p.status === 'active');
+  return actor ? playerHasActiveReconnectGrace(state, actor.id, now) : false;
+}
+
+function autoDiscardBlockedByReconnectGrace(state: MatchState, table: PokerTable, now: number) {
+  const hand = table.state.hand;
+  if (!hand || hand.phase !== 'discard' || hand.discardDeadline === null) return false;
+  return hand.discardPending.some((playerId) =>
+    playerHasActiveReconnectGrace(state, playerId, now)
+  );
+}
+
 function applyExpiredTableTimers(
   logger: nkruntime.Logger,
   state: MatchState,
@@ -1802,42 +1827,46 @@ function applyExpiredTableTimers(
     checkpointReasons.push('presence_left');
   }
 
-  const beforeAutoAction = handSnapshot(table);
-  const autoActionMutation = commitTableMutation(state, table, () => table.autoAction(now));
-  if (autoActionMutation.result) {
-    const hand = table.state.hand;
-    logStructured(logger, 'info', 'match.auto_action', {
-      matchId: state.matchId,
-      tableId: table.state.id,
-      tick,
-      handId: hand?.handId ?? null,
-      action: autoActionMutation.result.action,
-      userId: autoActionMutation.result.playerId,
-      stateVersion: state.stateVersion,
-    });
-    shouldBroadcast = true;
-    checkpointReasons.push(
-      ...checkpointReasonsForTransition('auto_action', beforeAutoAction, table, state)
-    );
-  } else if (autoActionMutation.changed) {
-    shouldBroadcast = true;
+  if (!autoActionBlockedByReconnectGrace(state, table, now)) {
+    const beforeAutoAction = handSnapshot(table);
+    const autoActionMutation = commitTableMutation(state, table, () => table.autoAction(now));
+    if (autoActionMutation.result) {
+      const hand = table.state.hand;
+      logStructured(logger, 'info', 'match.auto_action', {
+        matchId: state.matchId,
+        tableId: table.state.id,
+        tick,
+        handId: hand?.handId ?? null,
+        action: autoActionMutation.result.action,
+        userId: autoActionMutation.result.playerId,
+        stateVersion: state.stateVersion,
+      });
+      shouldBroadcast = true;
+      checkpointReasons.push(
+        ...checkpointReasonsForTransition('auto_action', beforeAutoAction, table, state)
+      );
+    } else if (autoActionMutation.changed) {
+      shouldBroadcast = true;
+    }
   }
 
-  const beforeAutoDiscard = handSnapshot(table);
-  const autoDiscardMutation = commitTableMutation(state, table, () => table.autoDiscard(now));
-  if (autoDiscardMutation.changed) {
-    const hand = table.state.hand;
-    logStructured(logger, 'info', 'match.auto_discard', {
-      matchId: state.matchId,
-      tableId: table.state.id,
-      tick,
-      handId: hand?.handId ?? null,
-      stateVersion: state.stateVersion,
-    });
-    shouldBroadcast = true;
-    checkpointReasons.push(
-      ...checkpointReasonsForTransition('auto_discard', beforeAutoDiscard, table, state)
-    );
+  if (!autoDiscardBlockedByReconnectGrace(state, table, now)) {
+    const beforeAutoDiscard = handSnapshot(table);
+    const autoDiscardMutation = commitTableMutation(state, table, () => table.autoDiscard(now));
+    if (autoDiscardMutation.changed) {
+      const hand = table.state.hand;
+      logStructured(logger, 'info', 'match.auto_discard', {
+        matchId: state.matchId,
+        tableId: table.state.id,
+        tick,
+        handId: hand?.handId ?? null,
+        stateVersion: state.stateVersion,
+      });
+      shouldBroadcast = true;
+      checkpointReasons.push(
+        ...checkpointReasonsForTransition('auto_discard', beforeAutoDiscard, table, state)
+      );
+    }
   }
 
   const beforeBetweenHand = state.betweenHand ? cloneJson(state.betweenHand) : null;

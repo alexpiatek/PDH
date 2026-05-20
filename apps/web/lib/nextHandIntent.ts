@@ -6,6 +6,15 @@ export type NextHandIntentSubmissionWindow = {
   hasHand: boolean;
 };
 
+export type NextHandIntentClearState = {
+  intent: NextHandIntent | null;
+  queuedIntentApplying: NextHandIntent | null;
+  seated: boolean;
+  localNeedsRebuy: boolean;
+  localSeatStack: number;
+  localSeatStatus: string | null | undefined;
+};
+
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 export const nextHandIntentStorageKey = (tableId: string | null | undefined, playerId: string | null | undefined) => {
@@ -75,3 +84,18 @@ export const canSubmitNextHandIntentNow = ({
   handPhase,
   hasHand,
 }: NextHandIntentSubmissionWindow) => betweenHandActive || !hasHand || handPhase === 'showdown';
+
+export const shouldClearNextHandIntent = ({
+  intent,
+  queuedIntentApplying,
+  seated,
+  localNeedsRebuy,
+  localSeatStack,
+  localSeatStatus,
+}: NextHandIntentClearState) => {
+  if (!intent) return false;
+  if (intent === 'rebuy') {
+    return seated && !localNeedsRebuy && localSeatStack > 0;
+  }
+  return queuedIntentApplying === 'sitOut' && localSeatStatus === 'sitting_out';
+};

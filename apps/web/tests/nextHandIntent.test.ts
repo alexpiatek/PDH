@@ -4,6 +4,7 @@ import {
   clearStoredNextHandIntent,
   nextHandIntentStorageKey,
   readStoredNextHandIntent,
+  shouldClearNextHandIntent,
   writeStoredNextHandIntent,
 } from '../lib/nextHandIntent';
 
@@ -79,6 +80,45 @@ describe('next hand intent submission window', () => {
     ).toBe(true);
     expect(
       canSubmitNextHandIntentNow({ betweenHandActive: false, hasHand: false, handPhase: null })
+    ).toBe(true);
+  });
+});
+
+describe('next hand intent clearing', () => {
+  it('keeps a queued rebuy when an active hand temporarily hides post-hand controls', () => {
+    expect(
+      shouldClearNextHandIntent({
+        intent: 'rebuy',
+        queuedIntentApplying: null,
+        seated: true,
+        localNeedsRebuy: false,
+        localSeatStack: 0,
+        localSeatStatus: 'busted',
+      })
+    ).toBe(false);
+  });
+
+  it('clears queued intents only after their confirmed outcomes apply', () => {
+    expect(
+      shouldClearNextHandIntent({
+        intent: 'rebuy',
+        queuedIntentApplying: 'rebuy',
+        seated: true,
+        localNeedsRebuy: false,
+        localSeatStack: 10000,
+        localSeatStatus: 'active',
+      })
+    ).toBe(true);
+
+    expect(
+      shouldClearNextHandIntent({
+        intent: 'sitOut',
+        queuedIntentApplying: 'sitOut',
+        seated: true,
+        localNeedsRebuy: false,
+        localSeatStack: 0,
+        localSeatStatus: 'sitting_out',
+      })
     ).toBe(true);
   });
 });
