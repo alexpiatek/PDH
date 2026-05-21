@@ -235,6 +235,7 @@ describe('PDH flow contract', () => {
 
     // Reach the river discard with both players still live.
     settleBettingStreetWithCalls(table);
+    settleBettingStreetWithCalls(table);
     discardAllPending(table);
     settleBettingStreetWithCalls(table);
     discardAllPending(table);
