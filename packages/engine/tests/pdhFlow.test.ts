@@ -231,7 +231,10 @@ describe('PDH flow contract', () => {
 
   it('does not settle the pot twice when a river discard disconnect completes showdown', () => {
     const table = createTableWithPlayers(2, 10000, 0x5555aaac);
-    const initialChips = table.state.seats.reduce((sum, seat) => sum + (seat?.stack ?? 0), 0);
+    const initialChips = table.state.seats.reduce(
+      (sum, seat) => sum + (seat?.buyInTotal ?? 0),
+      0
+    );
 
     // Reach the river discard with both players still live.
     settleBettingStreetWithCalls(table);
