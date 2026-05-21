@@ -229,6 +229,42 @@ describe('PDH flow contract', () => {
     expect(table.state.hand?.phase).toBe('showdown');
   });
 
+  it('does not settle the pot twice when a river discard disconnect completes showdown', () => {
+    const table = createTableWithPlayers(2, 10000, 0x5555aaac);
+    const initialChips = table.state.seats.reduce(
+      (sum, seat) => sum + (seat?.buyInTotal ?? 0),
+      0
+    );
+
+    // Reach the river discard with both players still live.
+    settleBettingStreetWithCalls(table);
+    settleBettingStreetWithCalls(table);
+    discardAllPending(table);
+    settleBettingStreetWithCalls(table);
+    discardAllPending(table);
+    settleBettingStreetWithCalls(table);
+
+    let hand = table.state.hand!;
+    expect(hand.street).toBe('river');
+    expect(hand.phase).toBe('discard');
+    expect(hand.discardPending).toHaveLength(2);
+
+    table.applyDiscard(hand.discardPending[0], 0);
+    hand = table.state.hand!;
+    const disconnectingPlayerId = hand.discardPending[0];
+
+    table.handleDisconnect(disconnectingPlayerId);
+
+    hand = table.state.hand!;
+    expect(hand.phase).toBe('showdown');
+    expect(hand.players.find((player) => player.id === disconnectingPlayerId)?.status).not.toBe(
+      'folded'
+    );
+    expect(table.state.seats.reduce((sum, seat) => sum + (seat?.stack ?? 0), 0)).toBe(
+      initialChips
+    );
+  });
+
   it('does not try to start a new hand with sitting-out players only', () => {
     const table = createTableWithPlayers(2, 10000, 0x91aa55ff);
     const hand = table.state.hand!;
