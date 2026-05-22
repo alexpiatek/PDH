@@ -6,9 +6,23 @@ export type NextHandIntentSubmissionWindow = {
   hasHand: boolean;
 };
 
+export type NextHandIntentClearState = {
+  intent: NextHandIntent | null | undefined;
+  applying: NextHandIntent | null | undefined;
+  seated: boolean;
+  hasSeat: boolean;
+  needsRebuy: boolean;
+  seatStack: number;
+  seatStatus: string | null | undefined;
+  postHandControlsAllowed: boolean;
+};
+
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
-export const nextHandIntentStorageKey = (tableId: string | null | undefined, playerId: string | null | undefined) => {
+export const nextHandIntentStorageKey = (
+  tableId: string | null | undefined,
+  playerId: string | null | undefined
+) => {
   const normalizedTableId = tableId?.trim();
   const normalizedPlayerId = playerId?.trim();
   if (!normalizedTableId || !normalizedPlayerId) {
@@ -74,4 +88,27 @@ export const canSubmitNextHandIntentNow = ({
   betweenHandActive,
   handPhase,
   hasHand,
-}: NextHandIntentSubmissionWindow) => betweenHandActive || !hasHand || handPhase === 'showdown';
+}: NextHandIntentSubmissionWindow) =>
+  betweenHandActive || !hasHand || handPhase === 'showdown';
+
+export const shouldClearNextHandIntent = ({
+  intent,
+  applying,
+  seated,
+  hasSeat,
+  needsRebuy,
+  seatStack,
+  seatStatus,
+  postHandControlsAllowed,
+}: NextHandIntentClearState) => {
+  if (!intent) {
+    return false;
+  }
+
+  const rebuyApplied = intent === 'rebuy' && seated && !needsRebuy && seatStack > 0;
+  const sitOutApplied =
+    intent === 'sitOut' && applying === 'sitOut' && seatStatus === 'sitting_out';
+  const noLongerNeedsChoice = seated && hasSeat && postHandControlsAllowed && !needsRebuy;
+
+  return rebuyApplied || sitOutApplied || noLongerNeedsChoice;
+};
