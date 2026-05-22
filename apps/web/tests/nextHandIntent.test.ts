@@ -4,6 +4,7 @@ import {
   clearStoredNextHandIntent,
   nextHandIntentStorageKey,
   readStoredNextHandIntent,
+  shouldClearNextHandIntent,
   writeStoredNextHandIntent,
 } from '../lib/nextHandIntent';
 
@@ -56,7 +57,9 @@ describe('next hand intent persistence', () => {
     };
 
     expect(readStoredNextHandIntent(throwingStorage, 'table-1', 'player-1')).toBeNull();
-    expect(() => writeStoredNextHandIntent(throwingStorage, 'table-1', 'player-1', 'rebuy')).not.toThrow();
+    expect(() =>
+      writeStoredNextHandIntent(throwingStorage, 'table-1', 'player-1', 'rebuy')
+    ).not.toThrow();
     expect(() => clearStoredNextHandIntent(throwingStorage, 'table-1', 'player-1')).not.toThrow();
   });
 });
@@ -79,6 +82,66 @@ describe('next hand intent submission window', () => {
     ).toBe(true);
     expect(
       canSubmitNextHandIntentNow({ betweenHandActive: false, hasHand: false, handPhase: null })
+    ).toBe(true);
+  });
+});
+
+describe('next hand intent clearing', () => {
+  it('keeps a queued rebuy while an active hand hides the post-hand controls', () => {
+    expect(
+      shouldClearNextHandIntent({
+        intent: 'rebuy',
+        applying: 'rebuy',
+        seated: true,
+        hasSeat: true,
+        needsRebuy: false,
+        seatStack: 0,
+        seatStatus: 'busted',
+        postHandControlsAllowed: false,
+      })
+    ).toBe(false);
+  });
+
+  it('clears queued intents once the requested outcome is confirmed', () => {
+    expect(
+      shouldClearNextHandIntent({
+        intent: 'rebuy',
+        applying: 'rebuy',
+        seated: true,
+        hasSeat: true,
+        needsRebuy: false,
+        seatStack: 10000,
+        seatStatus: 'active',
+        postHandControlsAllowed: false,
+      })
+    ).toBe(true);
+
+    expect(
+      shouldClearNextHandIntent({
+        intent: 'sitOut',
+        applying: 'sitOut',
+        seated: true,
+        hasSeat: true,
+        needsRebuy: true,
+        seatStack: 0,
+        seatStatus: 'sitting_out',
+        postHandControlsAllowed: true,
+      })
+    ).toBe(true);
+  });
+
+  it('clears stale queued choices in a post-hand decision window', () => {
+    expect(
+      shouldClearNextHandIntent({
+        intent: 'sitOut',
+        applying: null,
+        seated: true,
+        hasSeat: true,
+        needsRebuy: false,
+        seatStack: 1200,
+        seatStatus: 'active',
+        postHandControlsAllowed: true,
+      })
     ).toBe(true);
   });
 });
