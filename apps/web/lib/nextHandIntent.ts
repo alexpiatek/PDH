@@ -88,8 +88,7 @@ export const canSubmitNextHandIntentNow = ({
   betweenHandActive,
   handPhase,
   hasHand,
-}: NextHandIntentSubmissionWindow) =>
-  betweenHandActive || !hasHand || handPhase === 'showdown';
+}: NextHandIntentSubmissionWindow) => betweenHandActive || !hasHand || handPhase === 'showdown';
 
 export const shouldClearNextHandIntent = ({
   intent,
