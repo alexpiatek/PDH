@@ -147,12 +147,13 @@ test.describe('active table layout safety', () => {
       .toBe(true);
   });
 
-  test('mobile 4 to 6 player nameplates stay inside the viewport safe area', async ({ page }) => {
-    for (const scenario of ['mobile-4', 'mobile-5', 'mobile-6']) {
+  test('mobile 4 to 9 player nameplates stay inside the viewport safe area', async ({ page }) => {
+    for (const scenario of ['mobile-4', 'mobile-5', 'mobile-6', 'mobile-9']) {
       await openScenario(page, scenario, { width: 390, height: 844 });
       const seatCards = page.locator('[data-testid^="seat-card-"]');
       const count = await seatCards.count();
-      expect(count, `${scenario} seat card count`).toBeGreaterThanOrEqual(4);
+      const expectedCount = Number.parseInt(scenario.replace('mobile-', ''), 10);
+      expect(count, `${scenario} seat card count`).toBe(expectedCount);
       for (let index = 0; index < count; index += 1) {
         await expectWithinViewport(page, seatCards.nth(index), `${scenario} seat ${index}`);
       }
