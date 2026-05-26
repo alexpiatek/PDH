@@ -16,6 +16,7 @@ type Scenario =
   | 'mobile-4'
   | 'mobile-5'
   | 'mobile-6'
+  | 'mobile-9'
   | 'out-of-chips-active'
   | 'out-of-chips-between'
   | 'start-gate'
@@ -45,6 +46,7 @@ const scenarios = new Set<Scenario>([
   'mobile-4',
   'mobile-5',
   'mobile-6',
+  'mobile-9',
   'out-of-chips-active',
   'out-of-chips-between',
   'start-gate',
@@ -620,7 +622,7 @@ const longNamesState = (now: number): PublicState => {
   return state;
 };
 
-const multiPlayerState = (now: number, count: 4 | 5 | 6): PublicState => {
+const multiPlayerState = (now: number, count: 4 | 5 | 6 | 9): PublicState => {
   const names = [
     'Alex Chrome Long Table Name',
     'Brad Mobile Very Long Name',
@@ -628,6 +630,9 @@ const multiPlayerState = (now: number, count: 4 | 5 | 6): PublicState => {
     'Devon Dealer Long Name',
     'Emerson Cutoff Long Name',
     'Finley Big Blind Long Name',
+    'Gray Button Long Name',
+    'Harper Cutoff Long Name',
+    'Indigo Under Gun Long Name',
   ];
   const seats = Array.from({ length: count }, (_, index) => ({
     seat: index,
@@ -887,6 +892,8 @@ const buildState = (scenario: Scenario, now: number): PublicState | null => {
       return multiPlayerState(now, 5);
     case 'mobile-6':
       return multiPlayerState(now, 6);
+    case 'mobile-9':
+      return multiPlayerState(now, 9);
     case 'out-of-chips-active':
       return outOfChipsState(now, false);
     case 'out-of-chips-between':
