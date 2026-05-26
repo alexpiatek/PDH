@@ -6,9 +6,25 @@ export type NextHandIntentSubmissionWindow = {
   hasHand: boolean;
 };
 
+export type NextHandIntentStorageKey = {
+  tableId: string;
+  playerId: string;
+};
+
+export type NextHandIntentPersistenceState = {
+  currentTableId: string | null | undefined;
+  currentPlayerId: string | null | undefined;
+  lastKey: NextHandIntentStorageKey | null;
+  renderedIntent: NextHandIntent | null;
+  currentIntent: NextHandIntent | null;
+};
+
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
-export const nextHandIntentStorageKey = (tableId: string | null | undefined, playerId: string | null | undefined) => {
+export const nextHandIntentStorageKey = (
+  tableId: string | null | undefined,
+  playerId: string | null | undefined
+) => {
   const normalizedTableId = tableId?.trim();
   const normalizedPlayerId = playerId?.trim();
   if (!normalizedTableId || !normalizedPlayerId) {
@@ -69,6 +85,21 @@ export const clearStoredNextHandIntent = (
     // Ignore localStorage failures.
   }
 };
+
+export const canPersistNextHandIntent = ({
+  currentTableId,
+  currentPlayerId,
+  lastKey,
+  renderedIntent,
+  currentIntent,
+}: NextHandIntentPersistenceState) =>
+  Boolean(
+    currentTableId &&
+      currentPlayerId &&
+      lastKey?.tableId === currentTableId &&
+      lastKey.playerId === currentPlayerId &&
+      renderedIntent === currentIntent
+  );
 
 export const canSubmitNextHandIntentNow = ({
   betweenHandActive,
