@@ -35,6 +35,32 @@ For realtime stability:
 - Duplicate `Access-Control-Allow-Origin` values (for example allowlist origin + upstream `*`) make browser auth calls fail.
 - Multiple front doors (e.g., CDN/LB + Caddy) with conflicting timeout policies.
 
+## VPN Compatibility Note
+
+If the public site works from ordinary residential/mobile networks but fails to open from some VPN exits, treat that as an operational networking problem first, not an app-code problem.
+
+Observed healthy baseline:
+
+- `https://play.<root-domain>/play` returns `200`
+- `https://api.<root-domain>/healthcheck` returns `200`
+- Caddy is healthy on `80/443`
+- DNS resolves only public IPv4 for the web/API hostnames
+- CORS is origin-based (`play.*`, apex, `www.*`), not client-IP-based
+
+Most likely causes in that situation:
+
+- the VPN provider or exit node cannot reliably reach the origin IP
+- the VPN interferes with TLS or websocket traffic to `api.<root-domain>`
+- the VPN path is degraded or filtered upstream of the server
+
+Recommended fix if VPN compatibility becomes a product requirement:
+
+1. put the public domains behind an edge/CDN provider such as Cloudflare
+2. terminate TLS at the edge
+3. proxy edge traffic back to the current origin server
+
+This reduces direct client dependence on the raw origin IP and usually improves compatibility for VPN users. Do not treat this as a CORS or frontend code task unless there is direct evidence that ordinary non-VPN traffic is also failing.
+
 ## Compression and Websockets
 
 - Compression (`encode zstd gzip`) is enabled for Next.js responses.
