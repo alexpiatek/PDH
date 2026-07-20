@@ -100,6 +100,11 @@ const TABLE_THEME = {
     'radial-gradient(circle at 16% 16%, rgba(251,191,36,0.1), transparent 29%), ' +
     'linear-gradient(180deg, rgba(3,8,11,0.94), rgba(2,7,9,0.985)), ' +
     'url("/Casino floor background.png")',
+  seatedPageBackground:
+    'radial-gradient(circle at 72% 18%, rgba(20,184,166,0.12), transparent 34%), ' +
+    'radial-gradient(circle at 16% 16%, rgba(251,191,36,0.08), transparent 30%), ' +
+    'linear-gradient(180deg, rgba(3,8,11,0.72), rgba(2,7,9,0.82)), ' +
+    'url("/Casino floor background.png")',
   panel: 'rgba(3,8,11,0.76)',
   panelStrong: 'rgba(2,7,9,0.92)',
   panelSoft: 'rgba(255,255,255,0.035)',
@@ -4085,7 +4090,7 @@ export const PokerGamePage = ({
         flexDirection: 'column',
         overflowX: 'hidden',
         overflowY: seated ? 'hidden' : 'auto',
-        background: TABLE_THEME.pageBackground,
+        background: seated ? TABLE_THEME.seatedPageBackground : TABLE_THEME.pageBackground,
         backgroundPosition: 'center, center, center, center',
         backgroundRepeat: 'no-repeat, no-repeat, no-repeat, no-repeat',
         backgroundSize: 'auto, auto, auto, cover',
