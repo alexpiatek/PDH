@@ -503,6 +503,10 @@ function verifyReplicatedState(
   }
 }
 
+function currentCounter(clients: SmokeClientContext[]) {
+  return Math.max(...clients.map((client) => client.latestState?.counter ?? 0));
+}
+
 async function cleanup(clients: SmokeClientContext[], matchId: string) {
   await Promise.all(
     clients.map(async (client) => {
@@ -566,12 +570,15 @@ async function run() {
       throw new Error(`${formatUnknownError(error)} | observed=${JSON.stringify(observed)}`);
     }
 
+    const baselineCounter = currentCounter(clients);
+    const expectedCounter = baselineCounter + options.clients;
+
     await withStep('increment broadcast', () => incrementFromAllClients(clients, matchId));
 
     try {
       await waitFor(
-        `counter to reach ${options.clients} on all clients`,
-        () => clients.every((client) => client.latestState?.counter === options.clients),
+        `counter to reach ${expectedCounter} on all clients`,
+        () => clients.every((client) => client.latestState?.counter === expectedCounter),
         options.timeoutMs
       );
     } catch (error) {
@@ -584,12 +591,13 @@ async function run() {
     }
 
     failIfAnyClientErrors(clients);
-    verifyReplicatedState(clients, options.clients, options.clients);
+    verifyReplicatedState(clients, options.clients, expectedCounter);
 
     console.log('PASS: multiplayer smoke test succeeded');
     console.log(`- matchId: ${matchId}`);
     console.log(`- clients connected: ${options.clients}`);
-    console.log(`- replicated counter: ${options.clients}`);
+    console.log(`- replicated counter delta: +${options.clients}`);
+    console.log(`- replicated counter absolute: ${expectedCounter}`);
   } finally {
     await cleanup(clients, matchId);
   }
