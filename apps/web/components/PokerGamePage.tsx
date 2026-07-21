@@ -3335,6 +3335,10 @@ export const PokerGamePage = ({
       : isPhone && isShowdown
         ? ('large' as CardViewSize)
         : seatHoleCardSize;
+  const revealedSeatHoleCardBackSize: 'small' | 'medium' =
+    revealedSeatHoleCardSize === 'large' || revealedSeatHoleCardSize === 'xlarge'
+      ? 'medium'
+      : revealedSeatHoleCardSize;
   const revealedSeatHoleCardMetrics = CARD_VIEW_SIZE_MAP[revealedSeatHoleCardSize];
   const heroAreaOffsetPx = 38 - 33;
   const ellipsisDotStyle = (delayMs: number): React.CSSProperties => ({
@@ -5184,7 +5188,9 @@ export const PokerGamePage = ({
                                     }}
                                   >
                                     <CardBack
-                                      size={reveal ? revealedSeatHoleCardSize : seatHoleCardSize}
+                                      size={
+                                        reveal ? revealedSeatHoleCardBackSize : seatHoleCardSize
+                                      }
                                       tone="gold"
                                     />
                                   </div>
