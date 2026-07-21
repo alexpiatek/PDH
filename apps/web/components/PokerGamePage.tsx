@@ -16,6 +16,7 @@ import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../l
 import { getPlayerInitials } from '../lib/playerInitials';
 import { resolveBettingActionControls } from '../lib/actionControls';
 import { discardConfirmDisabledReason, discardObligationKey } from '../lib/discardControls';
+import { LOCAL_BROWSER_HOSTS, type LocalAccessInfo } from '../lib/localAccess';
 import { nextAppliedStateVersion, shouldApplyStateSnapshot } from '../lib/stateVersion';
 import {
   canSubmitNextHandIntentNow,
@@ -125,6 +126,18 @@ const createDeviceId = () => {
     return crypto.randomUUID();
   }
   return `pdh-${Date.now()}-${Math.floor(Math.random() * 1_000_000_000)}`;
+};
+
+type CardViewSize = 'small' | 'medium' | 'large' | 'xlarge';
+
+const CARD_VIEW_SIZE_MAP: Record<
+  CardViewSize,
+  { width: number; height: number; fontSize: number; corner: number; center: number; pad: number }
+> = {
+  small: { width: 28, height: 40, fontSize: 14, corner: 9, center: 16, pad: 2 },
+  medium: { width: 44, height: 62, fontSize: 18, corner: 11, center: 22, pad: 3 },
+  large: { width: 66, height: 92, fontSize: 24, corner: 12, center: 28, pad: 3 },
+  xlarge: { width: 84, height: 118, fontSize: 32, corner: 19, center: 39, pad: 5 },
 };
 
 const getOrCreateDeviceId = () => {
@@ -827,10 +840,12 @@ type LastHandRecapLine = {
 const ShowdownResultBanner = ({
   result,
   isPhone,
+  hideWinnerHoleCards = false,
   onViewDetails,
 }: {
   result: ShowdownResultView;
   isPhone: boolean;
+  hideWinnerHoleCards?: boolean;
   onViewDetails?: () => void;
 }) => {
   const { winners, pots, hasSplitPot } = result;
@@ -847,9 +862,9 @@ const ShowdownResultBanner = ({
     ? `${splitNames} • ${primaryWinner.handTitle || 'Winning hand'}`
     : primaryWinner.handTitle || 'Winning hand';
   const potMeta = formatPotMeta(pots);
-  const visibleHoleCards = primaryWinner.holeCards
-    .filter((card) => !isHiddenCard(card))
-    .slice(0, 2);
+  const visibleHoleCards = hideWinnerHoleCards
+    ? []
+    : primaryWinner.holeCards.filter((card) => !isHiddenCard(card)).slice(0, 2);
 
   return (
     <div
@@ -857,16 +872,16 @@ const ShowdownResultBanner = ({
       aria-live="assertive"
       data-testid="showdown-result-banner"
       style={{
-        width: isPhone ? 'min(348px, calc(100vw - 20px))' : 560,
+        width: isPhone ? 'min(208px, calc(100vw - 52px))' : 560,
         maxWidth: 'calc(100vw - 24px)',
-        borderRadius: isPhone ? 10 : 12,
+        borderRadius: isPhone ? 7 : 12,
         border: '1px solid rgba(251,191,36,0.56)',
         background:
           'linear-gradient(135deg, rgba(8,16,18,0.94), rgba(2,7,9,0.9)), radial-gradient(circle at 5% 0%, rgba(251,191,36,0.16), transparent 34%), radial-gradient(circle at 100% 100%, rgba(20,184,166,0.16), transparent 38%)',
         boxShadow:
           '0 18px 42px rgba(0,0,0,0.45), 0 0 0 1px rgba(94,234,212,0.12), inset 0 1px 0 rgba(255,255,255,0.08)',
         color: TABLE_THEME.text,
-        padding: isPhone ? '9px 10px' : '10px 12px',
+        padding: isPhone ? '5px 6px' : '10px 12px',
         fontFamily: TABLE_THEME.fontSans,
         animation: 'showdown-pop 220ms ease-out both',
         pointerEvents: 'auto',
@@ -878,7 +893,7 @@ const ShowdownResultBanner = ({
           flexDirection: isPhone ? 'column' : 'row',
           alignItems: isPhone ? 'stretch' : 'center',
           justifyContent: 'space-between',
-          gap: isPhone ? 7 : 12,
+          gap: isPhone ? 4 : 12,
           minWidth: 0,
         }}
       >
@@ -897,15 +912,15 @@ const ShowdownResultBanner = ({
               <CardView
                 key={`${primaryWinner.playerId}-banner-hole-${idx}-${card.rank}${card.suit}`}
                 card={card}
-                size={isPhone ? 'medium' : 'medium'}
+                size={isPhone ? 'small' : 'medium'}
                 highlight
               />
             ))
           ) : (
             <div
               style={{
-                width: 54,
-                height: 42,
+                width: isPhone ? 40 : 54,
+                height: isPhone ? 32 : 42,
                 borderRadius: 999,
                 border: '1px solid rgba(251,191,36,0.48)',
                 color: TABLE_THEME.amber,
@@ -913,7 +928,7 @@ const ShowdownResultBanner = ({
                 placeItems: 'center',
               }}
             >
-              <Trophy size={19} strokeWidth={2.5} />
+              <Trophy size={isPhone ? 15 : 19} strokeWidth={2.5} />
             </div>
           )}
         </div>
@@ -922,9 +937,9 @@ const ShowdownResultBanner = ({
             data-testid="showdown-result-main-line"
             style={{
               fontFamily: TABLE_THEME.fontDisplay,
-              fontSize: isPhone ? 16 : 21,
+              fontSize: isPhone ? 11 : 21,
               fontWeight: 900,
-              lineHeight: isPhone ? 1.14 : 1.08,
+              lineHeight: isPhone ? 1.08 : 1.08,
               color: '#f8fafc',
               overflowWrap: 'anywhere',
               whiteSpace: isPhone ? 'normal' : 'nowrap',
@@ -935,11 +950,11 @@ const ShowdownResultBanner = ({
           <div
             data-testid="showdown-result-hand-line"
             style={{
-              marginTop: 3,
+              marginTop: isPhone ? 1 : 3,
               color: '#dcfce7',
-              fontSize: isPhone ? 12 : 14,
+              fontSize: isPhone ? 8.5 : 14,
               fontWeight: 800,
-              lineHeight: 1.18,
+              lineHeight: isPhone ? 1.08 : 1.18,
               overflowWrap: 'anywhere',
               whiteSpace: isPhone ? 'normal' : 'nowrap',
             }}
@@ -950,9 +965,9 @@ const ShowdownResultBanner = ({
             <div
               data-testid="showdown-result-pot-meta"
               style={{
-                marginTop: 5,
+                marginTop: isPhone ? 2 : 5,
                 color: TABLE_THEME.muted,
-                fontSize: isPhone ? 10 : 12,
+                fontSize: isPhone ? 7.5 : 12,
                 fontWeight: 700,
                 overflowWrap: 'anywhere',
                 whiteSpace: isPhone ? 'normal' : 'nowrap',
@@ -1008,14 +1023,14 @@ const HandHistoryPanel = ({
       style={{
         position: 'fixed',
         zIndex: 48,
-        left: isPhone ? 10 : undefined,
-        right: isPhone ? 10 : 24,
+        left: isPhone ? 8 : undefined,
+        right: isPhone ? 'auto' : 24,
         top: isPhone ? undefined : 112,
-        bottom: isPhone ? 'calc(env(safe-area-inset-bottom, 0px) + 190px)' : 24,
-        width: isPhone ? 'auto' : 360,
+        bottom: isPhone ? 'calc(env(safe-area-inset-bottom, 0px) + 116px)' : 24,
+        width: isPhone ? 'min(248px, calc(100vw - 16px))' : 360,
         maxWidth: 'calc(100vw - 20px)',
-        minHeight: isPhone ? 116 : 180,
-        maxHeight: isPhone ? 'min(40dvh, 260px)' : 'calc(100dvh - 136px)',
+        minHeight: isPhone ? 132 : 180,
+        maxHeight: isPhone ? 'min(31dvh, 220px)' : 'calc(100dvh - 136px)',
         borderRadius: 8,
         border: `1px solid ${TABLE_THEME.border}`,
         background:
@@ -1463,6 +1478,8 @@ export const PokerGamePage = ({
   const [showTableChat, setShowTableChat] = useState(true);
   const [showTopMenu, setShowTopMenu] = useState(false);
   const [showHandHistory, setShowHandHistory] = useState(false);
+  const [localAccess, setLocalAccess] = useState<LocalAccessInfo | null>(null);
+  const [copiedLanUrl, setCopiedLanUrl] = useState(false);
   const [showRulesOverlay, setShowRulesOverlay] = useState(false);
   const [copyCodeFeedback, setCopyCodeFeedback] = useState<string | null>(null);
   const [showRaiseDrawer, setShowRaiseDrawer] = useState(false);
@@ -2352,7 +2369,7 @@ export const PokerGamePage = ({
         ? BASE_TABLE_WIDTH
         : 920;
   const layoutTableHeight = isPortraitPhone
-    ? 560
+    ? 610
     : isLandscapePhone
       ? 300
       : isMobile
@@ -2777,6 +2794,43 @@ export const PokerGamePage = ({
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const host = window.location.hostname.toLowerCase();
+    if (!LOCAL_BROWSER_HOSTS.has(host)) {
+      setLocalAccess(null);
+      return;
+    }
+
+    let cancelled = false;
+    void fetch('/api/local-access')
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as { available: boolean } & Partial<LocalAccessInfo>;
+      })
+      .then((payload) => {
+        if (
+          cancelled ||
+          !payload?.available ||
+          !payload.playUrl ||
+          !payload.origin ||
+          !payload.lanHost
+        ) {
+          return;
+        }
+        setLocalAccess({
+          lanHost: payload.lanHost,
+          origin: payload.origin,
+          playUrl: payload.playUrl,
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!hand || hand.phase !== 'betting' || !isMyTurn) {
       setShowRaiseDrawer(false);
       setConfirmAllIn(false);
@@ -3165,22 +3219,22 @@ export const PokerGamePage = ({
 
   const seatingPositions = isPortraitPhone
     ? [
-        { left: '50%', top: '78%' },
-        { left: '25%', top: '18%' },
-        { left: '75%', top: '18%' },
-        { left: '76%', top: '51%' },
-        { left: '24%', top: '51%' },
-        { left: '68%', top: '65%' },
-        { left: '32%', top: '65%' },
+        { left: '50%', top: '80%' },
+        { left: '19%', top: '13%' },
+        { left: '81%', top: '13%' },
+        { left: '87%', top: '47%' },
+        { left: '13%', top: '47%' },
+        { left: '72%', top: '63%' },
+        { left: '28%', top: '63%' },
       ]
     : [
         { left: '50%', top: '82%' },
-        { left: '14%', top: '22%' },
-        { left: '86%', top: '22%' },
-        { left: '92%', top: '52%' },
-        { left: '8%', top: '52%' },
-        { left: '80%', top: '78%' },
-        { left: '20%', top: '78%' },
+        { left: '16%', top: '18%' },
+        { left: '84%', top: '18%' },
+        { left: '90%', top: '50%' },
+        { left: '10%', top: '50%' },
+        { left: '76%', top: '75%' },
+        { left: '24%', top: '75%' },
       ];
   const seatBetOffsets: React.CSSProperties[] = isPortraitPhone
     ? [
@@ -3253,14 +3307,14 @@ export const PokerGamePage = ({
     addChip(bbSeat, { label: 'BB', tone: 'blind' });
     return map;
   }, [hand, state?.seats]);
-  const infoAvatarSize = isPortraitPhone ? 24 : isPhone ? 30 : 34;
-  const seatNameplateWidth = isPortraitPhone ? 136 : isPhone ? 156 : 178;
-  const playerPanelMinHeight = isPortraitPhone ? 50 : isPhone ? 54 : 58;
-  const playerPanelPadding = isPortraitPhone ? '5px 6px' : isPhone ? '6px 7px' : '7px 9px';
+  const infoAvatarSize = isPortraitPhone ? 24 : isPhone ? 29 : 34;
+  const seatNameplateWidth = isPortraitPhone ? 139 : isPhone ? 165 : 178;
+  const playerPanelMinHeight = isPortraitPhone ? 59 : isPhone ? 64 : 58;
+  const playerPanelPadding = isPortraitPhone ? '5px 7px' : isPhone ? '7px 8px' : '7px 9px';
   const playerPanelRadius = isPortraitPhone ? 8 : 10;
-  const playerPanelColumnGap = isPortraitPhone ? 6 : 7;
-  const playerInfoTextSize = isPortraitPhone ? 10 : isPhone ? 11 : 12;
-  const playerInfoStatusTextSize = isPortraitPhone ? 8 : isPhone ? 9 : 10;
+  const playerPanelColumnGap = isPortraitPhone ? 6 : isPhone ? 8 : 7;
+  const playerInfoTextSize = isPortraitPhone ? 11.5 : isPhone ? 12.75 : 12;
+  const playerInfoStatusTextSize = isPortraitPhone ? 9.5 : isPhone ? 10.5 : 10;
   const playerInfoOffsetY = isPortraitPhone ? 0 : -30 + 38;
   const mobileSeatSafeHalfWidth = Math.ceil(seatNameplateWidth / 2 + 8);
   const mobileSeatSafeHalfHeight = Math.ceil(playerPanelMinHeight / 2 + 8);
@@ -3275,6 +3329,13 @@ export const PokerGamePage = ({
   const seatHoleCardWidth = isPortraitPhone ? 34 : 44;
   const seatHoleCardHeight = isPortraitPhone ? 48 : 62;
   const seatHoleCardOverlap = isPortraitPhone ? -18 : -24;
+  const revealedSeatHoleCardSize =
+    isPortraitPhone && isShowdown
+      ? ('large' as CardViewSize)
+      : isPhone && isShowdown
+        ? ('large' as CardViewSize)
+        : seatHoleCardSize;
+  const revealedSeatHoleCardMetrics = CARD_VIEW_SIZE_MAP[revealedSeatHoleCardSize];
   const heroAreaOffsetPx = 38 - 33;
   const ellipsisDotStyle = (delayMs: number): React.CSSProperties => ({
     display: 'inline-block',
@@ -3292,46 +3353,48 @@ export const PokerGamePage = ({
       ((isBettingPhase && isMyTurn) || discardPending || showDiscardWaitingTray || isRevealPhase))
   );
   const centeredSectionMinHeight = isMobile ? 'calc(100dvh - 160px)' : 'calc(100vh - 220px)';
+  const mobileHeroInfoBottomOffset = isPortraitPhone
+    ? 214
+    : isLandscapePhone
+      ? 132
+      : 126;
+  const mobileHeroCardsBottomOffset = isLandscapePhone ? 78 : isPortraitPhone ? 118 : 28;
+  const mobileTableVerticalReserve = isPortraitPhone ? 202 : isLandscapePhone ? 196 : 110;
   const heroInfoBottomOffset = isPhone
-    ? hasBottomActionTray
-      ? isPortraitPhone
-        ? 214
-        : 132
-      : isPortraitPhone
-        ? 150
-        : 112
+    ? mobileHeroInfoBottomOffset
     : isMobile
-      ? hasBottomActionTray
-        ? 126
-        : 100
+      ? mobileHeroInfoBottomOffset
       : 128;
   const heroCardsBottomOffset = isPhone
     ? isLandscapePhone
-      ? hasBottomActionTray
-        ? 78
-        : 46
-      : hasBottomActionTray
-        ? isPortraitPhone
-          ? 118
-          : 30
-        : isPortraitPhone
-          ? 42
-          : 24
+      ? mobileHeroCardsBottomOffset
+      : mobileHeroCardsBottomOffset
     : isMobile
-      ? hasBottomActionTray
-        ? 28
-        : 22
+      ? mobileHeroCardsBottomOffset
       : 20;
+  const heroClusterMobileDropPx = isMobile ? 74 : 0;
+  const heroCardsRelativeDropPx = isMobile ? 55 : 0;
+  const heroCardsMobileShiftRightPx = isMobile ? 41 : 0;
+  const heroBetPillMobileDropPx = isMobile ? 14 : 0;
+  const boardAreaVerticalOffsetPx = isPortraitPhone ? 30 : isPhone ? 18 : 0;
+  const communityCardsDropPx = isPortraitPhone ? 0 : isPhone ? 0 : 0;
+  const phoneGameplayCardScale = isPhone ? 1.8 : 1;
+  const desiredPhoneCommunityCardScale = isPhone ? 1.56 : 1;
+  const communityCardSize: CardViewSize = isPortraitPhone
+    ? 'large'
+    : isPhone
+      ? 'xlarge'
+      : 'xlarge';
+  const heroHoleCardSize: CardViewSize = isPortraitPhone ? 'medium' : 'large';
+  const communityCardMetrics = CARD_VIEW_SIZE_MAP[communityCardSize];
+  const heroHoleCardMetrics = CARD_VIEW_SIZE_MAP[heroHoleCardSize];
+  const mobileHeroHoleCardOverlap = isPhone
+    ? Math.round(heroHoleCardMetrics.width * phoneGameplayCardScale * 0.34)
+    : 0;
   const actionBarReserve = !isMobile && you && isBettingPhase ? (showRaiseDrawer ? 220 : 150) : 0;
   const tableHorizontalPadding = isPhone ? (isPortraitPhone ? 28 : 16) : isMobile ? 28 : 64;
   const tableVerticalReserve = isMobile
-    ? hasBottomActionTray
-      ? isPortraitPhone
-        ? 236
-        : isLandscapePhone
-          ? 210
-          : 122
-      : 74
+    ? mobileTableVerticalReserve
     : 152 + actionBarReserve;
   const tableAspectRatio = layoutTableWidth / layoutTableHeight;
   const tableAvailableWidth = Math.max(280, viewportWidth - tableHorizontalPadding);
@@ -3346,6 +3409,25 @@ export const PokerGamePage = ({
   );
   const tableOuterWidthPx = Math.floor(Math.max(tableMinimumWidth, tableRawWidth));
   const tableOuterWidth = `${tableOuterWidthPx}px`;
+  const communityCardCount = Math.max(communityCards.length, 1);
+  const phoneCommunityOverlapRatio = isPortraitPhone ? 0.46 : 0.42;
+  const phoneCommunityBoardWidthBudgetPx = isPhone
+    ? Math.max(220, Math.min(tableOuterWidthPx - 28, viewportWidth - 24))
+    : tableOuterWidthPx;
+  const phoneCommunityBaseWidthPx =
+    communityCardMetrics.width +
+    Math.max(0, communityCardCount - 1) *
+      communityCardMetrics.width *
+      (1 - phoneCommunityOverlapRatio);
+  const phoneCommunityCardScale = isPhone
+    ? Math.max(
+        1,
+        Math.min(desiredPhoneCommunityCardScale, phoneCommunityBoardWidthBudgetPx / phoneCommunityBaseWidthPx)
+      )
+    : 1;
+  const mobileCommunityCardOverlap = isPhone
+    ? Math.round(communityCardMetrics.width * phoneCommunityCardScale * 0.24)
+    : 0;
   const tableOuterBorder = isPortraitPhone ? 5 : isPhone ? 6 : isMobile ? 8 : 10;
   const actionButtonBaseStyle: React.CSSProperties = {
     padding: isPhone ? '10px 12px' : '10px 16px',
@@ -4078,6 +4160,18 @@ export const PokerGamePage = ({
         status.toLowerCase().includes('timed out')
       ? 'Could not take your seat'
       : 'Connecting to table...';
+  const currentLanUrl =
+    localAccess && typeof window !== 'undefined'
+      ? `${localAccess.origin}${window.location.pathname}`
+      : null;
+  const copyCurrentLanUrl = async () => {
+    if (!currentLanUrl || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      return;
+    }
+    await navigator.clipboard.writeText(currentLanUrl);
+    setCopiedLanUrl(true);
+    window.setTimeout(() => setCopiedLanUrl(false), 1500);
+  };
 
   return (
     <div
@@ -4324,6 +4418,80 @@ export const PokerGamePage = ({
           </div>
         </div>
       ) : null}
+      {currentLanUrl ? (
+        <div
+          role="status"
+          data-testid="local-lan-url"
+          style={{
+            width: isPhone ? 'calc(100% - 16px)' : 'min(640px, calc(100% - 32px))',
+            margin: isPhone ? '0 auto 8px' : '0 auto 10px',
+            zIndex: 22,
+            borderRadius: 8,
+            border: '1px solid rgba(94,234,212,0.35)',
+            background: 'rgba(2,7,9,0.88)',
+            boxShadow: '0 10px 24px rgba(0,0,0,0.3)',
+            color: TABLE_THEME.text,
+            padding: isPhone ? '8px 10px' : '9px 12px',
+            fontFamily: TABLE_THEME.fontSans,
+            display: 'flex',
+            alignItems: isPhone ? 'flex-start' : 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            flexDirection: isPhone ? 'column' : 'row',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 900, color: '#ccfbf1' }}>
+              Test this same table on mobile
+            </div>
+            <div style={{ marginTop: 3, fontSize: 12, color: TABLE_THEME.muted }}>
+              Open this LAN address on both desktop and phone. Do not use localhost on the phone.
+            </div>
+            <div
+              style={{
+                marginTop: 6,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                fontSize: 12,
+                color: '#f8fafc',
+                wordBreak: 'break-all',
+              }}
+            >
+              {currentLanUrl}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void copyCurrentLanUrl()}
+            style={{
+              borderRadius: 6,
+              border: `1px solid ${TABLE_THEME.tealBorder}`,
+              background: TABLE_THEME.panelSoft,
+              color: '#ccfbf1',
+              minHeight: 36,
+              padding: '8px 12px',
+              fontSize: 12,
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {copiedLanUrl ? (
+              <>
+                <Check size={14} strokeWidth={2.2} />
+                Copied
+              </>
+            ) : (
+              <>
+                <Copy size={14} strokeWidth={2.2} />
+                Copy URL
+              </>
+            )}
+          </button>
+        </div>
+      ) : null}
       {!seated && (
         <div
           style={{
@@ -4550,16 +4718,16 @@ export const PokerGamePage = ({
                 transformOrigin: 'center',
               }}
             >
-              <div
-                style={{
-                  position: 'absolute',
-                  top: isPortraitPhone ? '29%' : '40%',
-                  left: '50%',
-                  transform: isPortraitPhone
-                    ? 'translate(-50%, -50%) translateY(calc(-10px - 10mm))'
-                    : isShowdown
-                      ? 'translate(-50%, -50%) translateY(calc(-19px - 3.75cm - 10mm))'
-                      : 'translate(-50%, -50%) translateY(calc(-19px - 2.1cm - 10mm))',
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: isPortraitPhone ? '29%' : '40%',
+                    left: '50%',
+                    transform: isPortraitPhone
+                      ? `translate(-50%, -50%) translateY(calc(-10px - 10mm + ${boardAreaVerticalOffsetPx}px))`
+                      : isShowdown
+                        ? `translate(-50%, -50%) translateY(calc(-19px - 3.75cm - 10mm + ${boardAreaVerticalOffsetPx}px))`
+                        : `translate(-50%, -50%) translateY(calc(-19px - 2.1cm - 10mm + ${boardAreaVerticalOffsetPx}px))`,
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -4582,21 +4750,6 @@ export const PokerGamePage = ({
                   }}
                 >
                   Pot {formatChips(potAmount)}
-                </div>
-                <div
-                  style={{
-                    borderRadius: 999,
-                    border: `1px solid ${TABLE_THEME.border}`,
-                    background: 'rgba(2,7,9,0.56)',
-                    color: TABLE_THEME.muted,
-                    padding: '3px 9px',
-                    textAlign: 'center',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {currentStreetLabel}
                 </div>
                 {showLatestActionTicker ? (
                   <div
@@ -4628,8 +4781,8 @@ export const PokerGamePage = ({
                   top: isPortraitPhone ? '38%' : '40%',
                   left: '50%',
                   transform: isPortraitPhone
-                    ? 'translate(-50%, -50%) translateY(calc(2px + 10mm))'
-                    : 'translate(-50%, -50%) translateY(calc(-19px - 0.4cm + 10mm))',
+                    ? `translate(-50%, -50%) translateY(calc(2px + 10mm + ${boardAreaVerticalOffsetPx}px + ${communityCardsDropPx}px))`
+                    : `translate(-50%, -50%) translateY(calc(-19px - 0.4cm + 10mm + ${boardAreaVerticalOffsetPx}px + ${communityCardsDropPx}px))`,
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -4641,6 +4794,8 @@ export const PokerGamePage = ({
                   data-testid="community-cards"
                   style={{
                     display: 'flex',
+                    justifyContent: 'center',
+                    width: 'fit-content',
                     gap: isPortraitPhone ? 4 : '1mm',
                   }}
                 >
@@ -4655,13 +4810,32 @@ export const PokerGamePage = ({
                         } as React.CSSProperties
                       }
                     >
-                      <CardView
-                        key={idx}
-                        card={c}
-                        size={isPortraitPhone ? 'medium' : isPhone ? 'large' : 'xlarge'}
-                        highlight={isShowdown && winningCards.has(cardKey(c))}
-                        dim={isShowdown && winningCards.size > 0 && !winningCards.has(cardKey(c))}
-                      />
+                      <div
+                        style={{
+                          width: communityCardMetrics.width * phoneCommunityCardScale,
+                          height: communityCardMetrics.height * phoneCommunityCardScale,
+                          marginLeft: isPhone && idx > 0 ? -mobileCommunityCardOverlap : 0,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: communityCardMetrics.width,
+                            height: communityCardMetrics.height,
+                            transform: isPhone ? `scale(${phoneCommunityCardScale})` : undefined,
+                            transformOrigin: 'top left',
+                          }}
+                        >
+                          <CardView
+                            key={idx}
+                            card={c}
+                            size={communityCardSize}
+                            highlight={isShowdown && winningCards.has(cardKey(c))}
+                            dim={
+                              isShowdown && winningCards.size > 0 && !winningCards.has(cardKey(c))
+                            }
+                          />
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -4991,8 +5165,12 @@ export const PokerGamePage = ({
                                 <div
                                   style={{
                                     position: 'relative',
-                                    width: seatHoleCardWidth,
-                                    height: seatHoleCardHeight,
+                                    width: reveal
+                                      ? revealedSeatHoleCardMetrics.width
+                                      : seatHoleCardWidth,
+                                    height: reveal
+                                      ? revealedSeatHoleCardMetrics.height
+                                      : seatHoleCardHeight,
                                     transformStyle: 'preserve-3d',
                                     transition: 'transform 0.6s ease',
                                     transform: reveal ? 'rotateY(180deg)' : 'rotateY(0deg)',
@@ -5005,7 +5183,10 @@ export const PokerGamePage = ({
                                       backfaceVisibility: 'hidden',
                                     }}
                                   >
-                                    <CardBack size={seatHoleCardSize} tone="gold" />
+                                    <CardBack
+                                      size={reveal ? revealedSeatHoleCardSize : seatHoleCardSize}
+                                      tone="gold"
+                                    />
                                   </div>
                                   <div
                                     style={{
@@ -5018,7 +5199,7 @@ export const PokerGamePage = ({
                                     {card && (
                                       <CardView
                                         card={card}
-                                        size={seatHoleCardSize}
+                                        size={reveal ? revealedSeatHoleCardSize : seatHoleCardSize}
                                         highlight={isShowdown && winningCards.has(cardKey(card))}
                                         dim={
                                           isShowdown &&
@@ -5073,7 +5254,7 @@ export const PokerGamePage = ({
                       position: 'absolute',
                       bottom: heroInfoBottomOffset - heroAreaOffsetPx,
                       left: '50%',
-                      transform: 'translateX(-50%)',
+                      transform: `translateX(-50%) translateY(${heroClusterMobileDropPx}px)`,
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
@@ -5269,7 +5450,7 @@ export const PokerGamePage = ({
                       {renderReactionBadge(you.id)}
                       {renderBetPill(you.betThisStreet, {
                         left: '50%',
-                        top: -30,
+                        top: -30 + heroBetPillMobileDropPx,
                         transform: 'translate(-50%, -100%)',
                       })}
                     </div>
@@ -5277,9 +5458,9 @@ export const PokerGamePage = ({
                   <div
                     style={{
                       position: 'absolute',
-                      bottom: heroCardsBottomOffset - heroAreaOffsetPx,
-                      left: '50%',
-                      transform: 'translateX(-50%)',
+                      bottom: Math.max(0, heroCardsBottomOffset - heroAreaOffsetPx),
+                      left: `calc(50% + ${heroCardsMobileShiftRightPx}px)`,
+                      transform: `translateX(-50%) translateY(${heroClusterMobileDropPx + heroCardsRelativeDropPx}px)`,
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
@@ -5304,18 +5485,24 @@ export const PokerGamePage = ({
                             data-discard-selected={discardSelected ? 'true' : 'false'}
                             key={`${dealAnimationKey}-hole-${idx}`}
                             style={
-                              (animateHoleDeal
-                                ? {
-                                    animation: `deal-card 700ms ease-out ${idx * 120}ms both`,
-                                    '--deal-x': '0px',
-                                    '--deal-y': '-10.5cm',
-                                  }
-                                : {}) as React.CSSProperties
+                              {
+                                width: heroHoleCardMetrics.width * phoneGameplayCardScale,
+                                height: heroHoleCardMetrics.height * phoneGameplayCardScale,
+                                marginLeft: isPhone && idx > 0 ? -mobileHeroHoleCardOverlap : 0,
+                                ...(animateHoleDeal
+                                  ? {
+                                      animation: `deal-card 700ms ease-out ${idx * 120}ms both`,
+                                      '--deal-x': '0px',
+                                      '--deal-y': '-10.5cm',
+                                    }
+                                  : {}),
+                              } as React.CSSProperties
                             }
                           >
                             <div
                               style={{
-                                transform: `rotate(${idx === 0 ? -6 : 6}deg) translateY(${discardSelected ? '-8px' : '0px'})`,
+                                transform: `rotate(${idx === 0 ? -6 : 6}deg) translateY(${discardSelected ? '-8px' : '0px'}) scale(${phoneGameplayCardScale})`,
+                                transformOrigin: 'center center',
                                 cursor: discardSelectable ? 'pointer' : 'default',
                                 transition: 'transform 140ms ease, filter 140ms ease',
                                 filter: discardSelectable
@@ -5328,7 +5515,7 @@ export const PokerGamePage = ({
                             >
                               <CardView
                                 card={c}
-                                size={isPortraitPhone ? 'medium' : 'large'}
+                                size={heroHoleCardSize}
                                 highlight={isShowdown && winningCards.has(cardKey(c))}
                                 dim={
                                   isShowdown &&
@@ -5360,12 +5547,16 @@ export const PokerGamePage = ({
                 data-testid="showdown-result-lane"
                 style={{
                   width: isPhone ? '100%' : 'min(620px, 100%)',
-                  margin: isPhone ? '0 auto' : '0 auto',
+                  margin: isPhone ? '18px auto 0' : '0 auto',
                   display: 'flex',
                   justifyContent: 'center',
                 }}
               >
-                <ShowdownResultBanner result={showdownResult} isPhone={isPhone} />
+                <ShowdownResultBanner
+                  result={showdownResult}
+                  isPhone={isPhone}
+                  hideWinnerHoleCards={Boolean(you && winnersById.has(you.id))}
+                />
               </div>
             ) : null}
             {showHandHistory ? (
@@ -6049,7 +6240,7 @@ const CardView = ({
   outline?: 'green' | 'red';
   fade?: boolean;
   dim?: boolean;
-  size?: 'small' | 'medium' | 'large' | 'xlarge';
+  size?: CardViewSize;
 }) => {
   const [imageFailed, setImageFailed] = useState(false);
   const [imageIndex, setImageIndex] = useState(0);
@@ -6057,13 +6248,7 @@ const CardView = ({
   const isHidden = isHiddenCard(card);
   const isLarge = size === 'large';
   const isClassicSize = size === 'large' || size === 'medium' || size === 'xlarge';
-  const sizeMap = {
-    small: { width: 28, height: 40, fontSize: 14, corner: 9, center: 16, pad: 2 },
-    medium: { width: 44, height: 62, fontSize: 18, corner: 11, center: 22, pad: 3 },
-    large: { width: 66, height: 92, fontSize: 24, corner: 12, center: 28, pad: 3 },
-    xlarge: { width: 84, height: 118, fontSize: 32, corner: 19, center: 39, pad: 5 },
-  };
-  const sizing = sizeMap[size];
+  const sizing = CARD_VIEW_SIZE_MAP[size];
   const rankLabel = cardRankLabel(card.rank);
   const suit = suitSymbol(card.suit);
   const cardColor = isClassicSize ? (isRed ? '#dc2626' : '#111827') : isRed ? '#f87171' : '#e5e7eb';

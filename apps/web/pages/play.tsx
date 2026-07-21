@@ -3,8 +3,9 @@ import Head from 'next/head';
 import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import { isValidTableCodeFormat, normalizeTableCode } from '@pdh/protocol';
-import { ArrowRight, Clock3, KeyRound, Spade, Users } from 'lucide-react';
+import { ArrowRight, Check, Clock3, Copy, KeyRound, Spade, Users } from 'lucide-react';
 import { logClientEvent } from '../lib/clientTelemetry';
+import { LOCAL_BROWSER_HOSTS, type LocalAccessInfo } from '../lib/localAccess';
 import {
   formatNakamaError,
   quickPlayLobby,
@@ -75,14 +76,61 @@ const PlayLobbyPage: NextPage = () => {
   const [loadingMode, setLoadingMode] = useState<LoadingMode>(null);
   const [error, setError] = useState('');
   const [recentTables, setRecentTables] = useState<RecentLobbyTable[]>([]);
+  const [localAccess, setLocalAccess] = useState<LocalAccessInfo | null>(null);
+  const [copiedLanUrl, setCopiedLanUrl] = useState(false);
 
   useEffect(() => {
     setName(readStoredPlayerName());
     setRecentTables(getRecentTables());
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const host = window.location.hostname.toLowerCase();
+    if (!LOCAL_BROWSER_HOSTS.has(host)) {
+      setLocalAccess(null);
+      return;
+    }
+
+    let cancelled = false;
+    void fetch('/api/local-access')
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as { available: boolean } & Partial<LocalAccessInfo>;
+      })
+      .then((payload) => {
+        if (
+          cancelled ||
+          !payload?.available ||
+          !payload.playUrl ||
+          !payload.origin ||
+          !payload.lanHost
+        ) {
+          return;
+        }
+        setLocalAccess({
+          lanHost: payload.lanHost,
+          origin: payload.origin,
+          playUrl: payload.playUrl,
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const loading = loadingMode !== null;
   const errorDisplay = error ? friendlyLobbyError(error) : null;
+  const copyLanUrl = async () => {
+    if (!localAccess || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      return;
+    }
+    await navigator.clipboard.writeText(localAccess.playUrl);
+    setCopiedLanUrl(true);
+    window.setTimeout(() => setCopiedLanUrl(false), 1500);
+  };
 
   const preparePlayerName = () => {
     const normalized = normalizePlayerName(name);
@@ -322,6 +370,45 @@ const PlayLobbyPage: NextPage = () => {
                 Jump into a table or join a friend by code.
               </p>
             </div>
+
+            {localAccess ? (
+              <div className="mb-4 rounded-lg border border-teal-300/35 bg-teal-400/[0.08] p-4 sm:mb-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-teal-100">Test on phone too</div>
+                    <p className="mt-1 text-sm leading-6 text-zinc-300">
+                      Open the same LAN address on both devices. Do not use <code>localhost</code>{' '}
+                      on your phone.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void copyLanUrl()}
+                    className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-teal-200/45 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-teal-100 transition hover:border-teal-200/75 hover:bg-white/[0.08]"
+                  >
+                    {copiedLanUrl ? (
+                      <>
+                        <Check aria-hidden="true" className="h-4 w-4" strokeWidth={1.9} />
+                        Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy aria-hidden="true" className="h-4 w-4" strokeWidth={1.9} />
+                        Copy URL
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="mt-3 rounded-md border border-white/10 bg-black/[0.28] px-3 py-2.5">
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Open on both desktop and mobile
+                  </div>
+                  <div className="mt-1 break-all font-mono text-sm text-white">
+                    {localAccess.playUrl}
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             <form
               data-testid="quick-play-card"
