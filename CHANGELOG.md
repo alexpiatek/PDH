@@ -22,6 +22,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - Root lint and changelog checks now run from Windows-friendly Node entrypoints.
+- River discard disconnects no longer continue into fold handling after showdown settlement, preventing duplicate pot awards.
 
 ### Security
 

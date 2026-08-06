@@ -631,6 +631,7 @@ export class PokerTable {
       }
     }
 
+    if (hand.phase === 'showdown') return;
     if (player.status !== 'active') return;
 
     player.status = 'folded';
