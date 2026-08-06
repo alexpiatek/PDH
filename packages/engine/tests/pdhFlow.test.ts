@@ -229,6 +229,56 @@ describe('PDH flow contract', () => {
     expect(table.state.hand?.phase).toBe('showdown');
   });
 
+  it('auto-discards disconnected active players without folding during discard phases', () => {
+    const table = createTableWithPlayers(3, 10000, 0x5dccaa11);
+
+    settleBettingStreetWithCalls(table);
+    settleBettingStreetWithCalls(table);
+
+    let hand = table.state.hand!;
+    expect(hand.street).toBe('flop');
+    expect(hand.phase).toBe('discard');
+
+    const disconnectedId = hand.discardPending[0];
+    table.handleDisconnect(disconnectedId);
+
+    hand = table.state.hand!;
+    const disconnectedPlayer = hand.players.find((p) => p.id === disconnectedId)!;
+    expect(disconnectedPlayer.status).toBe('active');
+    expect(disconnectedPlayer.holeCards).toHaveLength(4);
+    expect(hand.discardPending).not.toContain(disconnectedId);
+    expect(hand.phase).toBe('discard');
+  });
+
+  it('does not fold or settle twice when a disconnect completes river discard', () => {
+    const startingStack = 10000;
+    const table = createTableWithPlayers(2, startingStack, 0x5dccaa12);
+    const totalChips = startingStack * 2;
+
+    settleBettingStreetWithCalls(table);
+    settleBettingStreetWithCalls(table);
+    discardAllPending(table);
+    settleBettingStreetWithCalls(table);
+    discardAllPending(table);
+    settleBettingStreetWithCalls(table);
+
+    let hand = table.state.hand!;
+    expect(hand.street).toBe('river');
+    expect(hand.phase).toBe('discard');
+
+    const disconnectedId = hand.discardPending[0];
+    const [otherPending] = hand.discardPending.filter((id) => id !== disconnectedId);
+    expect(otherPending).toBeDefined();
+    table.applyDiscard(otherPending!, 0);
+    table.handleDisconnect(disconnectedId);
+
+    hand = table.state.hand!;
+    expect(hand.street).toBe('showdown');
+    expect(hand.phase).toBe('showdown');
+    expect(hand.players.find((p) => p.id === disconnectedId)?.status).not.toBe('folded');
+    expect(table.state.seats.reduce((sum, seat) => sum + (seat?.stack ?? 0), 0)).toBe(totalChips);
+  });
+
   it('does not try to start a new hand with sitting-out players only', () => {
     const table = createTableWithPlayers(2, 10000, 0x91aa55ff);
     const hand = table.state.hand!;
