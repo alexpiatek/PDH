@@ -19,6 +19,7 @@ import { discardConfirmDisabledReason, discardObligationKey } from '../lib/disca
 import { LOCAL_BROWSER_HOSTS, type LocalAccessInfo } from '../lib/localAccess';
 import { nextAppliedStateVersion, shouldApplyStateSnapshot } from '../lib/stateVersion';
 import {
+  canPersistNextHandIntent,
   canSubmitNextHandIntentNow,
   clearStoredNextHandIntent,
   readStoredNextHandIntent,
@@ -2554,6 +2555,17 @@ export const PokerGamePage = ({
 
   useEffect(() => {
     if (typeof window === 'undefined' || !currentTableId || !currentPlayerId) {
+      return;
+    }
+    if (
+      !canPersistNextHandIntent({
+        currentTableId,
+        currentPlayerId,
+        lastKey: lastNextHandIntentKeyRef.current,
+        renderedIntent: queuedNextHandIntent,
+        currentIntent: queuedNextHandIntentRef.current,
+      })
+    ) {
       return;
     }
     if (queuedNextHandIntent) {
