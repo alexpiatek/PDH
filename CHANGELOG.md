@@ -21,6 +21,8 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Queued next-hand rebuy/sit-out choices are no longer cleared just because a new hand starts
+  before the server confirms the choice.
 - Root lint and changelog checks now run from Windows-friendly Node entrypoints.
 
 ### Security
