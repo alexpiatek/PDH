@@ -6,9 +6,21 @@ export type NextHandIntentSubmissionWindow = {
   hasHand: boolean;
 };
 
+export type NextHandIntentClearState = {
+  applying: NextHandIntent | null;
+  intent: NextHandIntent;
+  needsRebuy: boolean;
+  seatStack: number;
+  seatStatus: string | null | undefined;
+  seated: boolean;
+};
+
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
-export const nextHandIntentStorageKey = (tableId: string | null | undefined, playerId: string | null | undefined) => {
+export const nextHandIntentStorageKey = (
+  tableId: string | null | undefined,
+  playerId: string | null | undefined
+) => {
   const normalizedTableId = tableId?.trim();
   const normalizedPlayerId = playerId?.trim();
   if (!normalizedTableId || !normalizedPlayerId) {
@@ -75,3 +87,22 @@ export const canSubmitNextHandIntentNow = ({
   handPhase,
   hasHand,
 }: NextHandIntentSubmissionWindow) => betweenHandActive || !hasHand || handPhase === 'showdown';
+
+export const shouldClearNextHandIntent = ({
+  applying,
+  intent,
+  needsRebuy,
+  seatStack,
+  seatStatus,
+  seated,
+}: NextHandIntentClearState) => {
+  if (!seated) {
+    return false;
+  }
+
+  if (intent === 'rebuy') {
+    return !needsRebuy && seatStack > 0;
+  }
+
+  return applying === 'sitOut' && seatStatus === 'sitting_out';
+};
