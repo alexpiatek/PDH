@@ -22,6 +22,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - Root lint and changelog checks now run from Windows-friendly Node entrypoints.
+- Queued rebuy and sit-out choices now survive active-hand snapshots until the table can apply them.
 
 ### Security
 
