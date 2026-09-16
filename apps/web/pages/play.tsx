@@ -3,20 +3,36 @@ import Head from 'next/head';
 import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import { isValidTableCodeFormat, normalizeTableCode } from '@pdh/protocol';
-import { ArrowRight, Check, Clock3, Copy, KeyRound, Spade, Users } from 'lucide-react';
+import {
+  ArrowRight,
+  BarChart3,
+  Check,
+  Clock3,
+  Copy,
+  Download,
+  KeyRound,
+  Spade,
+  Users,
+} from 'lucide-react';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { LOCAL_BROWSER_HOSTS, type LocalAccessInfo } from '../lib/localAccess';
-import {
-  formatNakamaError,
-  quickPlayLobby,
-  resolveLobbyCode,
-} from '../lib/nakamaClient';
+import { formatNakamaError, quickPlayLobby, resolveLobbyCode } from '../lib/nakamaClient';
 import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
 import {
   buildQuickPlayRequest,
   recordQuickPlayResolved,
   recordTableJoin,
 } from '../lib/quickPlayProfile';
+import {
+  buildAnonymousAnalyticsExport,
+  downloadAnonymousAnalyticsExport,
+  getOrCreateTestingProfile,
+  recordTestingEvent,
+  startTestingSession,
+  updateTestingProfileDisplayName,
+  type AnonymousAnalyticsExport,
+  type TestingProfile,
+} from '../lib/playerTestingAnalytics';
 import { getRecentTables, type RecentLobbyTable, upsertRecentTable } from '../lib/recentTables';
 import { BondiPokerLogo } from '../components/BondiPokerLogo';
 
@@ -78,10 +94,16 @@ const PlayLobbyPage: NextPage = () => {
   const [recentTables, setRecentTables] = useState<RecentLobbyTable[]>([]);
   const [localAccess, setLocalAccess] = useState<LocalAccessInfo | null>(null);
   const [copiedLanUrl, setCopiedLanUrl] = useState(false);
+  const [testingProfile, setTestingProfile] = useState<TestingProfile | null>(null);
+  const [analyticsExport, setAnalyticsExport] = useState<AnonymousAnalyticsExport | null>(null);
 
   useEffect(() => {
-    setName(readStoredPlayerName());
+    const storedName = readStoredPlayerName();
+    setName(storedName);
     setRecentTables(getRecentTables());
+    const profile = getOrCreateTestingProfile(storedName);
+    setTestingProfile(profile);
+    setAnalyticsExport(buildAnonymousAnalyticsExport());
   }, []);
 
   useEffect(() => {
@@ -141,10 +163,19 @@ const PlayLobbyPage: NextPage = () => {
     setName(normalized);
     setError('');
     storePlayerName(normalized);
+    setTestingProfile(updateTestingProfileDisplayName(normalized));
+    setAnalyticsExport(buildAnonymousAnalyticsExport());
     return normalized;
   };
 
-  const enterMatch = async (matchId: string) => {
+  const enterMatch = async (matchId: string, entryPoint: string, tableCode?: string | null) => {
+    startTestingSession({
+      entryPoint,
+      backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
+      matchId,
+      tableId: tableCode ?? null,
+      displayName: name,
+    });
     await router.push(`/table/${encodeURIComponent(matchId)}`);
   };
 
@@ -162,10 +193,13 @@ const PlayLobbyPage: NextPage = () => {
     logClientEvent('quick_play_click', {
       backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
     });
+    recordTestingEvent('quick_play_click', {
+      backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
+    });
 
     try {
       if (!USE_NAKAMA_BACKEND) {
-        await enterMatch(LEGACY_FALLBACK_MATCH_ID);
+        await enterMatch(LEGACY_FALLBACK_MATCH_ID, 'quick_play');
         return;
       }
 
@@ -184,7 +218,12 @@ const PlayLobbyPage: NextPage = () => {
         })
       );
 
-      await enterMatch(resolved.matchId);
+      recordTestingEvent('quick_play_resolved', {
+        buyIn: resolved.quickPlayBuyIn,
+        maxPlayers: resolved.maxPlayers,
+        isPrivate: resolved.isPrivate,
+      });
+      await enterMatch(resolved.matchId, 'quick_play', resolved.code);
     } catch (submitError) {
       setError(formatNakamaError(submitError));
     } finally {
@@ -228,6 +267,9 @@ const PlayLobbyPage: NextPage = () => {
     logClientEvent('join_by_code_click', {
       backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
     });
+    recordTestingEvent('join_by_code_click', {
+      backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
+    });
 
     try {
       const resolved = await resolveTableCode(joinCode);
@@ -240,7 +282,7 @@ const PlayLobbyPage: NextPage = () => {
         })
       );
       setJoinCode(resolved.code);
-      await enterMatch(resolved.matchId);
+      await enterMatch(resolved.matchId, 'join_code', resolved.code);
     } catch (submitError) {
       setError(formatNakamaError(submitError));
     } finally {
@@ -264,6 +306,10 @@ const PlayLobbyPage: NextPage = () => {
       backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
       code: table.code,
     });
+    recordTestingEvent('recent_table_click', {
+      backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
+      code: table.code,
+    });
 
     try {
       const resolved = await resolveTableCode(table.code);
@@ -277,7 +323,7 @@ const PlayLobbyPage: NextPage = () => {
           isPrivate: table.isPrivate,
         })
       );
-      await enterMatch(resolved.matchId);
+      await enterMatch(resolved.matchId, 'recent_table', resolved.code);
     } catch (submitError) {
       setError(formatNakamaError(submitError));
     } finally {
@@ -320,10 +366,7 @@ const PlayLobbyPage: NextPage = () => {
           data-testid="lobby-shell"
           className="relative z-10 mx-auto grid min-h-[calc(100vh-73px)] w-full max-w-7xl gap-6 px-5 py-5 sm:px-8 sm:py-8 lg:min-h-[calc(100vh-89px)] lg:grid-cols-[0.78fr_1.22fr] lg:items-center lg:gap-10 lg:py-12"
         >
-          <section
-            data-testid="lobby-hero"
-            className="hidden max-w-xl lg:order-1 lg:block"
-          >
+          <section data-testid="lobby-hero" className="hidden max-w-xl lg:order-1 lg:block">
             <p className="font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.34em] text-amber-200">
               Play Lobby
             </p>
@@ -331,8 +374,7 @@ const PlayLobbyPage: NextPage = () => {
               Quick Play or join by code.
             </h1>
             <p className="mt-5 max-w-lg text-base leading-7 text-zinc-300">
-              Jump into a table or join a friend by code. Quick Play finds the best available
-              table.
+              Jump into a table or join a friend by code. Quick Play finds the best available table.
             </p>
 
             <div className="mt-7 grid gap-3 xl:grid-cols-3">
@@ -523,6 +565,62 @@ const PlayLobbyPage: NextPage = () => {
               ) : (
                 <p className="mt-3 text-sm leading-6 text-zinc-400">No recent tables yet.</p>
               )}
+            </div>
+
+            <div
+              data-testid="testing-profile-card"
+              className="mt-4 rounded-lg border border-teal-300/20 bg-teal-400/[0.045] p-4 sm:mt-5 sm:p-5"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-[var(--font-display)] text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-teal-100">
+                    Testing Profile
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-zinc-400">
+                    Device profile, session history, and chip ledger are being captured anonymously.
+                  </p>
+                </div>
+                <BarChart3 aria-hidden="true" className="h-5 w-5 text-teal-300" strokeWidth={1.7} />
+              </div>
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                <div className="rounded-md border border-white/10 bg-black/[0.2] px-3 py-2.5">
+                  <div className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                    Sessions
+                  </div>
+                  <div className="mt-1 text-lg font-semibold text-white">
+                    {analyticsExport?.summary.sessions ?? 0}
+                  </div>
+                </div>
+                <div className="rounded-md border border-white/10 bg-black/[0.2] px-3 py-2.5">
+                  <div className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                    Hands
+                  </div>
+                  <div className="mt-1 text-lg font-semibold text-white">
+                    {analyticsExport?.summary.handsSeen ?? 0}
+                  </div>
+                </div>
+                <div className="rounded-md border border-white/10 bg-black/[0.2] px-3 py-2.5">
+                  <div className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                    Profile
+                  </div>
+                  <div className="mt-1 truncate text-sm font-semibold text-white">
+                    {testingProfile?.profileKey.slice(-8) ?? 'pending'}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAnalyticsExport(buildAnonymousAnalyticsExport());
+                  downloadAnonymousAnalyticsExport();
+                }}
+                className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-teal-200/45 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-teal-100 transition hover:border-teal-200/75 hover:bg-white/[0.08]"
+              >
+                <Download aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
+                Download anonymous export
+              </button>
             </div>
 
             {errorDisplay ? (

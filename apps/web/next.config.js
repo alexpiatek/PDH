@@ -9,6 +9,11 @@ const nextConfig = {
         destination: '/play',
         permanent: false,
       },
+      {
+        source: '/online',
+        destination: '/play',
+        permanent: false,
+      },
     ];
   },
 };
