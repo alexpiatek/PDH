@@ -54,6 +54,8 @@ services:
       - '${NAKAMA_HTTP_PORT:-7350}:7350'
     command:
       - '--name=${NAKAMA_NODE_NAME:-pdh-nakama}'
+      - '--runtime.env=PDH_ENABLE_PLAYER_PROFILES=${PDH_ENABLE_PLAYER_PROFILES:?Set profile mode explicitly after reviewing docs/PLAYER_PROFILES.md}'
+      - '--runtime.env=PDH_ADMIN_USER_IDS=${PDH_ADMIN_USER_IDS:-}'
       - '--config=/nakama/data/nakama.yml'
       - '--database.address=${NAKAMA_DATABASE_ADDRESS:?Set NAKAMA_DATABASE_ADDRESS in .env}'
       - '--socket.server_key=${NAKAMA_SOCKET_SERVER_KEY:?Set NAKAMA_SOCKET_SERVER_KEY in .env}'

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import Head from 'next/head';
 import type { NextPage } from 'next';
@@ -7,6 +8,7 @@ import { ArrowRight, Check, Clock3, Copy, KeyRound, Spade, Users } from 'lucide-
 import { logClientEvent } from '../lib/clientTelemetry';
 import { LOCAL_BROWSER_HOSTS, type LocalAccessInfo } from '../lib/localAccess';
 import {
+  createLobbyTable,
   formatNakamaError,
   quickPlayLobby,
   resolveLobbyCode,
@@ -35,7 +37,7 @@ const NETWORK_BACKEND = resolveNetworkBackend();
 const USE_NAKAMA_BACKEND = NETWORK_BACKEND === 'nakama';
 const LEGACY_FALLBACK_MATCH_ID = 'main';
 
-type LoadingMode = 'quick_play' | 'join_code' | `recent:${string}` | null;
+type LoadingMode = 'create' | 'quick_play' | 'join_code' | `recent:${string}` | null;
 
 const friendlyLobbyError = (message: string) => {
   const lower = message.toLowerCase();
@@ -146,6 +148,33 @@ const PlayLobbyPage: NextPage = () => {
 
   const enterMatch = async (matchId: string) => {
     await router.push(`/table/${encodeURIComponent(matchId)}`);
+  };
+
+  const handleCreateTable = async () => {
+    if (loading) return;
+    const playerName = preparePlayerName();
+    if (!playerName) return;
+    setLoadingMode('create');
+    try {
+      const table = await createLobbyTable({
+        name: playerName + "'s table",
+        maxPlayers: 9,
+        isPrivate: true,
+      });
+      setRecentTables(
+        upsertRecentTable({
+          ...table,
+          name: playerName + "'s table",
+          maxPlayers: 9,
+          isPrivate: true,
+        })
+      );
+      await enterMatch(table.matchId);
+    } catch (err) {
+      setError(formatNakamaError(err));
+    } finally {
+      setLoadingMode(null);
+    }
   };
 
   const handleQuickPlay = async (event: FormEvent<HTMLFormElement>) => {
@@ -320,10 +349,7 @@ const PlayLobbyPage: NextPage = () => {
           data-testid="lobby-shell"
           className="relative z-10 mx-auto grid min-h-[calc(100vh-73px)] w-full max-w-7xl gap-6 px-5 py-5 sm:px-8 sm:py-8 lg:min-h-[calc(100vh-89px)] lg:grid-cols-[0.78fr_1.22fr] lg:items-center lg:gap-10 lg:py-12"
         >
-          <section
-            data-testid="lobby-hero"
-            className="hidden max-w-xl lg:order-1 lg:block"
-          >
+          <section data-testid="lobby-hero" className="hidden max-w-xl lg:order-1 lg:block">
             <p className="font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.34em] text-amber-200">
               Play Lobby
             </p>
@@ -331,8 +357,7 @@ const PlayLobbyPage: NextPage = () => {
               Quick Play or join by code.
             </h1>
             <p className="mt-5 max-w-lg text-base leading-7 text-zinc-300">
-              Jump into a table or join a friend by code. Quick Play finds the best available
-              table.
+              Jump into a table or join a friend by code. Quick Play finds the best available table.
             </p>
 
             <div className="mt-7 grid gap-3 xl:grid-cols-3">
@@ -370,45 +395,6 @@ const PlayLobbyPage: NextPage = () => {
                 Jump into a table or join a friend by code.
               </p>
             </div>
-
-            {localAccess ? (
-              <div className="mb-4 rounded-lg border border-teal-300/35 bg-teal-400/[0.08] p-4 sm:mb-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-teal-100">Test on phone too</div>
-                    <p className="mt-1 text-sm leading-6 text-zinc-300">
-                      Open the same LAN address on both devices. Do not use <code>localhost</code>{' '}
-                      on your phone.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void copyLanUrl()}
-                    className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-teal-200/45 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-teal-100 transition hover:border-teal-200/75 hover:bg-white/[0.08]"
-                  >
-                    {copiedLanUrl ? (
-                      <>
-                        <Check aria-hidden="true" className="h-4 w-4" strokeWidth={1.9} />
-                        Copied
-                      </>
-                    ) : (
-                      <>
-                        <Copy aria-hidden="true" className="h-4 w-4" strokeWidth={1.9} />
-                        Copy URL
-                      </>
-                    )}
-                  </button>
-                </div>
-                <div className="mt-3 rounded-md border border-white/10 bg-black/[0.28] px-3 py-2.5">
-                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                    Open on both desktop and mobile
-                  </div>
-                  <div className="mt-1 break-all font-mono text-sm text-white">
-                    {localAccess.playUrl}
-                  </div>
-                </div>
-              </div>
-            ) : null}
 
             <form
               data-testid="quick-play-card"
@@ -449,6 +435,26 @@ const PlayLobbyPage: NextPage = () => {
                 </button>
               </div>
             </form>
+
+            <div className="mt-4 flex flex-wrap items-center gap-4">
+              {USE_NAKAMA_BACKEND && (
+                <button
+                  disabled={loading}
+                  onClick={() => void handleCreateTable()}
+                  className="rounded-md border border-teal-300/40 px-4 py-3 text-sm text-teal-200"
+                >
+                  {loadingMode === 'create' ? 'Creating table…' : 'Create a table for friends'}
+                </button>
+              )}
+              {process.env.NEXT_PUBLIC_PLAYER_PROFILES !== 'false' && (
+                <Link href="/profile" className="text-sm text-teal-300">
+                  My chips & profile
+                </Link>
+              )}
+            </div>
+            <p className="mt-2 text-xs text-zinc-400">
+              Share your table code with friends. Anyone you share it with can join.
+            </p>
 
             <form
               data-testid="join-code-card"
@@ -531,6 +537,45 @@ const PlayLobbyPage: NextPage = () => {
                 <p className="mt-1 text-sm leading-5 text-rose-100/85">{errorDisplay.detail}</p>
               </div>
             ) : null}
+            {localAccess ? (
+              <div className="mb-4 rounded-lg border border-teal-300/35 bg-teal-400/[0.08] p-4 sm:mb-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-teal-100">Test on phone too</div>
+                    <p className="mt-1 text-sm leading-6 text-zinc-300">
+                      Open the same LAN address on both devices. Do not use <code>localhost</code>{' '}
+                      on your phone.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void copyLanUrl()}
+                    className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-teal-200/45 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-teal-100 transition hover:border-teal-200/75 hover:bg-white/[0.08]"
+                  >
+                    {copiedLanUrl ? (
+                      <>
+                        <Check aria-hidden="true" className="h-4 w-4" strokeWidth={1.9} />
+                        Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy aria-hidden="true" className="h-4 w-4" strokeWidth={1.9} />
+                        Copy URL
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="mt-3 rounded-md border border-white/10 bg-black/[0.28] px-3 py-2.5">
+                  <div className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                    Open on both desktop and mobile
+                  </div>
+                  <div className="mt-1 break-all font-mono text-sm text-white">
+                    {localAccess.playUrl}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
           </section>
         </div>
       </main>

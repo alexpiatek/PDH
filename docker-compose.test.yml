@@ -42,6 +42,7 @@ services:
       - '${NAKAMA_CONSOLE_PORT:-17351}:7351'
     command:
       - '--name=${NAKAMA_NODE_NAME:-pdh-nakama-itest}'
+      - '--runtime.env=PDH_ENABLE_PLAYER_PROFILES=${PDH_ENABLE_PLAYER_PROFILES:-false}'
       - '--config=/nakama/data/nakama.yml'
       - '--database.address=${NAKAMA_DATABASE_ADDRESS:-nakama:localdb@postgres:5432/nakama?sslmode=disable}'
       - '--socket.server_key=${NAKAMA_SOCKET_SERVER_KEY:-dev_socket_server_key_change_me}'

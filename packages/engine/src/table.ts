@@ -619,6 +619,7 @@ export class PokerTable {
 
     logPush(hand.log, `${player.name} disconnected`);
 
+    const wasDiscardPhase = hand.phase === 'discard';
     if (hand.phase === 'discard' && hand.discardPending.includes(player.id)) {
       if (player.holeCards.length > 2) {
         this.discardCard(player, 0, true);
@@ -631,6 +632,7 @@ export class PokerTable {
       }
     }
 
+    if (wasDiscardPhase || hand.phase !== 'betting' || hand.pendingNextPhaseAt) return;
     if (player.status !== 'active') return;
 
     player.status = 'folded';

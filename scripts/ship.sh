@@ -17,7 +17,7 @@ Behavior:
   3) updates local main from origin
   4) merges the current branch into main
   5) pushes main
-  6) SSHes to production, pulls main, and runs the deploy script
+  6) waits for GitHub CI and the tested-SHA deployment workflow
 
 Optional env:
   DEPLOY_SCRIPT=./scripts/deploy-prod.sh
@@ -76,7 +76,7 @@ if [[ "$branch" != "$TARGET_BRANCH" ]]; then
 fi
 
 git push "$PUSH_REMOTE" "$TARGET_BRANCH"
-DEPLOY_SCRIPT="${DEPLOY_SCRIPT:-./scripts/deploy-prod.sh}" pnpm restart web serv
+echo "Pushed main. Deployment runs only after the GitHub CI gates pass."
 
 if [[ "$branch" != "$TARGET_BRANCH" ]]; then
   git checkout "$branch"

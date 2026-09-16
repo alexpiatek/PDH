@@ -1,3 +1,5 @@
+import { profilesEnabled, requireEmailAccount, withProfileTransaction } from './playerProfiles';
+import { canAccessTable } from './tableAccess';
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
 import {
   computeLegalActionsForPlayer,
@@ -394,7 +396,14 @@ function hydrateTable(tableState: TableState): PokerTable {
 }
 
 function tableSnapshot(table: PokerTable) {
-  return JSON.stringify(table.state);
+  // Nakama exposes restored Go maps with nondeterministic key iteration order.
+  // Sort object keys so idle ticks cannot look like gameplay mutations.
+  return JSON.stringify(table.state, (_key, value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+    const sorted: Record<string, unknown> = Object.create(null);
+    for (const key of Object.keys(value).sort()) sorted[key] = value[key];
+    return sorted;
+  });
 }
 
 function bumpStateVersion(state: MatchState) {
@@ -500,6 +509,15 @@ function advanceBetweenHandIfReady(
   }
 
   const eligibleIds = eligibleBetweenHandPlayerIds(table);
+  // A dropped connection must not buy a player into another hand during grace.
+  if (
+    eligibleIds.some(
+      (id) =>
+        !hasActivePresenceForUser(state, id) &&
+        state.playerConnections[id]?.status === 'reconnecting'
+    )
+  )
+    return changed;
   if (now < betweenHand.minUntilMs) {
     return changed;
   }
@@ -851,7 +869,10 @@ function normalizeLoadedCheckpoint(value: unknown): MatchCheckpoint | null {
   }
   if (!checkpoint.privateState?.tableState) return null;
   if (checkpoint.privateState.tableState.id !== checkpoint.tableId) return null;
-  if (checkpoint.recovery?.policy !== 'restore_from_checkpoint' || !checkpoint.recovery.canRestore) {
+  if (
+    checkpoint.recovery?.policy !== 'restore_from_checkpoint' ||
+    !checkpoint.recovery.canRestore
+  ) {
     return null;
   }
   return checkpoint as MatchCheckpoint;
@@ -939,9 +960,7 @@ function loadCheckpoint(
 }
 
 function seatedPlayerIds(tableState: TableState) {
-  return tableState.seats
-    .filter((seat): seat is Seat => Boolean(seat?.id))
-    .map((seat) => seat.id);
+  return tableState.seats.filter((seat): seat is Seat => Boolean(seat?.id)).map((seat) => seat.id);
 }
 
 function recoveredConnections(
@@ -1583,7 +1602,7 @@ function matchInit(ctx, logger, nk, params) {
   return {
     state,
     tickRate: 10,
-    label: JSON.stringify({ tableId }),
+    label: JSON.stringify(params?.isPrivate ? { private: true } : { tableId }),
   };
 }
 
@@ -1594,6 +1613,22 @@ function matchJoinAttempt(ctx, logger, nk, dispatcher, tick, state, presence, me
     tick,
     userId: presence.userId,
   });
+  try {
+    if (profilesEnabled(ctx)) requireEmailAccount({ ...ctx, userId: presence.userId }, nk);
+    if (!canAccessTable(nk, presence.userId, state.table.id)) {
+      return {
+        state,
+        accept: false,
+        rejectMessage: 'Join this table using its shared code first.',
+      };
+    }
+  } catch {
+    return {
+      state,
+      accept: false,
+      rejectMessage: 'Table access could not be verified. Try again.',
+    };
+  }
   return { state, accept: true };
 }
 
@@ -1748,6 +1783,31 @@ function applyExpiredReconnectGrace(
   return { shouldBroadcast, checkpointReasons };
 }
 
+function playerHasActiveReconnectGrace(state: MatchState, playerId: string, now: number) {
+  const connection = state.playerConnections[playerId];
+  return Boolean(
+    connection?.status === 'reconnecting' &&
+    connection.graceDeadlineMs !== null &&
+    now < connection.graceDeadlineMs &&
+    !hasActivePresenceForUser(state, playerId)
+  );
+}
+
+function autoActionBlockedByReconnectGrace(state: MatchState, table: PokerTable, now: number) {
+  const hand = table.state.hand;
+  if (!hand || hand.phase !== 'betting') return false;
+  const actor = hand.players.find((p) => p.seat === hand.actionOnSeat && p.status === 'active');
+  return actor ? playerHasActiveReconnectGrace(state, actor.id, now) : false;
+}
+
+function autoDiscardBlockedByReconnectGrace(state: MatchState, table: PokerTable, now: number) {
+  const hand = table.state.hand;
+  if (!hand || hand.phase !== 'discard' || hand.discardDeadline === null) return false;
+  return hand.discardPending.some((playerId) =>
+    playerHasActiveReconnectGrace(state, playerId, now)
+  );
+}
+
 function applyExpiredTableTimers(
   logger: nkruntime.Logger,
   state: MatchState,
@@ -1802,42 +1862,46 @@ function applyExpiredTableTimers(
     checkpointReasons.push('presence_left');
   }
 
-  const beforeAutoAction = handSnapshot(table);
-  const autoActionMutation = commitTableMutation(state, table, () => table.autoAction(now));
-  if (autoActionMutation.result) {
-    const hand = table.state.hand;
-    logStructured(logger, 'info', 'match.auto_action', {
-      matchId: state.matchId,
-      tableId: table.state.id,
-      tick,
-      handId: hand?.handId ?? null,
-      action: autoActionMutation.result.action,
-      userId: autoActionMutation.result.playerId,
-      stateVersion: state.stateVersion,
-    });
-    shouldBroadcast = true;
-    checkpointReasons.push(
-      ...checkpointReasonsForTransition('auto_action', beforeAutoAction, table, state)
-    );
-  } else if (autoActionMutation.changed) {
-    shouldBroadcast = true;
+  if (!autoActionBlockedByReconnectGrace(state, table, now)) {
+    const beforeAutoAction = handSnapshot(table);
+    const autoActionMutation = commitTableMutation(state, table, () => table.autoAction(now));
+    if (autoActionMutation.result) {
+      const hand = table.state.hand;
+      logStructured(logger, 'info', 'match.auto_action', {
+        matchId: state.matchId,
+        tableId: table.state.id,
+        tick,
+        handId: hand?.handId ?? null,
+        action: autoActionMutation.result.action,
+        userId: autoActionMutation.result.playerId,
+        stateVersion: state.stateVersion,
+      });
+      shouldBroadcast = true;
+      checkpointReasons.push(
+        ...checkpointReasonsForTransition('auto_action', beforeAutoAction, table, state)
+      );
+    } else if (autoActionMutation.changed) {
+      shouldBroadcast = true;
+    }
   }
 
-  const beforeAutoDiscard = handSnapshot(table);
-  const autoDiscardMutation = commitTableMutation(state, table, () => table.autoDiscard(now));
-  if (autoDiscardMutation.changed) {
-    const hand = table.state.hand;
-    logStructured(logger, 'info', 'match.auto_discard', {
-      matchId: state.matchId,
-      tableId: table.state.id,
-      tick,
-      handId: hand?.handId ?? null,
-      stateVersion: state.stateVersion,
-    });
-    shouldBroadcast = true;
-    checkpointReasons.push(
-      ...checkpointReasonsForTransition('auto_discard', beforeAutoDiscard, table, state)
-    );
+  if (!autoDiscardBlockedByReconnectGrace(state, table, now)) {
+    const beforeAutoDiscard = handSnapshot(table);
+    const autoDiscardMutation = commitTableMutation(state, table, () => table.autoDiscard(now));
+    if (autoDiscardMutation.changed) {
+      const hand = table.state.hand;
+      logStructured(logger, 'info', 'match.auto_discard', {
+        matchId: state.matchId,
+        tableId: table.state.id,
+        tick,
+        handId: hand?.handId ?? null,
+        stateVersion: state.stateVersion,
+      });
+      shouldBroadcast = true;
+      checkpointReasons.push(
+        ...checkpointReasonsForTransition('auto_discard', beforeAutoDiscard, table, state)
+      );
+    }
   }
 
   const beforeBetweenHand = state.betweenHand ? cloneJson(state.betweenHand) : null;
@@ -2355,12 +2419,25 @@ function matchSignal(ctx, logger, nk, dispatcher, tick, state, data) {
   return { state, data: JSON.stringify({ type: 'ok' }) };
 }
 
+function profileMatchJoin(...args: any[]) {
+  return withProfileTransaction(matchJoin)(...args);
+}
+function profileMatchLeave(...args: any[]) {
+  return withProfileTransaction(matchLeave)(...args);
+}
+function profileMatchLoop(...args: any[]) {
+  return withProfileTransaction(matchLoop)(...args);
+}
+(globalThis as any).profileMatchJoin = profileMatchJoin;
+(globalThis as any).profileMatchLeave = profileMatchLeave;
+(globalThis as any).profileMatchLoop = profileMatchLoop;
+
 export const pdhMatchHandler = {
   matchInit,
   matchJoinAttempt,
-  matchJoin,
-  matchLeave,
-  matchLoop,
+  matchJoin: profileMatchJoin,
+  matchLeave: profileMatchLeave,
+  matchLoop: profileMatchLoop,
   matchTerminate,
   matchSignal,
 };

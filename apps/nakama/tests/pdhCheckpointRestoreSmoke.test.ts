@@ -277,7 +277,7 @@ describe('pdh checkpoint restore smoke', () => {
     const originalDispatcher = { broadcastMessage: vi.fn() };
     const restoreDispatcher = { broadcastMessage: vi.fn() };
     const createPayload = rpcCreateTable(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ name: 'Restore Smoke', maxPlayers: 2, isPrivate: true })
@@ -321,7 +321,7 @@ describe('pdh checkpoint restore smoke', () => {
 
     removeMatch(created.matchId);
     const joinPayload = rpcJoinByCode(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ code: created.code })

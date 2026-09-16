@@ -6,6 +6,7 @@ import { runPnpm } from "./lib/pnpm.mjs";
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const checks = [
+  ["web unit tests", ["exec", "vitest", "run", "apps/web/tests"]],
   ["protocol tests", ["-C", "packages/protocol", "test"]],
   ["engine tests", ["-C", "packages/engine", "test"]],
   ["nakama unit tests", ["-C", "apps/nakama", "test:unit"]],

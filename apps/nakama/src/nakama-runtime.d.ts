@@ -58,6 +58,8 @@ declare module '@heroiclabs/nakama-runtime' {
   }
 
   export interface Nakama {
+    accountGetId?(userId: string): { email?: string };
+    storageList?(userId: string, collection: string, limit: number, cursor?: string): {objects: StorageObject[]; cursor?: string};
     binaryToString(data: Uint8Array): string;
     matchCreate(module: string, params: Record<string, unknown>): string;
     matchList(
@@ -81,6 +83,8 @@ declare module '@heroiclabs/nakama-runtime' {
   }
 
   export interface Initializer {
+    registerBeforeReadStorageObjects(fn: (...args: any[]) => any): void;
+    registerBeforeListStorageObjects(fn: (...args: any[]) => any): void;
     registerMatch(name: string, handler: MatchHandler): void;
     registerRpc(name: string, fn: (...args: any[]) => string): void;
     registerAfterAuthenticateDevice?(fn: (...args: any[]) => void): void;

@@ -15,6 +15,8 @@ const logger = {
 function makeInitializer() {
   return {
     registerAfterAuthenticateDevice: vi.fn(),
+    registerBeforeReadStorageObjects: vi.fn(),
+    registerBeforeListStorageObjects: vi.fn(),
     registerMatch: vi.fn(),
     registerRpc: vi.fn(),
   };

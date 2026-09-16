@@ -235,3 +235,7 @@ SMOKE_SERVER_KEY='<nakama_socket_server_key>' ./scripts/remote-smoke.sh --url ht
 Classic poker structure. New information pressure. Fast browser play.
 
 Bondi Poker is Hold'em with one extra decision that changes everything.
+
+## Free group pilot and player accounts
+
+See [Player profiles and rollout](docs/PLAYER_PROFILES.md) for required email sign-in, persistent free chips, operator reporting, test coverage, and the safe migration/deployment checklist.

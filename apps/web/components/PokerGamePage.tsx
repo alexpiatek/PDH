@@ -1,3 +1,4 @@
+import { ensureNakamaSession } from '../lib/nakamaClient';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronRight, Copy, MoreHorizontal, Trophy, X } from 'lucide-react';
 import { Client as NakamaClient } from '@heroiclabs/nakama-js';
@@ -17,11 +18,17 @@ import { getPlayerInitials } from '../lib/playerInitials';
 import { resolveBettingActionControls } from '../lib/actionControls';
 import { discardConfirmDisabledReason, discardObligationKey } from '../lib/discardControls';
 import { LOCAL_BROWSER_HOSTS, type LocalAccessInfo } from '../lib/localAccess';
-import { nextAppliedStateVersion, shouldApplyStateSnapshot } from '../lib/stateVersion';
 import {
+  nextAppliedStateVersion,
+  shouldApplyStateSnapshot,
+  type StateSnapshotVersionCursor,
+} from '../lib/stateVersion';
+import {
+  canPersistNextHandIntent,
   canSubmitNextHandIntentNow,
   clearStoredNextHandIntent,
   readStoredNextHandIntent,
+  shouldClearNextHandIntent,
   writeStoredNextHandIntent,
   type NextHandIntent,
 } from '../lib/nextHandIntent';
@@ -121,13 +128,6 @@ const TABLE_THEME = {
   dim: 'rgba(161,161,170,0.78)',
 };
 
-const createDeviceId = () => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `pdh-${Date.now()}-${Math.floor(Math.random() * 1_000_000_000)}`;
-};
-
 type CardViewSize = 'small' | 'medium' | 'large' | 'xlarge';
 
 const CARD_VIEW_SIZE_MAP: Record<
@@ -138,41 +138,6 @@ const CARD_VIEW_SIZE_MAP: Record<
   medium: { width: 44, height: 62, fontSize: 18, corner: 11, center: 22, pad: 3 },
   large: { width: 66, height: 92, fontSize: 24, corner: 12, center: 28, pad: 3 },
   xlarge: { width: 84, height: 118, fontSize: 32, corner: 19, center: 39, pad: 5 },
-};
-
-const getOrCreateDeviceId = () => {
-  if (typeof window === 'undefined') {
-    return createDeviceId();
-  }
-  const existing = window.localStorage.getItem(STORAGE_KEYS.deviceId);
-  if (existing) {
-    return existing;
-  }
-  const created = createDeviceId();
-  window.localStorage.setItem(STORAGE_KEYS.deviceId, created);
-  return created;
-};
-
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-
-const authenticateDeviceWithRetries = async (client: NakamaClient, deviceId: string) => {
-  try {
-    return await client.authenticateDevice(deviceId, true);
-  } catch (createError) {
-    let lastError: unknown = createError;
-    for (const delayMs of [50, 150, 350, 700]) {
-      await sleep(delayMs);
-      try {
-        return await client.authenticateDevice(deviceId, false);
-      } catch (loginError) {
-        lastError = loginError;
-      }
-    }
-    throw lastError;
-  }
 };
 
 const errorMessage = (error: unknown) => {
@@ -1026,7 +991,7 @@ const HandHistoryPanel = ({
         left: isPhone ? 8 : undefined,
         right: isPhone ? 'auto' : 24,
         top: isPhone ? undefined : 112,
-        bottom: isPhone ? 'calc(env(safe-area-inset-bottom, 0px) + 116px)' : 24,
+        bottom: isPhone ? 'calc(env(safe-area-inset-bottom, 0px) + 230px)' : 24,
         width: isPhone ? 'min(248px, calc(100vw - 16px))' : 360,
         maxWidth: 'calc(100vw - 20px)',
         minHeight: isPhone ? 132 : 180,
@@ -1454,7 +1419,10 @@ export const PokerGamePage = ({
   const holeDealTimerRef = useRef<number | null>(null);
   const joinTimeoutRef = useRef<number | null>(null);
   const copyFeedbackTimerRef = useRef<number | null>(null);
-  const latestAppliedStateVersionRef = useRef<number | null>(null);
+  const latestAppliedStateVersionRef = useRef<StateSnapshotVersionCursor>({
+    tableId: null,
+    stateVersion: null,
+  });
   const serverTimeOffsetMsRef = useRef(0);
   const tableRef = useRef<HTMLDivElement | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(resolvedDebugPlayerId);
@@ -1638,6 +1606,9 @@ export const PokerGamePage = ({
   };
 
   useEffect(() => {
+    latestAppliedStateVersionRef.current = { tableId: null, stateVersion: null };
+    serverTimeOffsetMsRef.current = 0;
+    pendingMessagesRef.current = [];
     if (debugMode) {
       connectionRef.current = null;
       legacySocketRef.current = null;
@@ -1649,6 +1620,8 @@ export const PokerGamePage = ({
       return;
     }
 
+    setState(null);
+    setHasReceivedState(false);
     const existing =
       typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.playerId) : null;
     const storedNextMutatingSeq =
@@ -1866,7 +1839,7 @@ export const PokerGamePage = ({
         NAKAMA_PORT,
         NAKAMA_USE_SSL
       );
-      const session = await authenticateDeviceWithRetries(client, getOrCreateDeviceId());
+      const session = await ensureNakamaSession();
       if (disposed) return;
       const sessionUserId =
         session && typeof (session as Session & { user_id?: unknown }).user_id === 'string'
@@ -1946,8 +1919,9 @@ export const PokerGamePage = ({
 
       setStatus('Connected (nakama)');
       flushPendingMessages();
-      if (existing) {
-        connectionRef.current.send({ type: 'reconnect', playerId: existing });
+      const reconnectPlayerId = sessionUserId ?? existing;
+      if (reconnectPlayerId) {
+        connectionRef.current.send({ type: 'reconnect', playerId: reconnectPlayerId });
       } else {
         connectionRef.current.send({ type: 'requestState' });
       }
@@ -2360,7 +2334,7 @@ export const PokerGamePage = ({
   const isPhone = viewportWidth <= 640;
   const isPortraitPhone = isPhone && viewportHeight > viewportWidth;
   const isLandscapePhone = isMobile && viewportHeight <= 520 && viewportWidth > viewportHeight;
-  const pinActionTray = isMobile && !isLandscapePhone;
+  const pinActionTray = isMobile;
   const layoutTableWidth = isPortraitPhone
     ? 390
     : isLandscapePhone
@@ -2556,6 +2530,16 @@ export const PokerGamePage = ({
     if (typeof window === 'undefined' || !currentTableId || !currentPlayerId) {
       return;
     }
+    if (
+      !canPersistNextHandIntent({
+        currentTableId,
+        currentPlayerId,
+        lastKey: lastNextHandIntentKeyRef.current,
+        renderedIntent: queuedNextHandIntent,
+        currentIntent: queuedNextHandIntentRef.current,
+      })
+    )
+      return;
     if (queuedNextHandIntent) {
       writeStoredNextHandIntent(
         window.localStorage,
@@ -2567,6 +2551,12 @@ export const PokerGamePage = ({
     }
     clearStoredNextHandIntent(window.localStorage, currentTableId, currentPlayerId);
   }, [currentTableId, currentPlayerId, queuedNextHandIntent]);
+
+  useEffect(() => {
+    // A submitted choice that missed its legal window must retry next hand.
+    queuedIntentSubmittedRef.current = false;
+    setQueuedIntentApplying(null);
+  }, [hand?.handId]);
 
   useEffect(() => {
     if (!queuedNextHandIntent || !localNeedsRebuy) {
@@ -2599,19 +2589,18 @@ export const PokerGamePage = ({
   ]);
 
   useEffect(() => {
-    if (!queuedNextHandIntent) {
-      return;
-    }
-
-    const rebuyApplied =
-      queuedNextHandIntent === 'rebuy' && seated && !localNeedsRebuy && localSeatStack > 0;
-    const sitOutApplied =
-      queuedNextHandIntent === 'sitOut' &&
-      queuedIntentApplying === 'sitOut' &&
-      localSeatStatus === 'sitting_out';
-    const noLongerNeedsChoice = seated && localSeat && !localNeedsRebuy;
-
-    if (!rebuyApplied && !sitOutApplied && !noLongerNeedsChoice) {
+    if (
+      !shouldClearNextHandIntent({
+        intent: queuedNextHandIntent,
+        applying: queuedIntentApplying,
+        seated,
+        hasSeat: Boolean(localSeat),
+        needsRebuy: localNeedsRebuy,
+        seatStack: localSeatStack,
+        seatStatus: localSeatStatus,
+        postHandControlsAllowed: handAllowsPostHandControls,
+      })
+    ) {
       return;
     }
 
@@ -2623,6 +2612,7 @@ export const PokerGamePage = ({
     localSeat,
     localSeatStack,
     localSeatStatus,
+    handAllowsPostHandControls,
     queuedIntentApplying,
     queuedNextHandIntent,
     seated,
@@ -3217,15 +3207,18 @@ export const PokerGamePage = ({
     return lines.slice(-10);
   }, [hand?.log, hand?.street, state?.log]);
 
+  const densePhoneTable = isPortraitPhone && (hand?.players.length ?? 0) >= 8;
   const seatingPositions = isPortraitPhone
     ? [
         { left: '50%', top: '80%' },
-        { left: '19%', top: '13%' },
-        { left: '81%', top: '13%' },
-        { left: '87%', top: '47%' },
-        { left: '13%', top: '47%' },
-        { left: '72%', top: '63%' },
-        { left: '28%', top: '63%' },
+        { left: densePhoneTable ? '17%' : '19%', top: '13%' },
+        { left: densePhoneTable ? '83%' : '81%', top: '13%' },
+        { left: densePhoneTable ? '83%' : '87%', top: densePhoneTable ? '34%' : '47%' },
+        { left: densePhoneTable ? '17%' : '13%', top: densePhoneTable ? '34%' : '47%' },
+        { left: densePhoneTable ? '83%' : '72%', top: '63%' },
+        { left: densePhoneTable ? '17%' : '28%', top: '63%' },
+        { left: '50%', top: '13%' },
+        { left: '50%', top: '63%' },
       ]
     : [
         { left: '50%', top: '82%' },
@@ -3235,6 +3228,8 @@ export const PokerGamePage = ({
         { left: '10%', top: '50%' },
         { left: '76%', top: '75%' },
         { left: '24%', top: '75%' },
+        { left: '38%', top: '10%' },
+        { left: '62%', top: '10%' },
       ];
   const seatBetOffsets: React.CSSProperties[] = isPortraitPhone
     ? [
@@ -3245,6 +3240,8 @@ export const PokerGamePage = ({
         { left: '50%', top: 'calc(100% + 4px)', transform: 'translate(-50%, 0)' },
         { left: '50%', top: -20, transform: 'translate(-50%, -100%)' },
         { left: '50%', top: -20, transform: 'translate(-50%, -100%)' },
+        { left: '50%', top: 'calc(100% + 4px)', transform: 'translate(-50%, 0)' },
+        { left: '50%', top: -20, transform: 'translate(-50%, -100%)' },
       ]
     : [
         { left: '50%', top: -30, transform: 'translate(-50%, -100%)' },
@@ -3254,6 +3251,8 @@ export const PokerGamePage = ({
         { left: 'calc(100% + 8px)', top: '50%', transform: 'translate(0, -50%)' },
         { left: '44%', top: -30, transform: 'translate(-50%, -100%)' },
         { left: '56%', top: -30, transform: 'translate(-50%, -100%)' },
+        { left: '50%', top: 'calc(100% + 6px)', transform: 'translate(-50%, 0)' },
+        { left: '50%', top: -30, transform: 'translate(-50%, -100%)' },
       ];
   const orderedPlayers = hand
     ? [...(you ? [you] : []), ...hand.players.filter((p) => p.id !== playerId)]
@@ -3307,9 +3306,9 @@ export const PokerGamePage = ({
     addChip(bbSeat, { label: 'BB', tone: 'blind' });
     return map;
   }, [hand, state?.seats]);
-  const infoAvatarSize = isPortraitPhone ? 24 : isPhone ? 29 : 34;
-  const seatNameplateWidth = isPortraitPhone ? 139 : isPhone ? 165 : 178;
-  const playerPanelMinHeight = isPortraitPhone ? 59 : isPhone ? 64 : 58;
+  const infoAvatarSize = densePhoneTable ? 20 : isPortraitPhone ? 24 : isPhone ? 29 : 34;
+  const seatNameplateWidth = densePhoneTable ? 108 : isPortraitPhone ? 139 : isPhone ? 165 : 178;
+  const playerPanelMinHeight = densePhoneTable ? 50 : isPortraitPhone ? 59 : isPhone ? 64 : 58;
   const playerPanelPadding = isPortraitPhone ? '5px 7px' : isPhone ? '7px 8px' : '7px 9px';
   const playerPanelRadius = isPortraitPhone ? 8 : 10;
   const playerPanelColumnGap = isPortraitPhone ? 6 : isPhone ? 8 : 7;
@@ -3357,12 +3356,14 @@ export const PokerGamePage = ({
       ((isBettingPhase && isMyTurn) || discardPending || showDiscardWaitingTray || isRevealPhase))
   );
   const centeredSectionMinHeight = isMobile ? 'calc(100dvh - 160px)' : 'calc(100vh - 220px)';
-  const mobileHeroInfoBottomOffset = isPortraitPhone
-    ? 214
-    : isLandscapePhone
-      ? 132
-      : 126;
-  const mobileHeroCardsBottomOffset = isLandscapePhone ? 78 : isPortraitPhone ? 118 : 28;
+  const mobileHeroInfoBottomOffset = densePhoneTable
+    ? 120
+    : isPortraitPhone
+      ? 180
+      : isLandscapePhone
+        ? 132
+        : 126;
+  const mobileHeroCardsBottomOffset = isLandscapePhone ? 78 : isPortraitPhone ? 30 : 28;
   const mobileTableVerticalReserve = isPortraitPhone ? 202 : isLandscapePhone ? 196 : 110;
   const heroInfoBottomOffset = isPhone
     ? mobileHeroInfoBottomOffset
@@ -3376,19 +3377,15 @@ export const PokerGamePage = ({
     : isMobile
       ? mobileHeroCardsBottomOffset
       : 20;
-  const heroClusterMobileDropPx = isMobile ? 74 : 0;
-  const heroCardsRelativeDropPx = isMobile ? 55 : 0;
-  const heroCardsMobileShiftRightPx = isMobile ? 41 : 0;
+  const heroClusterMobileDropPx = 0;
+  const heroCardsRelativeDropPx = 0;
+  const heroCardsMobileShiftRightPx = 0;
   const heroBetPillMobileDropPx = isMobile ? 14 : 0;
   const boardAreaVerticalOffsetPx = isPortraitPhone ? 30 : isPhone ? 18 : 0;
   const communityCardsDropPx = isPortraitPhone ? 0 : isPhone ? 0 : 0;
-  const phoneGameplayCardScale = isPhone ? 1.8 : 1;
-  const desiredPhoneCommunityCardScale = isPhone ? 1.56 : 1;
-  const communityCardSize: CardViewSize = isPortraitPhone
-    ? 'large'
-    : isPhone
-      ? 'xlarge'
-      : 'xlarge';
+  const phoneGameplayCardScale = densePhoneTable ? 1.45 : isPhone ? 1.8 : 1;
+  const desiredPhoneCommunityCardScale = densePhoneTable ? 0.95 : isPhone ? 1.25 : 1;
+  const communityCardSize: CardViewSize = isPortraitPhone ? 'large' : isPhone ? 'xlarge' : 'xlarge';
   const heroHoleCardSize: CardViewSize = isPortraitPhone ? 'medium' : 'large';
   const communityCardMetrics = CARD_VIEW_SIZE_MAP[communityCardSize];
   const heroHoleCardMetrics = CARD_VIEW_SIZE_MAP[heroHoleCardSize];
@@ -3397,9 +3394,7 @@ export const PokerGamePage = ({
     : 0;
   const actionBarReserve = !isMobile && you && isBettingPhase ? (showRaiseDrawer ? 220 : 150) : 0;
   const tableHorizontalPadding = isPhone ? (isPortraitPhone ? 28 : 16) : isMobile ? 28 : 64;
-  const tableVerticalReserve = isMobile
-    ? mobileTableVerticalReserve
-    : 152 + actionBarReserve;
+  const tableVerticalReserve = isMobile ? mobileTableVerticalReserve : 152 + actionBarReserve;
   const tableAspectRatio = layoutTableWidth / layoutTableHeight;
   const tableAvailableWidth = Math.max(280, viewportWidth - tableHorizontalPadding);
   const tableRawWidth = Math.min(
@@ -3426,7 +3421,10 @@ export const PokerGamePage = ({
   const phoneCommunityCardScale = isPhone
     ? Math.max(
         1,
-        Math.min(desiredPhoneCommunityCardScale, phoneCommunityBoardWidthBudgetPx / phoneCommunityBaseWidthPx)
+        Math.min(
+          desiredPhoneCommunityCardScale,
+          phoneCommunityBoardWidthBudgetPx / phoneCommunityBaseWidthPx
+        )
       )
     : 1;
   const mobileCommunityCardOverlap = isPhone
@@ -4423,7 +4421,7 @@ export const PokerGamePage = ({
         </div>
       ) : null}
       {currentLanUrl ? (
-        <div
+        <details
           role="status"
           data-testid="local-lan-url"
           style={{
@@ -4437,13 +4435,16 @@ export const PokerGamePage = ({
             color: TABLE_THEME.text,
             padding: isPhone ? '8px 10px' : '9px 12px',
             fontFamily: TABLE_THEME.fontSans,
-            display: 'flex',
+            display: 'block',
             alignItems: isPhone ? 'flex-start' : 'center',
             justifyContent: 'space-between',
             gap: 10,
             flexDirection: isPhone ? 'column' : 'row',
           }}
         >
+          <summary style={{ cursor: 'pointer', fontSize: 12 }}>
+            Open this table on another device
+          </summary>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 12, fontWeight: 900, color: '#ccfbf1' }}>
               Test this same table on mobile
@@ -4494,7 +4495,7 @@ export const PokerGamePage = ({
               </>
             )}
           </button>
-        </div>
+        </details>
       ) : null}
       {!seated && (
         <div
@@ -4722,16 +4723,16 @@ export const PokerGamePage = ({
                 transformOrigin: 'center',
               }}
             >
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: isPortraitPhone ? '29%' : '40%',
-                    left: '50%',
-                    transform: isPortraitPhone
-                      ? `translate(-50%, -50%) translateY(calc(-10px - 10mm + ${boardAreaVerticalOffsetPx}px))`
-                      : isShowdown
-                        ? `translate(-50%, -50%) translateY(calc(-19px - 3.75cm - 10mm + ${boardAreaVerticalOffsetPx}px))`
-                        : `translate(-50%, -50%) translateY(calc(-19px - 2.1cm - 10mm + ${boardAreaVerticalOffsetPx}px))`,
+              <div
+                style={{
+                  position: 'absolute',
+                  top: isPortraitPhone ? '29%' : '40%',
+                  left: '50%',
+                  transform: isPortraitPhone
+                    ? `translate(-50%, -50%) translateY(calc(-10px - 10mm + ${boardAreaVerticalOffsetPx}px))`
+                    : isShowdown
+                      ? `translate(-50%, -50%) translateY(calc(-19px - 3.75cm - 10mm + ${boardAreaVerticalOffsetPx}px))`
+                      : `translate(-50%, -50%) translateY(calc(-19px - 2.1cm - 10mm + ${boardAreaVerticalOffsetPx}px))`,
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -5139,7 +5140,7 @@ export const PokerGamePage = ({
                         <div
                           style={{
                             marginTop: 4,
-                            display: 'flex',
+                            display: densePhoneTable && !isShowdown ? 'none' : 'flex',
                             justifyContent: 'center',
                             marginLeft: isPortraitPhone ? 0 : '1cm',
                           }}
@@ -5271,7 +5272,7 @@ export const PokerGamePage = ({
                       style={{
                         position: 'relative',
                         display: 'inline-block',
-                        width: seatNameplateWidth,
+                        width: densePhoneTable ? 180 : seatNameplateWidth,
                       }}
                     >
                       <div
@@ -5455,9 +5456,11 @@ export const PokerGamePage = ({
                       </div>
                       {renderReactionBadge(you.id)}
                       {renderBetPill(you.betThisStreet, {
-                        left: '50%',
-                        top: -30 + heroBetPillMobileDropPx,
-                        transform: 'translate(-50%, -100%)',
+                        left: densePhoneTable ? 'calc(100% + 8px)' : '50%',
+                        top: densePhoneTable ? '50%' : -30 + heroBetPillMobileDropPx,
+                        transform: densePhoneTable
+                          ? 'translate(0, -50%)'
+                          : 'translate(-50%, -100%)',
                       })}
                     </div>
                   </div>
@@ -5507,8 +5510,10 @@ export const PokerGamePage = ({
                           >
                             <div
                               style={{
-                                transform: `rotate(${idx === 0 ? -6 : 6}deg) translateY(${discardSelected ? '-8px' : '0px'}) scale(${phoneGameplayCardScale})`,
-                                transformOrigin: 'center center',
+                                transform: `rotate(${isPhone ? 0 : idx === 0 ? -6 : 6}deg) translateY(${discardSelected ? '-8px' : '0px'}) scale(${phoneGameplayCardScale})`,
+                                transformOrigin: isPhone ? 'top left' : 'center center',
+                                width: heroHoleCardMetrics.width,
+                                height: heroHoleCardMetrics.height,
                                 cursor: discardSelectable ? 'pointer' : 'default',
                                 transition: 'transform 140ms ease, filter 140ms ease',
                                 filter: discardSelectable

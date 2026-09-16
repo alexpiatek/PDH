@@ -414,7 +414,7 @@ async function reconnectClient(client: TestClient) {
   await replacement.connect(client.session, true);
 }
 
-describe('pdh integration via nakama apis', () => {
+(process.env.ITEST_PLAYER_PROFILES === 'true' ? describe.skip : describe)('pdh integration via nakama apis', () => {
   afterEach(async () => {
     await Promise.all(createdClients.map((client) => disconnectClient(client)));
     createdClients.length = 0;
