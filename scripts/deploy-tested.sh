@@ -71,7 +71,7 @@ rollback() {
   sudo -n /bin/systemctl is-active --quiet "$web_service"
 }
 trap 'rollback' ERR
-sudo -n /bin/systemctl stop "$web_service"
+trap 'rollback; exit 1' TERM INT
 git merge --ff-only "$sha"
 bash scripts/run-pnpm.sh install --frozen-lockfile --prod=false
 for artifact in apps/web/.next apps/nakama/dist packages/engine/dist; do
@@ -82,5 +82,5 @@ docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate
 sudo -n /bin/systemctl restart "$web_service"
 wait_for_health "$api_health_url"
 wait_for_health "$web_health_url"
-trap - ERR
+trap - ERR TERM INT
 printf 'Activated %s; previous release %s; rollback artifacts %s\n' "$sha" "$previous" "$backup"
