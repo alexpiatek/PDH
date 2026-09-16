@@ -9,6 +9,15 @@ web_service="${PDH_WEB_SERVICE:-pdh-web}"
 api_health_url="${PDH_API_HEALTH_URL:-https://api.bondipoker.online/healthcheck}"
 web_health_url="${PDH_WEB_HEALTH_URL:-https://bondipoker.online/play}"
 [[ "$web_service" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo 'Invalid web service name' >&2; exit 1; }
+wait_for_health() {
+  local url="$1"
+  for _ in $(seq 1 20); do
+    if curl --connect-timeout 2 --max-time 5 -fsS "$url" >/dev/null 2>&1; then return 0; fi
+    sleep 2
+  done
+  echo "Health check failed: $url" >&2
+  return 1
+}
 [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid SHA' >&2; exit 1; }
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
@@ -57,7 +66,7 @@ rollback() {
   done
   docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate nakama
   sudo -n /bin/systemctl restart "$web_service"
-  curl --retry 10 --retry-delay 3 --retry-connrefused --max-time 10 -fsS "$api_health_url" >/dev/null
+  wait_for_health "$api_health_url"
   # Verify the service locally even if the release's external health URL failed.
   sudo -n /bin/systemctl is-active --quiet "$web_service"
 }
@@ -71,7 +80,7 @@ for artifact in apps/web/.next apps/nakama/dist packages/engine/dist; do
 done
 docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate nakama
 sudo -n /bin/systemctl restart "$web_service"
-curl --retry 10 --retry-delay 3 --retry-connrefused --max-time 10 -fsS "$api_health_url" >/dev/null
-curl --retry 10 --retry-delay 3 --retry-connrefused --max-time 10 -fsS "$web_health_url" >/dev/null
+wait_for_health "$api_health_url"
+wait_for_health "$web_health_url"
 trap - ERR
 printf 'Activated %s; previous release %s; rollback artifacts %s\n' "$sha" "$previous" "$backup"

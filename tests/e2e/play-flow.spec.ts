@@ -100,9 +100,9 @@ async function createTwoPlayers(browser: Browser) {
   await pageA.goto('/play');
   await pageA.getByTestId('join-name-input').fill(`E2E-A-${Date.now()}`);
   await pageA.getByRole('button', { name: 'Create a table for friends' }).click();
-  const tableSummary = pageA.getByText(/^Table [A-Z0-9]{6}/).first();
+  const tableSummary = pageA.getByText(/^Table code [A-Z0-9]{6}/).first();
   await expect(tableSummary).toBeVisible();
-  const code = (await tableSummary.textContent())!.match(/Table ([A-Z0-9]{6})/)![1];
+  const code = (await tableSummary.textContent())!.match(/Table code ([A-Z0-9]{6})/)![1];
   await pageB.goto('/play');
   await pageB.getByTestId('join-name-input').fill(`E2E-B-${Date.now()}`);
   await pageB.getByTestId('join-code-input').fill(code);

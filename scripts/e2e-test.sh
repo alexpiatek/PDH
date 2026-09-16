@@ -93,6 +93,8 @@ trap cleanup EXIT
 docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres
 docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm nakama-migrate
 docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d nakama
+COMPOSE_PROJECT_NAME="$PROJECT_NAME" COMPOSE_FILE="$COMPOSE_FILE" ENV_FILE="$ENV_FILE" \
+  bash "$ROOT_DIR/scripts/db-migrate.sh"
 
 HEALTH_URL="http://127.0.0.1:${HTTP_PORT}/healthcheck"
 for _ in $(seq 1 60); do
