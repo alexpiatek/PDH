@@ -141,8 +141,9 @@ export function isLocalAdminRequest(req: NextApiRequest): boolean {
     host === '::1' ||
     host === '::ffff:127.0.0.1' ||
     host === '' ||
-    req.headers.host?.startsWith('localhost:') ||
-    req.headers.host?.startsWith('127.0.0.1:')
+    Boolean(
+      req.headers.host?.startsWith('localhost:') || req.headers.host?.startsWith('127.0.0.1:')
+    )
   );
 }
 
