@@ -37,6 +37,11 @@ set -a
 source "$ENV_FILE"
 set +a
 
+# These browser fixtures exercise legacy seats; account accounting has its own
+# real-server integration suite. Keep both ends in the same explicit mode.
+export PDH_ENABLE_PLAYER_PROFILES=false
+export NEXT_PUBLIC_PLAYER_PROFILES=false
+
 HTTP_PORT="$(find_free_port "${E2E_NAKAMA_HTTP_PORT:-$((18350 + PORT_OFFSET))}")"
 CONSOLE_PORT="$(find_free_port "${E2E_NAKAMA_CONSOLE_PORT:-$((18351 + PORT_OFFSET))}")"
 POSTGRES_PORT="$(find_free_port "${E2E_POSTGRES_PORT:-$((16432 + PORT_OFFSET))}")"
