@@ -4,7 +4,7 @@ import Head from 'next/head';
 import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import { isValidTableCodeFormat, normalizeTableCode } from '@pdh/protocol';
-import { ArrowRight, Check, Clock3, Copy, KeyRound, Spade, Users } from 'lucide-react';
+import { ArrowRight, Check, Clock3, Copy, KeyRound, Spade, UserRound, Users } from 'lucide-react';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { LOCAL_BROWSER_HOSTS, type LocalAccessInfo } from '../lib/localAccess';
 import {
@@ -367,12 +367,25 @@ const PlayLobbyPage: NextPage = () => {
         <header className="relative z-10 border-b border-amber-300/40 bg-[#03080b]/70 backdrop-blur">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 sm:px-8 sm:py-5">
             <BondiPokerLogo href="/" variant="nav" className="max-w-[68vw]" />
-            <a
-              href="/#how-it-works"
-              className="hidden rounded-md border border-white/15 px-4 py-2 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200 transition hover:border-teal-300/70 hover:text-teal-100 sm:inline-flex"
-            >
-              Rules
-            </a>
+            <div className="flex shrink-0 items-center gap-2">
+              <Link
+                href="/profile"
+                aria-label="Player profile"
+                title="Player profile"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-teal-300/45 px-3 text-teal-100 transition hover:border-teal-200 hover:bg-teal-400/[0.08] sm:px-4"
+              >
+                <UserRound aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
+                <span className="hidden font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.16em] sm:inline">
+                  Profile
+                </span>
+              </Link>
+              <a
+                href="/#how-it-works"
+                className="hidden h-10 items-center rounded-md border border-white/15 px-4 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200 transition hover:border-teal-300/70 hover:text-teal-100 sm:inline-flex"
+              >
+                Rules
+              </a>
+            </div>
           </div>
         </header>
 
@@ -476,11 +489,6 @@ const PlayLobbyPage: NextPage = () => {
                 >
                   {loadingMode === 'create' ? 'Creating table…' : 'Create a table for friends'}
                 </button>
-              )}
-              {process.env.NEXT_PUBLIC_PLAYER_PROFILES !== 'false' && (
-                <Link href="/profile" className="text-sm text-teal-300">
-                  My chips & profile
-                </Link>
               )}
             </div>
             <p className="mt-2 text-xs text-zinc-400">
