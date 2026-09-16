@@ -128,6 +128,16 @@ export function PlayerAccountGate({ children }: { children: ReactNode }) {
         >
           {create ? 'Already have an account? Sign in' : 'New here? Create an account'}
         </button>
+        <p className="mt-5 text-sm text-zinc-400">
+          Forgotten your password?{' '}
+          <a
+            className="text-teal-300 underline"
+            href={`mailto:${process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'alex.piatek17@gmail.com'}?subject=Bondi%20Poker%20account%20help`}
+          >
+            Contact pilot support
+          </a>
+          . Include your account email, but never your password.
+        </p>
       </section>
     </main>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PokerTable } from '@pdh/engine';
+import { PokerTable } from '../../../packages/engine/src/index';
 import {
   accountingWrites,
   rpcPlayerProfile,

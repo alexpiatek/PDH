@@ -3,13 +3,18 @@
 set -euo pipefail
 umask 077
 sha="${1:?A tested commit SHA is required}"
+deploy_ref="${PDH_DEPLOY_REF:-origin/main}"
+web_service="${PDH_WEB_SERVICE:-pdh-web}"
+api_health_url="${PDH_API_HEALTH_URL:-https://api.bondipoker.online/healthcheck}"
+web_health_url="${PDH_WEB_HEALTH_URL:-https://bondipoker.online/play}"
+[[ "$web_service" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo 'Invalid web service name' >&2; exit 1; }
 [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid SHA' >&2; exit 1; }
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 exec 9>"$(git rev-parse --git-common-dir)/pdh-deploy.lock"
 flock -n 9 || { echo 'Another deployment is active' >&2; exit 1; }
 [[ -z "$(git status --porcelain)" ]] || { echo 'Deployment checkout has local changes' >&2; exit 1; }
-[[ "$(git rev-parse origin/main)" == "$sha" ]] || { echo 'A newer main exists; skipping stale deployment'; exit 0; }
+[[ "$(git rev-parse "$deploy_ref")" == "$sha" ]] || { echo 'Deployment ref changed; skipping stale deployment'; exit 0; }
 git merge-base --is-ancestor HEAD "$sha" || { echo 'Deployment checkout diverged' >&2; exit 1; }
 previous="$(git rev-parse HEAD)"
 release="$(dirname "$root")/.pdh-releases/${sha}-$(date +%s)"
@@ -50,10 +55,13 @@ rollback() {
     fi
   done
   docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate nakama
-  sudo -n /bin/systemctl restart pdh-web
+  sudo -n /bin/systemctl restart "$web_service"
+  curl --retry 10 --retry-delay 3 --retry-connrefused --max-time 10 -fsS "$api_health_url" >/dev/null
+  # Verify the service locally even if the release's external health URL failed.
+  sudo -n /bin/systemctl is-active --quiet "$web_service"
 }
 trap 'rollback' ERR
-sudo -n /bin/systemctl stop pdh-web
+sudo -n /bin/systemctl stop "$web_service"
 git merge --ff-only "$sha"
 bash scripts/run-pnpm.sh install --frozen-lockfile --prod=false
 for artifact in apps/web/.next apps/nakama/dist packages/engine/dist; do
@@ -61,8 +69,8 @@ for artifact in apps/web/.next apps/nakama/dist packages/engine/dist; do
   cp -a "$release/$artifact" "$artifact"
 done
 docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate nakama
-sudo -n /bin/systemctl restart pdh-web
-curl --retry 10 --retry-delay 3 --retry-connrefused -fsS https://api.bondipoker.online/healthcheck >/dev/null
-curl --retry 10 --retry-delay 3 --retry-connrefused -fsS https://bondipoker.online/play >/dev/null
+sudo -n /bin/systemctl restart "$web_service"
+curl --retry 10 --retry-delay 3 --retry-connrefused --max-time 10 -fsS "$api_health_url" >/dev/null
+curl --retry 10 --retry-delay 3 --retry-connrefused --max-time 10 -fsS "$web_health_url" >/dev/null
 trap - ERR
 printf 'Activated %s; previous release %s; rollback artifacts %s\n' "$sha" "$previous" "$backup"

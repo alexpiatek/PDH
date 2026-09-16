@@ -86,6 +86,7 @@ trap cleanup EXIT
 
 (
   cd "$ROOT_DIR"
+  ./scripts/run-pnpm.sh -C packages/engine build
   ./scripts/run-pnpm.sh -C apps/nakama build
 )
 

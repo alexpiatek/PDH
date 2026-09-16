@@ -33,3 +33,8 @@ The new deployment workflow waits for all CI jobs and activates the exact tested
 - Storage API: https://heroiclabs.com/docs/nakama/server-framework/typescript-runtime/function-reference/
 
 Behavior is tested against the repository's pinned Nakama 3.17.0 image, rather than assuming current documentation exactly matches it.
+
+## Pilot support and staging
+The sign-in screen provides a password-help link to `NEXT_PUBLIC_SUPPORT_EMAIL` (Alex's pilot contact by default). Never ask players to send their password. Before an operator resets an account, verify ownership through the account email or an already established trusted contact. Use the private Nakama console, select the exact account ID, reset its password and arrange secure delivery; never edit password hashes in PostgreSQL. Self-service reset and email verification remain separate follow-up work.
+
+`scripts/deploy-tested.sh` supports an isolated rehearsal using `PDH_DEPLOY_REF`, `PDH_WEB_SERVICE`, `PDH_API_HEALTH_URL` and `PDH_WEB_HEALTH_URL`. The defaults remain production. Staging must have its own checkout, environment, Docker Compose project, database volume, loopback ports and service. Never point staging at the live database. A deliberately failing web health URL exercises automatic rollback; check the old commit, both services, and unchanged database rows after the expected nonzero exit.

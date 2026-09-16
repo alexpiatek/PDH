@@ -19,7 +19,11 @@ resolve_remote_smoke_key() {
     return 1
   fi
 
-  ssh "$ssh_host" "cd '$repo_dir' && python3 - <<'PY'
+  local quoted_repo
+  printf -v quoted_repo '%q' "$repo_dir"
+  # The remote path is intentionally expanded locally after shell quoting.
+  # shellcheck disable=SC2029
+  ssh "$ssh_host" "cd $quoted_repo && python3 - <<'PY'
 from pathlib import Path
 env_file = Path('.env')
 if not env_file.exists():
