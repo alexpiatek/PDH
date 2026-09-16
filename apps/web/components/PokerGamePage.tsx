@@ -15,6 +15,14 @@ import { BondiPokerLogo } from './BondiPokerLogo';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
 import { getPlayerInitials } from '../lib/playerInitials';
+import {
+  endTestingSession,
+  readCurrentSessionKey,
+  recordChipLedgerEntry,
+  recordTestingEvent,
+  startTestingSession,
+  updateTestingProfileDisplayName,
+} from '../lib/playerTestingAnalytics';
 import { resolveBettingActionControls } from '../lib/actionControls';
 import { discardConfirmDisabledReason, discardObligationKey } from '../lib/discardControls';
 import { LOCAL_BROWSER_HOSTS, type LocalAccessInfo } from '../lib/localAccess';
@@ -1465,6 +1473,7 @@ export const PokerGamePage = ({
   const hasLoggedTableJoinedRef = useRef(false);
   const hasLoggedFirstActionRef = useRef(false);
   const autoJoinAttemptedRef = useRef(false);
+  const lastChipSnapshotRef = useRef<string | null>(null);
   const rebuyNextHandSentRef = useRef(false);
   const rebuyStateRef = useRef<'idle' | 'pending' | 'confirmed'>('idle');
   const queuedNextHandIntentRef = useRef<NextHandIntent | null>(null);
@@ -1964,6 +1973,7 @@ export const PokerGamePage = ({
   }, [debugInitialState, debugMode, debugStatus, resolvedDebugPlayerId, resolvedForcedMatchId]);
 
   const handleExitTable = () => {
+    endTestingSession();
     connectionRef.current?.close();
     connectionRef.current = null;
     legacySocketRef.current = null;
@@ -2143,7 +2153,70 @@ export const PokerGamePage = ({
       seat: you.seat,
       stack: you.stack,
     });
-  }, [seated, you, resolvedForcedMatchId]);
+    startTestingSession({
+      entryPoint: 'table',
+      backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
+      matchId: resolvedForcedMatchId || storedMatchId || null,
+      tableId: tableCode || null,
+      displayName: localPlayerName,
+    });
+    recordTestingEvent('table_joined', {
+      backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
+      seat: you.seat,
+      stack: you.stack,
+      tableId: tableCode || null,
+    });
+  }, [seated, you, resolvedForcedMatchId, tableCode, localPlayerName]);
+
+  useEffect(() => {
+    if (!seated || !playerId || !Number.isFinite(localSeatStack)) {
+      return;
+    }
+    const storedMatchId =
+      typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_KEYS.matchId) : null;
+    const sessionKey = readCurrentSessionKey();
+    if (!sessionKey) {
+      startTestingSession({
+        entryPoint: 'table',
+        backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
+        matchId: resolvedForcedMatchId || storedMatchId || null,
+        tableId: tableCode || null,
+        displayName: localPlayerName,
+      });
+    }
+    const handId = typeof hand?.handId === 'string' ? hand.handId : null;
+    const phase = typeof hand?.phase === 'string' ? hand.phase : null;
+    const snapshotKey = [
+      resolvedForcedMatchId || storedMatchId || '',
+      tableCode || '',
+      handId || 'lobby',
+      phase || 'between',
+      localSeatStack,
+      localSeatStatus,
+    ].join('|');
+    if (lastChipSnapshotRef.current === snapshotKey) {
+      return;
+    }
+    lastChipSnapshotRef.current = snapshotKey;
+    recordChipLedgerEntry({
+      matchId: resolvedForcedMatchId || storedMatchId || null,
+      tableId: tableCode || null,
+      handId,
+      phase,
+      stack: localSeatStack,
+      eventType: handId ? 'hand_snapshot' : 'seat_snapshot',
+    });
+  }, [
+    hand?.handId,
+    hand?.phase,
+    localPlayerName,
+    localSeatStack,
+    localSeatStatus,
+    playerId,
+    resolvedForcedMatchId,
+    seated,
+    tableCode,
+  ]);
 
   const logFirstAction = (
     kind: 'action' | 'discard',
@@ -2853,11 +2926,17 @@ export const PokerGamePage = ({
     }
     setName(trimmed);
     storePlayerName(trimmed);
+    updateTestingProfileDisplayName(trimmed);
     if (!connectionRef.current) {
       setStatus('Connecting to table...');
       return;
     }
     setStatus('Joining table...');
+    recordTestingEvent('manual_join_submit', {
+      backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
+      buyIn,
+      tableId: tableCode || null,
+    });
     if (joinTimeoutRef.current !== null) {
       window.clearTimeout(joinTimeoutRef.current);
       joinTimeoutRef.current = null;
@@ -2887,9 +2966,15 @@ export const PokerGamePage = ({
 
     autoJoinAttemptedRef.current = true;
     storePlayerName(normalizedName);
+    updateTestingProfileDisplayName(normalizedName);
     setName(normalizedName);
     setNameError(null);
     setStatus('Joining table...');
+    recordTestingEvent('auto_join_submit', {
+      backend: USE_NAKAMA_BACKEND ? 'nakama' : 'legacy',
+      buyIn,
+      tableId: tableCode || null,
+    });
     if (joinTimeoutRef.current !== null) {
       window.clearTimeout(joinTimeoutRef.current);
       joinTimeoutRef.current = null;
@@ -2902,12 +2987,19 @@ export const PokerGamePage = ({
     window.setTimeout(() => {
       send({ type: 'requestState' });
     }, 160);
-  }, [buyIn, hasReceivedState, name, seated, status]);
+  }, [buyIn, hasReceivedState, name, seated, status, tableCode]);
 
   const act = (action: PlayerActionType, amount?: number) => {
     logFirstAction('action', {
       action,
       amount: amount ?? null,
+    });
+    recordTestingEvent('action', {
+      action,
+      amount: amount ?? null,
+      handId: hand?.handId ?? null,
+      phase: hand?.phase ?? null,
+      stack: localSeatStack,
     });
     send({ type: 'action', action, amount });
   };
@@ -2917,6 +3009,11 @@ export const PokerGamePage = ({
       return;
     }
     logClientEvent(intent === 'rebuy' ? 'table_rebuy_click' : 'table_sit_out_click', {
+      handId: hand?.handId ?? null,
+      stack: localSeatStack,
+      status: localSeatStatus,
+    });
+    recordTestingEvent(intent === 'rebuy' ? 'rebuy_queued' : 'sit_out_queued', {
       handId: hand?.handId ?? null,
       stack: localSeatStack,
       status: localSeatStatus,
@@ -2939,6 +3036,12 @@ export const PokerGamePage = ({
       seatedPlayers: seatedPlayers.length,
       secondsLeft: startGateSecondsLeft,
     });
+    recordTestingEvent('ready_for_hand_click', {
+      tableId: state?.id ?? null,
+      ready: !localReadyForStart,
+      seatedPlayers: seatedPlayers.length,
+      secondsLeft: startGateSecondsLeft,
+    });
     send({ type: 'readyForHand', ready: !localReadyForStart });
   };
 
@@ -2950,6 +3053,12 @@ export const PokerGamePage = ({
     if (!discardPending || discardSubmitted) return;
     if (!isDiscardIndexAllowed(idx)) return;
     logFirstAction('discard', { discardIndex: idx });
+    recordTestingEvent('discard', {
+      discardIndex: idx,
+      handId: hand?.handId ?? null,
+      phase: hand?.phase ?? null,
+      stack: localSeatStack,
+    });
     setDiscardSubmitted(true);
     setDiscardFlashIndex(idx);
     setSelectedDiscardIndex(null);
