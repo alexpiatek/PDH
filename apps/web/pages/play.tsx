@@ -4,17 +4,7 @@ import Head from 'next/head';
 import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import { isValidTableCodeFormat, normalizeTableCode } from '@pdh/protocol';
-import {
-  ArrowRight,
-  BarChart3,
-  Check,
-  Clock3,
-  Copy,
-  Download,
-  KeyRound,
-  Spade,
-  Users,
-} from 'lucide-react';
+import { ArrowRight, Check, Clock3, Copy, KeyRound, Spade, Users } from 'lucide-react';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { LOCAL_BROWSER_HOSTS, type LocalAccessInfo } from '../lib/localAccess';
 import {
@@ -30,14 +20,10 @@ import {
   recordTableJoin,
 } from '../lib/quickPlayProfile';
 import {
-  buildAnonymousAnalyticsExport,
-  downloadAnonymousAnalyticsExport,
   getOrCreateTestingProfile,
   recordTestingEvent,
   startTestingSession,
   updateTestingProfileDisplayName,
-  type AnonymousAnalyticsExport,
-  type TestingProfile,
 } from '../lib/playerTestingAnalytics';
 import { getRecentTables, type RecentLobbyTable, upsertRecentTable } from '../lib/recentTables';
 import { BondiPokerLogo } from '../components/BondiPokerLogo';
@@ -100,42 +86,12 @@ const PlayLobbyPage: NextPage = () => {
   const [recentTables, setRecentTables] = useState<RecentLobbyTable[]>([]);
   const [localAccess, setLocalAccess] = useState<LocalAccessInfo | null>(null);
   const [copiedLanUrl, setCopiedLanUrl] = useState(false);
-  const [testingProfile, setTestingProfile] = useState<TestingProfile | null>(null);
-  const [analyticsExport, setAnalyticsExport] = useState<AnonymousAnalyticsExport | null>(null);
-  const [showAdminTestingProfile, setShowAdminTestingProfile] = useState(false);
 
   useEffect(() => {
     const storedName = readStoredPlayerName();
     setName(storedName);
     setRecentTables(getRecentTables());
-    const profile = getOrCreateTestingProfile(storedName);
-    setTestingProfile(profile);
-    setAnalyticsExport(buildAnonymousAnalyticsExport());
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetch('/api/admin/me')
-      .then(async (response) => {
-        if (!response.ok) {
-          return null;
-        }
-        return (await response.json()) as { authenticated?: boolean };
-      })
-      .then((payload) => {
-        if (!cancelled) {
-          setShowAdminTestingProfile(Boolean(payload?.authenticated));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setShowAdminTestingProfile(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    getOrCreateTestingProfile(storedName);
   }, []);
 
   useEffect(() => {
@@ -195,8 +151,7 @@ const PlayLobbyPage: NextPage = () => {
     setName(normalized);
     setError('');
     storePlayerName(normalized);
-    setTestingProfile(updateTestingProfileDisplayName(normalized));
-    setAnalyticsExport(buildAnonymousAnalyticsExport());
+    updateTestingProfileDisplayName(normalized);
     return normalized;
   };
 
@@ -606,69 +561,6 @@ const PlayLobbyPage: NextPage = () => {
                 <p className="mt-3 text-sm leading-6 text-zinc-400">No recent tables yet.</p>
               )}
             </div>
-
-            {showAdminTestingProfile ? (
-              <div
-                data-testid="testing-profile-card"
-                className="mt-4 rounded-lg border border-teal-300/20 bg-teal-400/[0.045] p-4 sm:mt-5 sm:p-5"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="font-[var(--font-display)] text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-teal-100">
-                      Testing Profile
-                    </h2>
-                    <p className="mt-1 text-sm leading-6 text-zinc-400">
-                      Device profile, session history, and chip ledger are being captured
-                      anonymously.
-                    </p>
-                  </div>
-                  <BarChart3
-                    aria-hidden="true"
-                    className="h-5 w-5 text-teal-300"
-                    strokeWidth={1.7}
-                  />
-                </div>
-
-                <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                  <div className="rounded-md border border-white/10 bg-black/[0.2] px-3 py-2.5">
-                    <div className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                      Sessions
-                    </div>
-                    <div className="mt-1 text-lg font-semibold text-white">
-                      {analyticsExport?.summary.sessions ?? 0}
-                    </div>
-                  </div>
-                  <div className="rounded-md border border-white/10 bg-black/[0.2] px-3 py-2.5">
-                    <div className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                      Hands
-                    </div>
-                    <div className="mt-1 text-lg font-semibold text-white">
-                      {analyticsExport?.summary.handsSeen ?? 0}
-                    </div>
-                  </div>
-                  <div className="rounded-md border border-white/10 bg-black/[0.2] px-3 py-2.5">
-                    <div className="text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                      Profile
-                    </div>
-                    <div className="mt-1 truncate text-sm font-semibold text-white">
-                      {testingProfile?.profileKey.slice(-8) ?? 'pending'}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAnalyticsExport(buildAnonymousAnalyticsExport());
-                    downloadAnonymousAnalyticsExport();
-                  }}
-                  className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-teal-200/45 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-teal-100 transition hover:border-teal-200/75 hover:bg-white/[0.08]"
-                >
-                  <Download aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
-                  Download anonymous export
-                </button>
-              </div>
-            ) : null}
 
             {errorDisplay ? (
               <div className="mt-5 rounded-md border border-rose-300/45 bg-rose-500/10 px-3 py-3 text-rose-100">
