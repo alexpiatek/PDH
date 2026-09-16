@@ -490,9 +490,15 @@ export async function changePlayerPassword(currentPassword: string, newPassword:
   const session = await ensureNakamaSession();
   const account = await client.getAccount(session);
   if (!account.email) throw new Error('An email account is required.');
-  const verified = await client.authenticateEmail(account.email, currentPassword, false);
+  let verified: Session;
+  try {
+    verified = await client.authenticateEmail(account.email, currentPassword, false);
+  } catch (error) {
+    if (isAuthError(error)) throw new Error('The current password is incorrect.');
+    throw error;
+  }
   if (verified.user_id !== session.user_id) throw new Error('Account verification failed.');
-  await client.linkEmail(verified, { email: account.email, password: newPassword });
+  await client.linkEmail(session, { email: account.email, password: newPassword });
 }
 
 export const getPlayerProfile = (displayName?: string) =>
