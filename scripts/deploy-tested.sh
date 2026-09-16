@@ -2,6 +2,7 @@
 # Build a separate release before touching the running service. Never discard work.
 set -euo pipefail
 umask 077
+export CI=true
 sha="${1:?A tested commit SHA is required}"
 deploy_ref="${PDH_DEPLOY_REF:-origin/main}"
 web_service="${PDH_WEB_SERVICE:-pdh-web}"
@@ -46,7 +47,7 @@ rollback() {
   if git cat-file -e "$previous:pnpm-lock.yaml" 2>/dev/null; then
     bash scripts/run-pnpm.sh install --frozen-lockfile --prod=false || return 1
   else
-    bash scripts/run-pnpm.sh install --no-frozen-lockfile --prod=false || return 1
+    bash scripts/run-pnpm.sh install --lockfile=false --prod=false || return 1
   fi
   for artifact in apps/web/.next apps/nakama/dist packages/engine/dist; do
     if [[ -d "$backup/$artifact" ]]; then

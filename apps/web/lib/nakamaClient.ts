@@ -484,6 +484,17 @@ export async function signOutPlayer() {
   clearSessionCache();
 }
 
+export async function changePlayerPassword(currentPassword: string, newPassword: string) {
+  if (newPassword.length < 12) throw new Error('Use at least 12 characters for your new password.');
+  const client = getNakamaClient();
+  const session = await ensureNakamaSession();
+  const account = await client.getAccount(session);
+  if (!account.email) throw new Error('An email account is required.');
+  const verified = await client.authenticateEmail(account.email, currentPassword, false);
+  if (verified.user_id !== session.user_id) throw new Error('Account verification failed.');
+  await client.linkEmail(verified, { email: account.email, password: newPassword });
+}
+
 export const getPlayerProfile = (displayName?: string) =>
   callNakamaRpc<PlayerProfile>('pdh_player_profile', { displayName });
 export const addFreeChips = (requestId: string) =>

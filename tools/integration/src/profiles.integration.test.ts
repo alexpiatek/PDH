@@ -178,5 +178,11 @@ afterEach(() => {
       availableChips: pa.availableChips + pa.allocation.chips,
       tableSessions: 1,
     });
+    const changedPassword = randomUUID();
+    await client.linkEmail(afterRestart, { email, password: changedPassword });
+    await expect(client.authenticateEmail(email, password, false)).rejects.toBeTruthy();
+    const changedLogin = await client.authenticateEmail(email, changedPassword, false);
+    expect(changedLogin.user_id).toBe(a.user_id);
+    expect((await rpc(changedLogin, 'pdh_player_profile')).availableChips).toBe(released.availableChips);
   }, 60000);
 });
