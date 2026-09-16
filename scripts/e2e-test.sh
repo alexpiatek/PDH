@@ -37,6 +37,11 @@ set -a
 source "$ENV_FILE"
 set +a
 
+# These browser fixtures exercise legacy seats; account accounting has its own
+# real-server integration suite. Keep both ends in the same explicit mode.
+export PDH_ENABLE_PLAYER_PROFILES=false
+export NEXT_PUBLIC_PLAYER_PROFILES=false
+
 HTTP_PORT="$(find_free_port "${E2E_NAKAMA_HTTP_PORT:-$((18350 + PORT_OFFSET))}")"
 CONSOLE_PORT="$(find_free_port "${E2E_NAKAMA_CONSOLE_PORT:-$((18351 + PORT_OFFSET))}")"
 POSTGRES_PORT="$(find_free_port "${E2E_POSTGRES_PORT:-$((16432 + PORT_OFFSET))}")"
@@ -86,12 +91,15 @@ trap cleanup EXIT
 
 (
   cd "$ROOT_DIR"
+  ./scripts/run-pnpm.sh -C packages/engine build
   ./scripts/run-pnpm.sh -C apps/nakama build
 )
 
 docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres
 docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm nakama-migrate
 docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d nakama
+COMPOSE_PROJECT_NAME="$PROJECT_NAME" COMPOSE_FILE="$COMPOSE_FILE" ENV_FILE="$ENV_FILE" \
+  bash "$ROOT_DIR/scripts/db-migrate.sh"
 
 HEALTH_URL="http://127.0.0.1:${HTTP_PORT}/healthcheck"
 for _ in $(seq 1 60); do

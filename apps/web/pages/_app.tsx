@@ -1,3 +1,4 @@
+import { PlayerAccountGate } from '../components/PlayerAccountGate';
 import type { AppProps } from 'next/app';
 import '../styles/globals.css';
 import { AppErrorBoundary } from '../components/AppErrorBoundary';
@@ -7,7 +8,7 @@ export default function App({ Component, pageProps }: AppProps) {
   return (
     <AppErrorBoundary>
       <FeatureFlagsProvider>
-        <Component {...pageProps} />
+        <PlayerAccountGate><Component {...pageProps} /></PlayerAccountGate>
       </FeatureFlagsProvider>
     </AppErrorBoundary>
   );

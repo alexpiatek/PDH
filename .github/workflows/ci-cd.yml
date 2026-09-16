@@ -1,58 +1,41 @@
 name: Deploy
 
 on:
-  push:
-    branches:
-      - main
   workflow_run:
-    workflows:
-      - CI
-    types:
-      - completed
-    branches:
-      - main
-  workflow_dispatch:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
+    environment: production
     steps:
-      - name: Deploy via SSH
+      - name: Deploy the exact commit that passed CI
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: DEPLOY_SHA
           script_stop: true
+          command_timeout: 30m
           script: |
-            set -euo pipefail
-            export CI=true
+            set -eu
             cd /home/pdh/PDH
-            git fetch --all
-            git checkout main
-            git pull origin main
-            ./scripts/run-pnpm.sh install --no-frozen-lockfile --force
-            ./scripts/run-pnpm.sh -C packages/engine build
-            ./scripts/run-pnpm.sh -C apps/nakama build
-            docker compose --env-file .env -f docker-compose.prod.yml up -d postgres
-            docker compose --env-file .env -f docker-compose.prod.yml run --rm nakama-migrate
-            docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate nakama
-            ./scripts/run-pnpm.sh -C apps/web build
-            sudo -n /bin/systemctl restart pdh-web
-            curl -fsS https://api.bondipoker.online/healthcheck >/dev/null
-
-      - name: Smoke test
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script_stop: true
-          script: |
-            set -euo pipefail
-            cd /home/pdh/PDH
-            SMOKE_SERVER_KEY='${{ secrets.SMOKE_SERVER_KEY }}' ./scripts/remote-smoke.sh --url https://api.bondipoker.online --ssl true --clients 4
+            git fetch origin main
+            git show "$DEPLOY_SHA:scripts/deploy-tested.sh" | bash -s -- "$DEPLOY_SHA"

@@ -1,3 +1,5 @@
+import { rpcPlayerProfile, rpcFreeTopUp, rpcPlayerReport } from './playerProfiles';
+import { protectTableStorageRead, protectTableStorageList } from './tableAccess';
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
 import {
   DEFAULT_MATCH_MODULE,
@@ -41,6 +43,11 @@ export const InitModule: nkruntime.InitModule = (ctx, logger, nk, initializer) =
     logger.warn('registerAfterAuthenticateDevice unavailable; default match auto-create disabled.');
   }
 
+  initializer.registerBeforeReadStorageObjects(protectTableStorageRead);
+  initializer.registerBeforeListStorageObjects(protectTableStorageList);
+  initializer.registerRpc('pdh_player_profile', rpcPlayerProfile);
+  initializer.registerRpc('pdh_free_top_up', rpcFreeTopUp);
+  initializer.registerRpc('pdh_player_report', rpcPlayerReport);
   initializer.registerMatch(DEFAULT_MATCH_MODULE, pdhMatchHandler);
   initializer.registerRpc(PDH_RPC_ENSURE_MATCH, rpcEnsurePdhMatch);
   if (arePdhAdminRpcsEnabled(ctx)) {

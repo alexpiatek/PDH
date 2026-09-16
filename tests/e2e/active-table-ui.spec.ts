@@ -147,15 +147,23 @@ test.describe('active table layout safety', () => {
       .toBe(true);
   });
 
-  test('mobile 4 to 6 player nameplates stay inside the viewport safe area', async ({ page }) => {
-    for (const scenario of ['mobile-4', 'mobile-5', 'mobile-6']) {
+  test('mobile 4 to 9 player nameplates stay inside the viewport safe area', async ({ page }) => {
+    for (const scenario of ['mobile-4', 'mobile-5', 'mobile-6', 'mobile-9']) {
       await openScenario(page, scenario, { width: 390, height: 844 });
       const seatCards = page.locator('[data-testid^="seat-card-"]');
       const count = await seatCards.count();
-      expect(count, `${scenario} seat card count`).toBeGreaterThanOrEqual(4);
+      const expectedCount = Number.parseInt(scenario.replace('mobile-', ''), 10);
+      expect(count, `${scenario} seat card count`).toBe(expectedCount);
       for (let index = 0; index < count; index += 1) {
         await expectWithinViewport(page, seatCards.nth(index), `${scenario} seat ${index}`);
       }
+      if (scenario === 'mobile-9') {
+        for (let a = 0; a < count; a++)
+          for (let b = a + 1; b < count; b++) {
+            await expectNoOverlap(seatCards.nth(a), seatCards.nth(b), `seats ${a} and ${b}`);
+          }
+      }
+
       await expect
         .poll(() =>
           page
@@ -172,7 +180,9 @@ test.describe('active table layout safety', () => {
     await expect(page.getByTestId('turn-indicator')).toHaveText(/Your turn · \d+s/);
     await expect(page.getByTestId('seat-player-status-player-hero')).toHaveText(/Your turn · \d+s/);
     await expect(page.getByTestId('seat-player-status-player-villain')).toHaveText('Waiting');
-    await expect(page.getByText(/YOUR TURN|TO ACT|WAITING|DISCARDING|FOLDED|DISCONNECTED|RECONNECTING|ALL-IN/)).toHaveCount(0);
+    await expect(
+      page.getByText(/YOUR TURN|TO ACT|WAITING|DISCARDING|FOLDED|DISCONNECTED|RECONNECTING|ALL-IN/)
+    ).toHaveCount(0);
     await expect(page.getByText(/ - \d+s/)).toHaveCount(0);
   });
 
@@ -250,16 +260,18 @@ test.describe('active table layout safety', () => {
     await expect(page.getByTestId('rebuy-status')).toHaveCount(0);
   });
 
-  test('last-action ticker uses one stable safe lane', async ({
-    page,
-  }) => {
+  test('last-action ticker uses one stable safe lane', async ({ page }) => {
     await openScenario(page, 'betting-check-allin', { width: 390, height: 844 });
 
     const ticker = page.getByTestId('latest-action-ticker');
     await expect(ticker).toHaveText('Sam checked');
     await expectNoOverlap(ticker, page.getByTestId('pot-amount'), 'ticker and pot');
     await expectNoOverlap(ticker, page.getByTestId('community-cards'), 'ticker and board');
-    await expectNoOverlap(ticker, page.getByTestId('seat-card-player-hero'), 'ticker and hero seat');
+    await expectNoOverlap(
+      ticker,
+      page.getByTestId('seat-card-player-hero'),
+      'ticker and hero seat'
+    );
     await expectNoOverlap(ticker, page.getByTestId('hero-hole-cards'), 'ticker and hero cards');
     await expectNoOverlap(ticker, page.getByTestId('action-tray'), 'ticker and action tray');
 

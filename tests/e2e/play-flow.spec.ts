@@ -5,14 +5,6 @@ type PlayerPair = {
   waiting: Page;
 };
 
-async function joinTable(page: Page, name: string) {
-  await page.goto('/play');
-  await expect(page.getByTestId('join-name-input')).toBeVisible();
-  await page.getByTestId('join-name-input').fill(name);
-  await page.getByTestId('join-button').click();
-  await expect(page.getByTestId('join-name-input')).toHaveCount(0);
-}
-
 async function toNumber(text: string | null): Promise<number> {
   return Number((text ?? '').replace(/[^0-9-]/g, ''));
 }
@@ -76,16 +68,16 @@ async function takeSafeAction(page: Page): Promise<boolean> {
   };
 
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    if (await check.isEnabled()) {
+    if ((await check.isVisible()) && (await check.isEnabled())) {
       if (await clickFast(check)) return true;
     }
-    if (await call.isEnabled()) {
+    if ((await call.isVisible()) && (await call.isEnabled())) {
       if (await clickFast(call)) return true;
     }
-    if (await raise.isEnabled()) {
+    if ((await raise.isVisible()) && (await raise.isEnabled())) {
       if (await clickFast(raise)) return true;
     }
-    if (await allIn.isEnabled()) {
+    if ((await allIn.isVisible()) && (await allIn.isEnabled())) {
       if (await clickFast(allIn)) return true;
     }
     await page.waitForTimeout(75);
@@ -105,8 +97,20 @@ async function createTwoPlayers(browser: Browser) {
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
 
-  await joinTable(pageA, `E2E-A-${Date.now()}`);
-  await joinTable(pageB, `E2E-B-${Date.now()}`);
+  await pageA.goto('/play');
+  await pageA.getByTestId('join-name-input').fill(`E2E-A-${Date.now()}`);
+  await pageA.getByRole('button', { name: 'Create a table for friends' }).click();
+  const tableSummary = pageA.getByText(/^Table code [A-Z0-9]{6}/).first();
+  await expect(tableSummary).toBeVisible();
+  const code = (await tableSummary.textContent())!.match(/Table code ([A-Z0-9]{6})/)![1];
+  await pageB.goto('/play');
+  await pageB.getByTestId('join-name-input').fill(`E2E-B-${Date.now()}`);
+  await pageB.getByTestId('join-code-input').fill(code);
+  await pageB.getByTestId('join-code-button').click();
+  await Promise.all([
+    pageA.getByTestId('ready-for-hand').click(),
+    pageB.getByTestId('ready-for-hand').click(),
+  ]);
   await Promise.all([
     expect(pageA.getByTestId('hero-stack')).toBeVisible(),
     expect(pageB.getByTestId('hero-stack')).toBeVisible(),

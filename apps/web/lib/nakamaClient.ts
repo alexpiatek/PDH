@@ -124,7 +124,9 @@ function nowInSeconds() {
 
 function isAuthError(error: unknown): boolean {
   const message = formatNakamaError(error).toLowerCase();
-  return message.includes('401') || message.includes('unauthorized') || message.includes('forbidden');
+  return (
+    message.includes('401') || message.includes('unauthorized') || message.includes('forbidden')
+  );
 }
 
 function ensureBrowserStorage() {
@@ -196,7 +198,10 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
-async function authenticateDeviceWithRetries(client: NakamaClient, deviceId: string): Promise<Session> {
+async function authenticateDeviceWithRetries(
+  client: NakamaClient,
+  deviceId: string
+): Promise<Session> {
   try {
     return await client.authenticateDevice(deviceId, true);
   } catch (createError) {
@@ -273,6 +278,8 @@ async function getFreshSession(client: NakamaClient): Promise<Session> {
     }
   }
 
+  if (process.env.NEXT_PUBLIC_PLAYER_PROFILES !== 'false')
+    throw new Error('Sign in with email and password to play.');
   const authenticated = await authenticateDeviceWithRetries(client, deviceId);
   sessionSingleton = authenticated;
   persistSession(authenticated);
@@ -381,11 +388,15 @@ export async function callNakamaRpc<T>(
   }
 }
 
-export async function createLobbyTable(input: CreateTableRpcRequest): Promise<CreateTableRpcResponse> {
+export async function createLobbyTable(
+  input: CreateTableRpcRequest
+): Promise<CreateTableRpcResponse> {
   return callNakamaRpc<CreateTableRpcResponse>(LOBBY_RPC_CREATE_TABLE, input);
 }
 
-export async function resolveLobbyCode(input: JoinByCodeRpcRequest): Promise<JoinByCodeRpcResponse> {
+export async function resolveLobbyCode(
+  input: JoinByCodeRpcRequest
+): Promise<JoinByCodeRpcResponse> {
   const result = await callNakamaRpc<JoinByCodeRpcResponse>(LOBBY_RPC_JOIN_BY_CODE, input);
   if (typeof result.error === 'string' && result.error.trim()) {
     throw new Error(result.error);
@@ -452,4 +463,57 @@ export function formatNakamaError(error: unknown): string {
   } catch {
     return String(error);
   }
+}
+
+export async function signInWithEmail(email: string, password: string, create: boolean) {
+  const session = await getNakamaClient().authenticateEmail(email.trim(), password, create);
+  socketSingleton?.disconnect(false);
+  socketSingleton = null;
+  socketConnected = false;
+  sessionSingleton = session;
+  persistSession(session);
+  return session;
+}
+
+export async function signOutPlayer() {
+  const session = sessionSingleton ?? readStoredSession();
+  if (session) await getNakamaClient().sessionLogout(session, session.token, session.refresh_token);
+  socketSingleton?.disconnect(false);
+  socketSingleton = null;
+  socketConnected = false;
+  clearSessionCache();
+}
+
+export async function changePlayerPassword(currentPassword: string, newPassword: string) {
+  if (newPassword.length < 12) throw new Error('Use at least 12 characters for your new password.');
+  const client = getNakamaClient();
+  const session = await ensureNakamaSession();
+  const account = await client.getAccount(session);
+  if (!account.email) throw new Error('An email account is required.');
+  const verified = await client.authenticateEmail(account.email, currentPassword, false);
+  if (verified.user_id !== session.user_id) throw new Error('Account verification failed.');
+  await client.linkEmail(verified, { email: account.email, password: newPassword });
+}
+
+export const getPlayerProfile = (displayName?: string) =>
+  callNakamaRpc<PlayerProfile>('pdh_player_profile', { displayName });
+export const addFreeChips = (requestId: string) =>
+  callNakamaRpc<PlayerProfile>('pdh_free_top_up', { requestId });
+export const getPlayerReport = (cursor?: string) =>
+  callNakamaRpc<{ players: Array<{ playerId: string; profile: PlayerProfile }>; cursor?: string }>(
+    'pdh_player_report',
+    { cursor }
+  );
+export interface PlayerProfile {
+  displayName: string;
+  availableChips: number;
+  freeTopUps: number;
+  freeChipsGranted: number;
+  tableSessions: number;
+  handsStarted: number;
+  handsCompleted: number;
+  handsWon: number;
+  tableRebuys: number;
+  netWinnings: number;
+  allocation: { tableId: string; chips: number } | null;
 }

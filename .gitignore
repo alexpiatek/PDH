@@ -3,7 +3,6 @@ node_modules
 dist
 .turbo
 *.log
-pnpm-lock.yaml
 .DS_Store
 *.env.local
 .env

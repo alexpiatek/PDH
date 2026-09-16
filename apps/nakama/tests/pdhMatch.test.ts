@@ -790,6 +790,43 @@ describe('pdhMatchHandler', () => {
     expect(state.stateVersion).toBeGreaterThan(versionBefore);
   });
 
+  it('does not auto-fold a betting actor before reconnect grace expires', () => {
+    const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch({
+      reconnectGraceMs: 60_000,
+    });
+    const actor = state.table.hand.players.find(
+      (p: any) => p.seat === state.table.hand.actionOnSeat
+    );
+    state.table.hand.actionDeadline = 12_000;
+
+    let nowSpy = vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    try {
+      pdhMatchHandler.matchLeave({}, logger, nk, dispatcher, 4, state, [
+        presenceById.get(actor.id),
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    nowSpy = vi.spyOn(Date, 'now').mockReturnValue(12_001);
+    try {
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 5, state, []);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    const updatedActor = state.table.hand.players.find((p: any) => p.id === actor.id);
+    expect(connectionFor(state, actor.id)).toMatchObject({
+      status: 'reconnecting',
+      graceDeadlineMs: 70_000,
+    });
+    expect(updatedActor.status).toBe('active');
+    expect(state.table.seats[actor.seat]?.sittingOut).not.toBe(true);
+    expect(state.table.hand.log.some((entry: any) => entry.message.includes('auto-folded'))).toBe(
+      false
+    );
+  });
+
   it('lets a player reconnect before grace expires without duplicating seats or resetting the hand', () => {
     const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch();
     const actor = state.table.hand.players.find(
@@ -826,6 +863,47 @@ describe('pdhMatchHandler', () => {
     expect(state.table.hand.handId).toBe(handId);
     expect(updatedActor.status).toBe('active');
     expect(state.stateVersion).toBeGreaterThan(graceVersion);
+  });
+
+  it('does not auto-discard a pending player before reconnect grace expires', () => {
+    const { nk, dispatcher, state, presenceById } = setupThreePlayerMatch({
+      reconnectGraceMs: 60_000,
+    });
+    const hand = state.table.hand;
+    const player = hand.players.find((p: any) => p.id === 'u1');
+    const cardsBefore = player.holeCards.length;
+    hand.phase = 'discard';
+    hand.street = 'flop';
+    hand.actionOnSeat = -1;
+    hand.actionDeadline = null;
+    hand.pendingNextPhaseAt = null;
+    hand.discardPending = [player.id];
+    hand.discardDeadline = 12_000;
+
+    let nowSpy = vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    try {
+      pdhMatchHandler.matchLeave({}, logger, nk, dispatcher, 4, state, [
+        presenceById.get(player.id),
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    nowSpy = vi.spyOn(Date, 'now').mockReturnValue(12_001);
+    try {
+      pdhMatchHandler.matchLoop({}, logger, nk, dispatcher, 5, state, []);
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(connectionFor(state, player.id)).toMatchObject({
+      status: 'reconnecting',
+      graceDeadlineMs: 70_000,
+    });
+    expect(state.table.hand.discardPending).toContain(player.id);
+    expect(state.table.hand.players.find((p: any) => p.id === player.id).holeCards).toHaveLength(
+      cardsBefore
+    );
   });
 
   it('keeps a reconnecting all-in zero-stack player discard-eligible during a live hand', () => {

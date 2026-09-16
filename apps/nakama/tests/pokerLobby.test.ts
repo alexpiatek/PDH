@@ -152,7 +152,7 @@ describe('poker lobby RPCs', () => {
     const { nk, storage } = makeNakamaMock();
 
     const response = rpcCreateTable(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ name: 'Bondi Main', maxPlayers: 6, isPrivate: true })
@@ -173,6 +173,7 @@ describe('poker lobby RPCs', () => {
       tableId: parsed.code,
       maxPlayers: 6,
       buyIn: 10000,
+      isPrivate: true,
     });
   });
 
@@ -180,7 +181,7 @@ describe('poker lobby RPCs', () => {
     const { nk } = makeNakamaMock();
 
     const createResponse = rpcCreateTable(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ name: 'Late Night', maxPlayers: 5, isPrivate: false })
@@ -189,7 +190,7 @@ describe('poker lobby RPCs', () => {
 
     const noisyCode = `${created.code.slice(0, 3)}-${created.code.slice(3)}`.toLowerCase();
     const joinResponse = rpcJoinByCode(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ code: `  ${noisyCode}  ` })
@@ -203,7 +204,7 @@ describe('poker lobby RPCs', () => {
     const { nk, setMatchSize } = makeNakamaMock();
 
     const createResponse = rpcCreateTable(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ name: 'Heads Up', maxPlayers: 2, isPrivate: true })
@@ -213,7 +214,7 @@ describe('poker lobby RPCs', () => {
     setMatchSize(created.matchId, 2);
 
     const joinResponse = rpcJoinByCode(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ code: created.code })
@@ -228,7 +229,7 @@ describe('poker lobby RPCs', () => {
     const { nk } = makeNakamaMock();
 
     const joinResponse = rpcJoinByCode(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ code: 'ABC234' })
@@ -243,7 +244,7 @@ describe('poker lobby RPCs', () => {
     const { nk, storage, removeMatch, addMatch, setCheckpoint } = makeNakamaMock();
 
     const createResponse = rpcCreateTable(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ name: 'Recovered', maxPlayers: 5, isPrivate: true })
@@ -270,7 +271,7 @@ describe('poker lobby RPCs', () => {
 
     nk.matchCreate.mockClear();
     const joinResponse = rpcJoinByCode(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ code: created.code })
@@ -286,7 +287,7 @@ describe('poker lobby RPCs', () => {
     const { nk, setMatchSize } = makeNakamaMock();
 
     const privateCreate = rpcCreateTable(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ name: 'Private Table', maxPlayers: 6, isPrivate: true })
@@ -295,7 +296,7 @@ describe('poker lobby RPCs', () => {
     setMatchSize(privateTable.matchId, 2);
 
     const publicCreate = rpcCreateTable(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ name: 'Public Table', maxPlayers: 6, isPrivate: false })
@@ -304,7 +305,7 @@ describe('poker lobby RPCs', () => {
     setMatchSize(publicTable.matchId, 4);
 
     const quick = rpcQuickPlay(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ maxPlayers: 6, targetBuyIn: 10000, skillTier: 'casual' })
@@ -330,7 +331,7 @@ describe('poker lobby RPCs', () => {
     const { nk, storage } = makeNakamaMock();
 
     const quick = rpcQuickPlay(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ maxPlayers: 5, targetBuyIn: 25000, skillTier: 'regular' })
@@ -367,7 +368,7 @@ describe('poker lobby RPCs', () => {
     const { nk, setMatchSize } = makeNakamaMock();
 
     const existingCreate = rpcCreateTable(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ name: 'Existing Table', maxPlayers: 6, isPrivate: false })
@@ -383,7 +384,7 @@ describe('poker lobby RPCs', () => {
       });
 
     const quick = rpcQuickPlay(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ maxPlayers: 6, targetBuyIn: 10000, skillTier: 'casual' })
@@ -400,7 +401,7 @@ describe('poker lobby RPCs', () => {
 
     const low = JSON.parse(
       rpcCreateTable(
-        {},
+        { userId: "test-player" },
         logger as any,
         nk as any,
         JSON.stringify({ name: 'Low Stakes', maxPlayers: 6, isPrivate: false })
@@ -408,7 +409,7 @@ describe('poker lobby RPCs', () => {
     ) as { code: string; matchId: string };
     const high = JSON.parse(
       rpcCreateTable(
-        {},
+        { userId: "test-player" },
         logger as any,
         nk as any,
         JSON.stringify({ name: 'High Stakes', maxPlayers: 6, isPrivate: false })
@@ -430,7 +431,7 @@ describe('poker lobby RPCs', () => {
     });
 
     const quick = rpcQuickPlay(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ maxPlayers: 6, targetBuyIn: 2500, skillTier: 'newcomer' })
@@ -447,7 +448,7 @@ describe('poker lobby RPCs', () => {
 
     const newcomer = JSON.parse(
       rpcCreateTable(
-        {},
+        { userId: "test-player" },
         logger as any,
         nk as any,
         JSON.stringify({ name: 'Newcomers', maxPlayers: 6, isPrivate: false })
@@ -455,7 +456,7 @@ describe('poker lobby RPCs', () => {
     ) as { code: string; matchId: string };
     const pro = JSON.parse(
       rpcCreateTable(
-        {},
+        { userId: "test-player" },
         logger as any,
         nk as any,
         JSON.stringify({ name: 'Pros', maxPlayers: 6, isPrivate: false })
@@ -477,7 +478,7 @@ describe('poker lobby RPCs', () => {
     });
 
     const quick = rpcQuickPlay(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ maxPlayers: 6, targetBuyIn: 10000, skillTier: 'pro' })
@@ -493,7 +494,7 @@ describe('poker lobby RPCs', () => {
     const { nk, setMatchSize } = makeNakamaMock();
 
     const privateCreate = rpcCreateTable(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ name: 'Private 6', maxPlayers: 6, isPrivate: true })
@@ -502,7 +503,7 @@ describe('poker lobby RPCs', () => {
     setMatchSize(privateTable.matchId, 1);
 
     const publicCreate = rpcCreateTable(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ name: 'Public 6', maxPlayers: 6, isPrivate: false })
@@ -522,7 +523,7 @@ describe('poker lobby RPCs', () => {
     expect(parsedDefault.tables[0].seatsOpen).toBe(3);
 
     const listedAll = rpcListTables(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       JSON.stringify({ includePrivate: true, limit: 10 })
@@ -530,7 +531,7 @@ describe('poker lobby RPCs', () => {
     const parsedAll = JSON.parse(listedAll) as {
       tables: Array<{ code: string; isPrivate: boolean }>;
     };
-    expect(parsedAll.tables.map((table) => table.code)).toContain(privateTable.code);
+    expect(parsedAll.tables.map((table) => table.code)).not.toContain(privateTable.code);
     expect(parsedAll.tables.map((table) => table.code)).toContain(publicTable.code);
   });
 });
@@ -558,7 +559,7 @@ describe('poker_table match handler', () => {
     ]);
 
     const attempt = pokerTableMatchHandler.matchJoinAttempt(
-      {},
+      { userId: "test-player" },
       logger as any,
       nk as any,
       dispatcher as any,

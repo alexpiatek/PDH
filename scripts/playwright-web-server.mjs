@@ -14,6 +14,7 @@ const tableId = process.env.E2E_NAKAMA_TABLE_ID ?? "main";
 
 const webEnv = {
   ...process.env,
+  NEXT_PUBLIC_PLAYER_PROFILES: process.env.NEXT_PUBLIC_PLAYER_PROFILES ?? "false",
   NEXT_PUBLIC_NETWORK_BACKEND: "nakama",
   NEXT_PUBLIC_NAKAMA_HOST: "127.0.0.1",
   NEXT_PUBLIC_NAKAMA_PORT: nakamaPort,

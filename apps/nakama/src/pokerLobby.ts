@@ -1,3 +1,5 @@
+import { profilesEnabled, requireEmailAccount } from './playerProfiles';
+import { grantTableAccess, requireTableUser } from './tableAccess';
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
 import { findExistingAuthoritativeMatchId, hasRecoverablePdhCheckpoint } from './pdhMatch';
 
@@ -446,7 +448,7 @@ function writeTableByCode(nk: NakamaWithStorage, code: string, value: TableStora
       key: code,
       userId: SYSTEM_USER_ID,
       value,
-      permissionRead: 2,
+      permissionRead: 0,
       permissionWrite: 0,
     },
   ]);
@@ -709,6 +711,7 @@ export function rpcCreateTable(
   nk: nkruntime.Nakama,
   payload: string | undefined
 ) {
+  const userId = profilesEnabled(ctx) ? requireEmailAccount(ctx, nk) : requireTableUser(ctx);
   const input = parseCreateTableInput(payload);
   const runtimeNakama = nk as NakamaWithStorage;
 
@@ -718,6 +721,7 @@ export function rpcCreateTable(
     tableId: code,
     maxPlayers: input.maxPlayers,
     buyIn: DEFAULT_QUICK_PLAY_BUY_IN,
+    isPrivate: input.isPrivate,
   });
 
   writeTableByCode(runtimeNakama, code, {
@@ -742,6 +746,7 @@ export function rpcCreateTable(
     input.isPrivate
   );
 
+  grantTableAccess(nk, userId, code);
   const result: CreateTableResult = { code, matchId };
   return JSON.stringify(result);
 }
@@ -752,6 +757,7 @@ export function rpcJoinByCode(
   nk: nkruntime.Nakama,
   payload: string | undefined
 ) {
+  const userId = profilesEnabled(ctx) ? requireEmailAccount(ctx, nk) : requireTableUser(ctx);
   const input = parseJoinByCodeInput(payload);
   const runtimeNakama = nk as NakamaWithStorage;
 
@@ -761,6 +767,7 @@ export function rpcJoinByCode(
     return JSON.stringify(result);
   }
 
+  grantTableAccess(nk, userId, input.code);
   const snapshot = resolveMatchSnapshot(runtimeNakama, stored.matchId);
   if (snapshot.found === false) {
     if (hasRecoverablePdhCheckpoint(runtimeNakama, input.code)) {
@@ -770,6 +777,7 @@ export function rpcJoinByCode(
         nk.matchCreate(LOBBY_GAMEPLAY_MATCH_MODULE, {
           tableId: input.code,
           maxPlayers: stored.maxPlayers,
+          isPrivate: stored.isPrivate,
           buyIn: stored.quickPlay?.buyIn ?? DEFAULT_QUICK_PLAY_BUY_IN,
         });
       writeTableByCode(runtimeNakama, input.code, {
@@ -807,6 +815,7 @@ export function rpcQuickPlay(
   nk: nkruntime.Nakama,
   payload: string | undefined
 ) {
+  if (profilesEnabled(ctx)) requireEmailAccount(ctx, nk);
   const input = parseQuickPlayInput(payload);
   const runtimeNakama = nk as NakamaWithStorage;
 
@@ -871,7 +880,7 @@ export function rpcListTables(
   const input = parseListTablesInput(payload);
   const runtimeNakama = nk as NakamaWithStorage;
   const tables = listActiveLobbyTables(runtimeNakama)
-    .filter((table) => input.includePrivate || !table.isPrivate)
+    .filter((table) => !table.isPrivate)
     .slice(0, input.limit);
 
   logger.info(

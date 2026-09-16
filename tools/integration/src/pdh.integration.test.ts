@@ -56,6 +56,7 @@ type ClientMessage =
       seq?: number;
     }
   | { type: 'reconnect'; playerId: string }
+  | { type: 'readyForHand'; ready: boolean; seq: number }
   | { type: 'requestState' };
 
 type ServerMessage =
@@ -414,7 +415,7 @@ async function reconnectClient(client: TestClient) {
   await replacement.connect(client.session, true);
 }
 
-describe('pdh integration via nakama apis', () => {
+(process.env.ITEST_PLAYER_PROFILES === 'true' ? describe.skip : describe)('pdh integration via nakama apis', () => {
   afterEach(async () => {
     await Promise.all(createdClients.map((client) => disconnectClient(client)));
     createdClients.length = 0;
@@ -466,6 +467,18 @@ describe('pdh integration via nakama apis', () => {
 
     await sendClientMessage(alice, matchId, { type: 'join', name: 'Alice', buyIn: 5000, seat: 0 });
     await sendClientMessage(bob, matchId, { type: 'join', name: 'Bob', buyIn: 5000, seat: 1 });
+
+    await waitFor(
+      'both players to be seated',
+      asyncCondition(() => [alice, bob].every(
+        (client) => client.latestState?.seats.filter(Boolean).length === 2
+      ))
+    );
+    for (const client of [alice, bob]) {
+      await sendClientMessage(client, matchId, {
+        type: 'readyForHand', ready: true, seq: nextActionSeq(seqByUser, client.userId),
+      });
+    }
 
     await waitFor(
       'both players to see preflop betting state',

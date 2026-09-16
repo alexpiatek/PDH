@@ -8,6 +8,17 @@ and this project follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Required email/password player profiles, 10,000 welcome play chips, and unlimited fixed free top-ups with retry-safe receipts.
+- Persistent account/table balances and counts for hands, table sessions, wins, rebuys and free top-ups, with an administrator player report.
+- Private friend-table creation and server-enforced code admission, plus real-server profile, recovery and chip conservation coverage.
+
+### Fixed
+- Duplicate settlement on discard disconnects, premature timeout actions during reconnect grace, stale table versions and queued next-hand choices.
+- Mobile lobby, landscape actions, hand-history overlap, selectable cards and nine-seat positioning.
+- Deployment now follows successful CI for the exact main commit, uses a tracked lockfile, builds before activation and retains rollback artifacts.
+
+
+### Added
 
 - Contributor workflow foundations: `CONTRIBUTING.md`, feature DoD checklist, and PR template.
 - Shared `@pdh/protocol` package with versioned client/server contracts and Zod validation helpers.
