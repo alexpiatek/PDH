@@ -1,4 +1,9 @@
-import { profilesEnabled, requireEmailAccount, withProfileTransaction } from './playerProfiles';
+import {
+  PROFILE_COLLECTION,
+  profilesEnabled,
+  requireEmailAccount,
+  withProfileTransaction,
+} from './playerProfiles';
 import { canAccessTable } from './tableAccess';
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
 import {
@@ -892,8 +897,37 @@ function readRecoverablePdhCheckpoint(
 ): MatchCheckpoint | null {
   const object = readCheckpointObject(nk, tableId);
   const checkpoint = normalizeLoadedCheckpoint(object?.value);
-  if (!checkpoint || !isRecentCheckpoint(checkpoint, tableId, now)) {
+  if (!checkpoint || checkpoint.tableId !== tableId) {
     return null;
+  }
+  if (!isRecentCheckpoint(checkpoint, tableId, now)) {
+    // Free-chip allocations must not become stranded merely because a finished
+    // table was offline overnight. Only restore settled, fully reconciled seats.
+    const table = checkpoint.privateState.tableState;
+    if (table.hand && table.hand.phase !== 'showdown') return null;
+    const seats = table.seats.filter((seat): seat is Seat => Boolean(seat));
+    if (!seats.length) return null;
+    const profiles = nk.storageRead(
+      seats.map((seat) => ({ collection: PROFILE_COLLECTION, key: 'profile', userId: seat.id }))
+    );
+    if (
+      !seats.every((seat) => {
+        const profile = profiles.find((p) => p.userId === seat.id)?.value;
+        const allocation = profile?.allocation as
+          | { tableId?: string; chips?: number; buyInTotal?: number; rebuyCount?: number }
+          | undefined;
+        return (
+          profile?.schemaVersion === 1 &&
+          allocation?.tableId === tableId &&
+          Number.isSafeInteger(seat.stack) &&
+          seat.stack >= 0 &&
+          allocation.chips === seat.stack &&
+          allocation.buyInTotal === seat.buyInTotal &&
+          allocation.rebuyCount === (seat.rebuyCount ?? 0)
+        );
+      })
+    )
+      return null;
   }
   return checkpoint;
 }

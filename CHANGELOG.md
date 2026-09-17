@@ -13,6 +13,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Private friend-table creation and server-enforced code admission, plus real-server profile, recovery and chip conservation coverage.
 
 ### Fixed
+- Finished tables with verified outstanding chip allocations remain recoverable after the normal checkpoint expiry window.
 - Persistent-chip accounting ignores storage object key order, retries concurrent profile writes safely, and retains failed departures for refund recovery.
 - Table error notices recover after a current server refresh, and dense mobile seats give player names more room with clearer status text.
 - Duplicate settlement on discard disconnects, premature timeout actions during reconnect grace, stale table versions and queued next-hand choices.

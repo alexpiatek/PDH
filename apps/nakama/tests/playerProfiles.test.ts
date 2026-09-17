@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PokerTable } from '../../../packages/engine/src/index';
-import { pdhMatchHandler } from '../src/pdhMatch';
+import { hasRecoverablePdhCheckpoint, pdhMatchHandler } from '../src/pdhMatch';
 import {
   accountingWrites,
   rpcPlayerProfile,
@@ -51,6 +51,56 @@ function store() {
 }
 
 describe('persistent free-play profiles', () => {
+  it('recovers an expired settled checkpoint only while every funded allocation still matches', () => {
+    const { nk, data, profile } = store();
+    profile();
+    const table = new PokerTable('OVERNIGHT').state;
+    const empty = structuredClone(table);
+    table.seats[0] = {
+      id: 'p1',
+      name: 'Alex',
+      seat: 0,
+      stack: 10000,
+      buyInTotal: 10000,
+      rebuyCount: 0,
+    };
+    nk.storageWrite(accountingWrites(nk, empty, table, 1));
+    const checkpoint = {
+      schemaVersion: 1,
+      tableId: table.id,
+      matchId: 'old-match',
+      stateVersion: 1,
+      writtenAtMs: 1,
+      expiresAtMs: 2,
+      privateState: { tableState: table, replayEvents: [] },
+      recovery: { policy: 'restore_from_checkpoint', canRestore: true },
+      playerConnections: {},
+    };
+    nk.storageWrite([
+      {
+        collection: 'pdh_match_checkpoints',
+        key: table.id,
+        userId: '00000000-0000-0000-0000-000000000000',
+        value: checkpoint,
+      },
+    ]);
+    expect(hasRecoverablePdhCheckpoint(nk, table.id)).toBe(true);
+    const stored = data.get('pdh_player_profiles/p1/profile');
+    stored.value.allocation.chips = 9000;
+    expect(hasRecoverablePdhCheckpoint(nk, table.id)).toBe(false);
+    stored.value.allocation.chips = 10000;
+    stored.value.allocation.tableId = 'ANOTHER';
+    expect(hasRecoverablePdhCheckpoint(nk, table.id)).toBe(false);
+    stored.value.allocation.tableId = table.id;
+    const saved = data.get(
+      `pdh_match_checkpoints/00000000-0000-0000-0000-000000000000/${table.id}`
+    );
+    saved.value.privateState.tableState.hand = { phase: 'betting' };
+    expect(hasRecoverablePdhCheckpoint(nk, table.id)).toBe(false);
+    saved.value.privateState.tableState.hand = null;
+    stored.value.allocation = null;
+    expect(hasRecoverablePdhCheckpoint(nk, table.id)).toBe(false);
+  });
   it('preserves a concurrent top-up when retrying the accounting commit without replaying play', () => {
     const { nk, profile } = store();
     profile();

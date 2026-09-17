@@ -161,6 +161,19 @@ afterEach(() => {
     if (!project || !/^pdh_itest_[0-9]+$/.test(project))
       throw Error('Expected isolated integration project');
     execFileSync('docker', ['restart', `${project}-nakama-1`], { timeout: 30000 });
+    // Simulate an overnight outage in the disposable DB, without changing chips.
+    if (!/^[A-Z0-9]{6}$/.test(table.code)) throw Error('Unexpected test table code');
+    execFileSync('docker', [
+      'exec',
+      `${project}-postgres-1`,
+      'psql',
+      '-U',
+      'nakama',
+      '-d',
+      'nakama',
+      '-c',
+      `UPDATE storage SET value=jsonb_set(jsonb_set(value,'{writtenAtMs}','1'::jsonb),'{expiresAtMs}','2'::jsonb) WHERE collection='pdh_match_checkpoints' AND key='${table.code}'`,
+    ]);
     let healthy = false;
     for (let i = 0; i < 100; i++) {
       try {
