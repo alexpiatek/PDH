@@ -1,4 +1,9 @@
-import { profilesEnabled, requireEmailAccount, withProfileTransaction } from './playerProfiles';
+import {
+  PROFILE_COLLECTION,
+  profilesEnabled,
+  requireEmailAccount,
+  withProfileTransaction,
+} from './playerProfiles';
 import { canAccessTable } from './tableAccess';
 import type * as nkruntime from '@heroiclabs/nakama-runtime';
 import {
@@ -120,6 +125,7 @@ interface MatchState {
   maxPlayers: number;
   reconnectGraceMs: number;
   presences: Record<string, nkruntime.Presence>;
+  pendingDepartures?: nkruntime.Presence[];
   playerConnections: Record<string, PlayerConnectionState>;
   lastSeqByPlayer: Record<string, number>;
   lastReactionAtByPlayer: Record<string, number>;
@@ -891,8 +897,37 @@ function readRecoverablePdhCheckpoint(
 ): MatchCheckpoint | null {
   const object = readCheckpointObject(nk, tableId);
   const checkpoint = normalizeLoadedCheckpoint(object?.value);
-  if (!checkpoint || !isRecentCheckpoint(checkpoint, tableId, now)) {
+  if (!checkpoint || checkpoint.tableId !== tableId) {
     return null;
+  }
+  if (!isRecentCheckpoint(checkpoint, tableId, now)) {
+    // Free-chip allocations must not become stranded merely because a finished
+    // table was offline overnight. Only restore settled, fully reconciled seats.
+    const table = checkpoint.privateState.tableState;
+    if (table.hand && table.hand.phase !== 'showdown') return null;
+    const seats = table.seats.filter((seat): seat is Seat => Boolean(seat));
+    if (!seats.length) return null;
+    const profiles = nk.storageRead(
+      seats.map((seat) => ({ collection: PROFILE_COLLECTION, key: 'profile', userId: seat.id }))
+    );
+    if (
+      !seats.every((seat) => {
+        const profile = profiles.find((p) => p.userId === seat.id)?.value;
+        const allocation = profile?.allocation as
+          | { tableId?: string; chips?: number; buyInTotal?: number; rebuyCount?: number }
+          | undefined;
+        return (
+          profile?.schemaVersion === 1 &&
+          allocation?.tableId === tableId &&
+          Number.isSafeInteger(seat.stack) &&
+          seat.stack >= 0 &&
+          allocation.chips === seat.stack &&
+          allocation.buyInTotal === seat.buyInTotal &&
+          allocation.rebuyCount === (seat.rebuyCount ?? 0)
+        );
+      })
+    )
+      return null;
   }
   return checkpoint;
 }
@@ -2423,10 +2458,27 @@ function profileMatchJoin(...args: any[]) {
   return withProfileTransaction(matchJoin)(...args);
 }
 function profileMatchLeave(...args: any[]) {
-  return withProfileTransaction(matchLeave)(...args);
+  const result = withProfileTransaction(matchLeave)(...args);
+  const original = args[5] as MatchState;
+  if (profilesEnabled(args[0]) && result?.state === original) {
+    // A disconnected socket cannot be restored by rolling back a database write.
+    // Retain liveness facts so a later tick can release/refund the seat atomically.
+    for (const presence of args[6] as nkruntime.Presence[]) {
+      removePresence(original, presence);
+    }
+    original.pendingDepartures = [...(original.pendingDepartures ?? []), ...args[6]];
+  }
+  return result;
 }
 function profileMatchLoop(...args: any[]) {
-  return withProfileTransaction(matchLoop)(...args);
+  return withProfileTransaction((...loopArgs: any[]) => {
+    const state = loopArgs[5] as MatchState;
+    if (state.pendingDepartures?.length) {
+      matchLeave(...loopArgs.slice(0, 6), state.pendingDepartures);
+      delete state.pendingDepartures;
+    }
+    return matchLoop(...loopArgs);
+  })(...args);
 }
 (globalThis as any).profileMatchJoin = profileMatchJoin;
 (globalThis as any).profileMatchLeave = profileMatchLeave;

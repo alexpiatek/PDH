@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  confirmsCurrentState,
   nextAppliedStateVersion,
   readSnapshotStateVersion,
   readSnapshotTableId,
@@ -8,6 +9,14 @@ import {
 } from '../lib/stateVersion';
 
 describe('state snapshot version handling', () => {
+  it('clears a recovery notice on a current refresh but not an older or unrelated snapshot', () => {
+    const cursor = { tableId: 'TABLE1', stateVersion: 7 };
+    expect(confirmsCurrentState(cursor, { id: 'TABLE1', stateVersion: 7 })).toBe(true);
+    expect(confirmsCurrentState(cursor, { id: 'TABLE1', stateVersion: 8 })).toBe(true);
+    expect(confirmsCurrentState(cursor, { id: 'TABLE1', stateVersion: 6 })).toBe(false);
+    expect(confirmsCurrentState(cursor, { id: 'OTHER', stateVersion: 9 })).toBe(false);
+    expect(confirmsCurrentState(cursor, {})).toBe(false);
+  });
   it('reads valid snapshot versions', () => {
     expect(readSnapshotStateVersion({ stateVersion: 4 })).toBe(4);
     expect(readSnapshotStateVersion({ stateVersion: -1 })).toBeNull();

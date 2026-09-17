@@ -21,8 +21,23 @@ export function readSnapshotTableId(snapshot: unknown): string | null {
   return typeof tableId === 'string' && tableId.trim().length > 0 ? tableId : null;
 }
 
+// A refresh after a rejected action can legitimately return the same version.
+export function confirmsCurrentState(cursor: StateSnapshotVersionCursor, snapshot: unknown) {
+  const version = readSnapshotStateVersion(snapshot);
+  const tableId = readSnapshotTableId(snapshot);
+  return Boolean(
+    tableId &&
+    tableId === cursor.tableId &&
+    version !== null &&
+    cursor.stateVersion !== null &&
+    version >= cursor.stateVersion
+  );
+}
+
 function isVersionCursor(value: unknown): value is StateSnapshotVersionCursor {
-  return Boolean(value && typeof value === 'object' && 'stateVersion' in value && 'tableId' in value);
+  return Boolean(
+    value && typeof value === 'object' && 'stateVersion' in value && 'tableId' in value
+  );
 }
 
 export function shouldApplyStateSnapshot(

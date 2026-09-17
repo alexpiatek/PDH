@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PokerTable } from '../../../packages/engine/src/index';
+import { hasRecoverablePdhCheckpoint, pdhMatchHandler } from '../src/pdhMatch';
 import {
   accountingWrites,
   rpcPlayerProfile,
@@ -50,6 +51,186 @@ function store() {
 }
 
 describe('persistent free-play profiles', () => {
+  it('recovers an expired settled checkpoint only while every funded allocation still matches', () => {
+    const { nk, data, profile } = store();
+    profile();
+    const table = new PokerTable('OVERNIGHT').state;
+    const empty = structuredClone(table);
+    table.seats[0] = {
+      id: 'p1',
+      name: 'Alex',
+      seat: 0,
+      stack: 10000,
+      buyInTotal: 10000,
+      rebuyCount: 0,
+    };
+    nk.storageWrite(accountingWrites(nk, empty, table, 1));
+    const checkpoint = {
+      schemaVersion: 1,
+      tableId: table.id,
+      matchId: 'old-match',
+      stateVersion: 1,
+      writtenAtMs: 1,
+      expiresAtMs: 2,
+      privateState: { tableState: table, replayEvents: [] },
+      recovery: { policy: 'restore_from_checkpoint', canRestore: true },
+      playerConnections: {},
+    };
+    nk.storageWrite([
+      {
+        collection: 'pdh_match_checkpoints',
+        key: table.id,
+        userId: '00000000-0000-0000-0000-000000000000',
+        value: checkpoint,
+      },
+    ]);
+    expect(hasRecoverablePdhCheckpoint(nk, table.id)).toBe(true);
+    const stored = data.get('pdh_player_profiles/p1/profile');
+    stored.value.allocation.chips = 9000;
+    expect(hasRecoverablePdhCheckpoint(nk, table.id)).toBe(false);
+    stored.value.allocation.chips = 10000;
+    stored.value.allocation.tableId = 'ANOTHER';
+    expect(hasRecoverablePdhCheckpoint(nk, table.id)).toBe(false);
+    stored.value.allocation.tableId = table.id;
+    const saved = data.get(
+      `pdh_match_checkpoints/00000000-0000-0000-0000-000000000000/${table.id}`
+    );
+    saved.value.privateState.tableState.hand = { phase: 'betting' };
+    expect(hasRecoverablePdhCheckpoint(nk, table.id)).toBe(false);
+    saved.value.privateState.tableState.hand = null;
+    stored.value.allocation = null;
+    expect(hasRecoverablePdhCheckpoint(nk, table.id)).toBe(false);
+  });
+  it('preserves a concurrent top-up when retrying the accounting commit without replaying play', () => {
+    const { nk, profile } = store();
+    profile();
+    const write = nk.storageWrite;
+    let injectConflict = true;
+    nk.storageWrite = (items: any[]) => {
+      if (injectConflict) {
+        injectConflict = false;
+        rpcFreeTopUp(
+          { userId: 'p1' },
+          null,
+          nk,
+          JSON.stringify({ requestId: 'concurrent-topup-00001' })
+        );
+      }
+      return write(items);
+    };
+    const callback = vi.fn((_ctx, _log, runtime, _dispatcher, _tick, state) => {
+      state.table.seats[0] = { id: 'p1', name: 'Alex', seat: 0, stack: 10000, buyInTotal: 10000 };
+      state.stateVersion = 1;
+      runtime.storageWrite([
+        {
+          collection: 'pdh_match_checkpoints',
+          key: 'RACE',
+          userId: '00000000-0000-0000-0000-000000000000',
+          value: state,
+        },
+      ]);
+      return { state };
+    });
+    const result = withProfileTransaction(callback)(
+      { env: { PDH_ENABLE_PLAYER_PROFILES: 'true' } },
+      { error: vi.fn() },
+      nk,
+      { broadcastMessage: vi.fn() },
+      1,
+      { table: new PokerTable('RACE').state, stateVersion: 0 }
+    );
+    expect(result.state.stateVersion).toBe(1);
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(profile()).toMatchObject({
+      availableChips: 10000,
+      freeTopUps: 1,
+      freeChipsGranted: 20000,
+      allocation: { chips: 10000 },
+    });
+  });
+  it('ignores reordered storage keys without issuing duplicate ledger receipts', () => {
+    const { nk, data, profile } = store();
+    profile();
+    const before = new PokerTable('ORDER').state;
+    const after = structuredClone(before);
+    after.seats[0] = {
+      id: 'p1',
+      name: 'Alex',
+      seat: 0,
+      stack: 10000,
+      buyInTotal: 10000,
+      rebuyCount: 0,
+    };
+    nk.storageWrite(accountingWrites(nk, before, after, 1));
+    const stored = data.get('pdh_player_profiles/p1/profile');
+    const allocation = stored.value.allocation;
+    stored.value.allocation = {
+      chips: allocation.chips,
+      rebuyCount: allocation.rebuyCount,
+      tableId: allocation.tableId,
+      buyInTotal: allocation.buyInTotal,
+    };
+    const valueBefore = structuredClone(stored.value);
+    expect(accountingWrites(nk, after, after, 1)).toEqual([]);
+    expect(stored.value).toEqual(valueBefore);
+    const empty = structuredClone(after);
+    empty.seats.fill(null);
+    nk.storageWrite(accountingWrites(nk, after, empty, 2));
+    expect(accountingWrites(nk, empty, empty, 2)).toEqual([]);
+    expect(profile()).toMatchObject({
+      availableChips: 10000,
+      allocation: null,
+      tableSessions: 1,
+      netWinnings: 0,
+    });
+  });
+
+  it('retains a failed departure and refunds exactly once after storage recovers', () => {
+    const { nk, profile } = store();
+    profile();
+    nk.binaryToString = (data: Uint8Array) => new TextDecoder().decode(data);
+    const ctx = { matchId: 'recovery-match', env: { PDH_ENABLE_PLAYER_PROFILES: 'true' } };
+    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const dispatcher = { broadcastMessage: vi.fn() };
+    const presence = { userId: 'p1', sessionId: 's1' };
+    let state = pdhMatchHandler.matchInit(ctx, log, nk, { tableId: 'RECOVER' }).state;
+    state = pdhMatchHandler.matchJoin(ctx, log, nk, dispatcher, 1, state, [presence]).state;
+    state = pdhMatchHandler.matchLoop(ctx, log, nk, dispatcher, 2, state, [
+      {
+        opCode: 1,
+        sender: presence,
+        data: new TextEncoder().encode(
+          JSON.stringify({ v: 1, type: 'join', name: 'Alex', buyIn: 10000 })
+        ),
+      },
+    ]).state;
+    expect(profile().allocation?.chips).toBe(10000);
+    const write = nk.storageWrite;
+    nk.storageWrite = () => {
+      throw Error('database unavailable');
+    };
+    const version = state.stateVersion;
+    state = pdhMatchHandler.matchLeave(ctx, log, nk, dispatcher, 3, state, [presence]).state;
+    expect(Object.values(state.presences)).toHaveLength(0);
+    expect(state.pendingDepartures).toHaveLength(1);
+    expect(state.stateVersion).toBe(version);
+    expect(profile().allocation?.chips).toBe(10000);
+    nk.storageWrite = write;
+    state = pdhMatchHandler.matchLoop(ctx, log, nk, dispatcher, 4, state, []).state;
+    expect(state.pendingDepartures).toBeUndefined();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 20000);
+    try {
+      state = pdhMatchHandler.matchLoop(ctx, log, nk, dispatcher, 5, state, []).state;
+      state = pdhMatchHandler.matchLoop(ctx, log, nk, dispatcher, 6, state, []).state;
+      expect(profile()).toMatchObject({
+        availableChips: 10000,
+        allocation: null,
+        tableSessions: 1,
+      });
+    } finally {
+      clock.mockRestore();
+    }
+  });
   it('requires email and grants the welcome balance exactly once', () => {
     const { nk, profile } = store();
     expect(profile().availableChips).toBe(10000);
