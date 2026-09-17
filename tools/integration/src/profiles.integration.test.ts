@@ -113,6 +113,21 @@ afterEach(() => {
       tableSessions: 1,
       allocation: { chips: 10000 },
     });
+    // Watching the same funded seat in another tab must not rewrite its ledger.
+    for (let i = 0; i < 8; i++) {
+      const viewer = await connection(a.token);
+      await viewer.join(table.matchId);
+      await wait(() => Boolean(viewer.latest()));
+      const messagesBefore = sa.states.length;
+      viewer.ws.close();
+      await wait(() => sa.states.length > messagesBefore);
+    }
+    expect(sa.states.filter((s) => s.type === 'error')).toEqual([]);
+    expect(await rpc(a, 'pdh_player_profile')).toMatchObject({
+      availableChips: 10000,
+      tableSessions: 1,
+      allocation: { chips: 10000 },
+    });
     sa.send(table.matchId, { type: 'readyForHand', ready: true, seq: 1 });
     sb.send(table.matchId, { type: 'readyForHand', ready: true, seq: 1 });
     await wait(() => sa.latest()?.hand?.phase === 'betting');
@@ -183,6 +198,8 @@ afterEach(() => {
     await expect(client.authenticateEmail(email, password, false)).rejects.toBeTruthy();
     const changedLogin = await client.authenticateEmail(email, changedPassword, false);
     expect(changedLogin.user_id).toBe(a.user_id);
-    expect((await rpc(changedLogin, 'pdh_player_profile')).availableChips).toBe(released.availableChips);
+    expect((await rpc(changedLogin, 'pdh_player_profile')).availableChips).toBe(
+      released.availableChips
+    );
   }, 60000);
 });

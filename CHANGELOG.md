@@ -13,6 +13,8 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Private friend-table creation and server-enforced code admission, plus real-server profile, recovery and chip conservation coverage.
 
 ### Fixed
+- Persistent-chip accounting ignores storage object key order, retries concurrent profile writes safely, and retains failed departures for refund recovery.
+- Table error notices recover after a current server refresh, and dense mobile seats give player names more room with clearer status text.
 - Duplicate settlement on discard disconnects, premature timeout actions during reconnect grace, stale table versions and queued next-hand choices.
 - Mobile lobby, landscape actions, hand-history overlap, selectable cards and nine-seat positioning.
 - Deployment now follows successful CI for the exact main commit, uses a tracked lockfile, builds before activation and retains rollback artifacts.

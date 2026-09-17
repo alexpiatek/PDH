@@ -5,6 +5,16 @@ import type { TableState } from '@pdh/engine';
 export const PROFILE_COLLECTION = 'pdh_player_profiles';
 export const CHIP_LEDGER = 'pdh_chip_ledger';
 export const FREE_CHIPS = 10000;
+
+// Storage objects can arrive with a different key order on every read.
+function profileSnapshot(profile: PlayerProfile) {
+  return JSON.stringify(profile, (_key, value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) sorted[key] = value[key];
+    return sorted;
+  });
+}
 type Allocation = { tableId: string; chips: number; buyInTotal: number; rebuyCount: number };
 export interface PlayerProfile {
   schemaVersion: 1;
@@ -182,7 +192,7 @@ export function accountingWrites(
         'A player profile is missing; this legacy table cannot use persistent chips.'
       );
     const profile: PlayerProfile = JSON.parse(JSON.stringify(existing.value));
-    const old = JSON.stringify(profile);
+    const old = profileSnapshot(profile);
     const seat = after.seats.find((s) => s?.id === userId);
     const previous = profile.allocation;
     if (previous && previous.tableId !== after.id)
@@ -221,7 +231,7 @@ export function accountingWrites(
         profile.lastCompletedHand = handKey;
       }
     }
-    if (old !== JSON.stringify(profile)) {
+    if (old !== profileSnapshot(profile)) {
       profile.updatedAt = Date.now();
       writes.push(profileWrite(userId, profile, existing.version));
       writes.push(
@@ -287,10 +297,20 @@ export function withProfileTransaction(handler: (...args: any[]) => any) {
         )
           throw new Error('Table changed on another server. Reconnect before playing.');
         checkpoint.version = base?.version ?? '*';
-        nk.storageWrite([
-          checkpoint,
-          ...accountingWrites(nk, original.table, working.table, working.stateVersion),
-        ]);
+        for (let attempt = 0; ; attempt++) {
+          try {
+            // Re-read profiles if a concurrent free top-up changed a version.
+            // Never replay gameplay or bypass the checkpoint/version guards.
+            nk.storageWrite([
+              checkpoint,
+              ...accountingWrites(nk, original.table, working.table, working.stateVersion),
+            ]);
+            break;
+          } catch (error) {
+            if (attempt >= 2 || !/version (check failed|conflict)/i.test(String(error)))
+              throw error;
+          }
+        }
       }
       if (!checkpoint && original.stateVersion !== working.stateVersion)
         throw new Error('Table update was not saved. Please retry.');
@@ -307,7 +327,7 @@ export function withProfileTransaction(handler: (...args: any[]) => any) {
         JSON.stringify(
           withProtocolVersion({
             type: 'error',
-            message: String(error instanceof Error ? error.message : error),
+            message: 'Your last update could not be saved. Refreshing the table; please try again.',
           })
         ),
         null,

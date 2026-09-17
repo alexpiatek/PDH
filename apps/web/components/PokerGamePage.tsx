@@ -28,6 +28,7 @@ import { discardConfirmDisabledReason, discardObligationKey } from '../lib/disca
 import { LOCAL_BROWSER_HOSTS, type LocalAccessInfo } from '../lib/localAccess';
 import {
   nextAppliedStateVersion,
+  confirmsCurrentState,
   shouldApplyStateSnapshot,
   type StateSnapshotVersionCursor,
 } from '../lib/stateVersion';
@@ -1475,6 +1476,7 @@ export const PokerGamePage = ({
   const autoJoinAttemptedRef = useRef(false);
   const lastChipSnapshotRef = useRef<string | null>(null);
   const rebuyNextHandSentRef = useRef(false);
+  const refreshingAfterErrorRef = useRef(false);
   const rebuyStateRef = useRef<'idle' | 'pending' | 'confirmed'>('idle');
   const queuedNextHandIntentRef = useRef<NextHandIntent | null>(null);
   const queuedIntentSubmittedRef = useRef(false);
@@ -1661,6 +1663,13 @@ export const PokerGamePage = ({
         }
       }
       if (msg.type === 'state') {
+        if (
+          refreshingAfterErrorRef.current &&
+          confirmsCurrentState(latestAppliedStateVersionRef.current, msg.state)
+        ) {
+          refreshingAfterErrorRef.current = false;
+          setStatus('Connected');
+        }
         if (!shouldApplyStateSnapshot(latestAppliedStateVersionRef.current, msg.state)) {
           return;
         }
@@ -1692,6 +1701,10 @@ export const PokerGamePage = ({
       }
       if (msg.type === 'error') {
         clearJoinTimeout();
+        const recoverable =
+          /storage write rejected|version check failed|last update could not be saved/i.test(
+            msg.message
+          );
         const hadQueuedIntent = Boolean(queuedNextHandIntentRef.current);
         if (rebuyStateRef.current !== 'idle') {
           updateRebuyState('idle');
@@ -1707,6 +1720,10 @@ export const PokerGamePage = ({
           msg.message.toLowerCase().includes('not in discard phase')
         ) {
           recoverDiscardSubmission('Discard not received. Choose a card again.');
+        } else if (recoverable) {
+          refreshingAfterErrorRef.current = true;
+          setStatus('The last update was not saved. Refreshing the table; please try again.');
+          requestFreshState();
         } else if (hadQueuedIntent) {
           setStatus(`Next-hand choice failed: ${msg.message}`);
         } else {
@@ -3420,9 +3437,9 @@ export const PokerGamePage = ({
   const playerPanelMinHeight = densePhoneTable ? 50 : isPortraitPhone ? 59 : isPhone ? 64 : 58;
   const playerPanelPadding = isPortraitPhone ? '5px 7px' : isPhone ? '7px 8px' : '7px 9px';
   const playerPanelRadius = isPortraitPhone ? 8 : 10;
-  const playerPanelColumnGap = isPortraitPhone ? 6 : isPhone ? 8 : 7;
-  const playerInfoTextSize = isPortraitPhone ? 11.5 : isPhone ? 12.75 : 12;
-  const playerInfoStatusTextSize = isPortraitPhone ? 9.5 : isPhone ? 10.5 : 10;
+  const playerPanelColumnGap = densePhoneTable ? 4 : isPortraitPhone ? 6 : isPhone ? 8 : 7;
+  const playerInfoTextSize = isPortraitPhone ? 12 : isPhone ? 12.75 : 12;
+  const playerInfoStatusTextSize = isPortraitPhone ? 10.5 : isPhone ? 10.5 : 10;
   const playerInfoOffsetY = isPortraitPhone ? 0 : -30 + 38;
   const mobileSeatSafeHalfWidth = Math.ceil(seatNameplateWidth / 2 + 8);
   const mobileSeatSafeHalfHeight = Math.ceil(playerPanelMinHeight / 2 + 8);
@@ -5068,7 +5085,9 @@ export const PokerGamePage = ({
                               opacity: playerInactive ? 0.5 : infoDimmed ? 0.78 : 1,
                               textAlign: 'left',
                               display: 'grid',
-                              gridTemplateColumns: `${infoAvatarSize}px minmax(0, 1fr) auto`,
+                              gridTemplateColumns: densePhoneTable
+                                ? `${infoAvatarSize}px minmax(0, 1fr)`
+                                : `${infoAvatarSize}px minmax(0, 1fr) auto`,
                               alignItems: 'center',
                               columnGap: playerPanelColumnGap,
                             }}
@@ -5195,7 +5214,7 @@ export const PokerGamePage = ({
                                   data-testid={`seat-player-status-${p.id}`}
                                   style={{
                                     marginTop: 4,
-                                    fontSize: isPortraitPhone ? 8 : isPhone ? 9 : 10,
+                                    fontSize: playerInfoStatusTextSize,
                                     letterSpacing: 0.35,
                                     color: displayStatusColor,
                                     lineHeight: 1.1,
@@ -5224,6 +5243,9 @@ export const PokerGamePage = ({
                             <div
                               data-testid={`seat-role-badges-${p.id}`}
                               style={{
+                                position: densePhoneTable ? 'absolute' : undefined,
+                                top: densePhoneTable ? -9 : undefined,
+                                right: densePhoneTable ? 2 : undefined,
                                 minWidth: isPortraitPhone ? 24 : 28,
                                 display: 'flex',
                                 flexDirection: roleChips.length > 1 ? 'column' : 'row',

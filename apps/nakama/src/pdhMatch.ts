@@ -120,6 +120,7 @@ interface MatchState {
   maxPlayers: number;
   reconnectGraceMs: number;
   presences: Record<string, nkruntime.Presence>;
+  pendingDepartures?: nkruntime.Presence[];
   playerConnections: Record<string, PlayerConnectionState>;
   lastSeqByPlayer: Record<string, number>;
   lastReactionAtByPlayer: Record<string, number>;
@@ -2423,10 +2424,27 @@ function profileMatchJoin(...args: any[]) {
   return withProfileTransaction(matchJoin)(...args);
 }
 function profileMatchLeave(...args: any[]) {
-  return withProfileTransaction(matchLeave)(...args);
+  const result = withProfileTransaction(matchLeave)(...args);
+  const original = args[5] as MatchState;
+  if (profilesEnabled(args[0]) && result?.state === original) {
+    // A disconnected socket cannot be restored by rolling back a database write.
+    // Retain liveness facts so a later tick can release/refund the seat atomically.
+    for (const presence of args[6] as nkruntime.Presence[]) {
+      removePresence(original, presence);
+    }
+    original.pendingDepartures = [...(original.pendingDepartures ?? []), ...args[6]];
+  }
+  return result;
 }
 function profileMatchLoop(...args: any[]) {
-  return withProfileTransaction(matchLoop)(...args);
+  return withProfileTransaction((...loopArgs: any[]) => {
+    const state = loopArgs[5] as MatchState;
+    if (state.pendingDepartures?.length) {
+      matchLeave(...loopArgs.slice(0, 6), state.pendingDepartures);
+      delete state.pendingDepartures;
+    }
+    return matchLoop(...loopArgs);
+  })(...args);
 }
 (globalThis as any).profileMatchJoin = profileMatchJoin;
 (globalThis as any).profileMatchLeave = profileMatchLeave;
