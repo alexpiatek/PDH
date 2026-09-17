@@ -4,14 +4,27 @@ import Head from 'next/head';
 import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import { isValidTableCodeFormat, normalizeTableCode } from '@pdh/protocol';
-import { ArrowRight, Check, Clock3, Copy, KeyRound, Spade, UserRound, Users } from 'lucide-react';
+import {
+  ArrowRight,
+  Check,
+  Clock3,
+  Copy,
+  KeyRound,
+  LogIn,
+  LogOut,
+  Spade,
+  UserRound,
+  Users,
+} from 'lucide-react';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { LOCAL_BROWSER_HOSTS, type LocalAccessInfo } from '../lib/localAccess';
 import {
   createLobbyTable,
   formatNakamaError,
+  hasSignedInPlayerSession,
   quickPlayLobby,
   resolveLobbyCode,
+  signOutPlayer,
 } from '../lib/nakamaClient';
 import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
 import {
@@ -86,12 +99,15 @@ const PlayLobbyPage: NextPage = () => {
   const [recentTables, setRecentTables] = useState<RecentLobbyTable[]>([]);
   const [localAccess, setLocalAccess] = useState<LocalAccessInfo | null>(null);
   const [copiedLanUrl, setCopiedLanUrl] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     const storedName = readStoredPlayerName();
     setName(storedName);
     setRecentTables(getRecentTables());
     getOrCreateTestingProfile(storedName);
+    setSignedIn(hasSignedInPlayerSession());
   }, []);
 
   useEffect(() => {
@@ -370,15 +386,44 @@ const PlayLobbyPage: NextPage = () => {
             <div className="flex shrink-0 items-center gap-2">
               <Link
                 href="/profile"
-                aria-label="Player profile"
-                title="Player profile"
+                aria-label={signedIn ? 'Player profile' : 'Sign in or create an account'}
+                title={signedIn ? 'Player profile' : 'Sign in'}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-teal-300/45 px-3 text-teal-100 transition hover:border-teal-200 hover:bg-teal-400/[0.08] sm:px-4"
               >
-                <UserRound aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
+                {signedIn ? (
+                  <UserRound aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
+                ) : (
+                  <LogIn aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
+                )}
                 <span className="hidden font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.16em] sm:inline">
-                  Profile
+                  {signedIn ? 'Profile' : 'Sign In'}
                 </span>
               </Link>
+              {signedIn && (
+                <button
+                  type="button"
+                  disabled={signingOut}
+                  aria-label="Log out"
+                  title="Log out"
+                  onClick={() => {
+                    if (signingOut) return;
+                    setSigningOut(true);
+                    void signOutPlayer()
+                      .then(() => {
+                        setSignedIn(false);
+                        setError('');
+                      })
+                      .catch((err) => setError(formatNakamaError(err)))
+                      .finally(() => setSigningOut(false));
+                  }}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/15 px-3 text-zinc-200 transition hover:border-amber-300/70 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4"
+                >
+                  <LogOut aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
+                  <span className="hidden font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.16em] sm:inline">
+                    {signingOut ? 'Logging Out' : 'Log Out'}
+                  </span>
+                </button>
+              )}
               <a
                 href="/#how-it-works"
                 className="hidden h-10 items-center rounded-md border border-white/15 px-4 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200 transition hover:border-teal-300/70 hover:text-teal-100 sm:inline-flex"

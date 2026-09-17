@@ -258,6 +258,15 @@ function isSessionUsable(session: Session): boolean {
   return !session.isexpired(nowInSeconds() + SESSION_EXPIRY_SKEW_SECONDS);
 }
 
+export function hasSignedInPlayerSession(): boolean {
+  const session = sessionSingleton ?? readStoredSession();
+  return Boolean(
+    session &&
+    (isSessionUsable(session) ||
+      !session.isrefreshexpired(nowInSeconds() + SESSION_EXPIRY_SKEW_SECONDS))
+  );
+}
+
 async function getFreshSession(client: NakamaClient): Promise<Session> {
   const deviceId = getOrCreateDeviceId();
   const cached = readStoredSession();
@@ -477,11 +486,17 @@ export async function signInWithEmail(email: string, password: string, create: b
 
 export async function signOutPlayer() {
   const session = sessionSingleton ?? readStoredSession();
-  if (session) await getNakamaClient().sessionLogout(session, session.token, session.refresh_token);
-  socketSingleton?.disconnect(false);
-  socketSingleton = null;
-  socketConnected = false;
-  clearSessionCache();
+  try {
+    if (session)
+      await getNakamaClient().sessionLogout(session, session.token, session.refresh_token);
+  } catch {
+    // Local sign-out must still succeed when Nakama is temporarily unreachable.
+  } finally {
+    socketSingleton?.disconnect(false);
+    socketSingleton = null;
+    socketConnected = false;
+    clearSessionCache();
+  }
 }
 
 export async function changePlayerPassword(currentPassword: string, newPassword: string) {
