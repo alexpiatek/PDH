@@ -608,6 +608,9 @@ export class PokerTable {
     this.state.hand = hand;
     this.state.buttonSeat = button;
     logPush(hand.log, 'Hand started');
+    // Posting a short blind can put the only opponent all-in before anyone acts.
+    // Advance the board instead of assigning a turn that neither player can take.
+    if (bettingLocked(hand)) this.queueBettingRoundAdvance(hand);
   }
 
   handleDisconnect(playerId: string) {
@@ -1035,15 +1038,20 @@ export class PokerTable {
     if (!hand) return null;
     if (hand.phase !== 'betting') return null;
     if (hand.pendingNextPhaseAt) return null;
-    if (hand.actionDeadline === null || hand.actionDeadline === undefined) return null;
-    if (now < hand.actionDeadline) return null;
-
+    // Also repair saved hands created before short-blind turn handling was fixed.
+    if (this.isBettingRoundComplete(hand)) {
+      this.queueBettingRoundAdvance(hand);
+      return null;
+    }
     const actor = hand.players.find((p) => p.seat === hand.actionOnSeat && p.status === 'active');
     if (!actor) {
+      hand.actionOnSeat = this.nextToAct(hand);
       hand.actionDeadline =
         this.state.config.actionTimeoutMs === null ? null : now + this.state.config.actionTimeoutMs;
       return null;
     }
+    if (hand.actionDeadline === null || hand.actionDeadline === undefined) return null;
+    if (now < hand.actionDeadline) return null;
 
     const toCall = hand.currentBet - actor.betThisStreet;
     if (toCall > 0) {

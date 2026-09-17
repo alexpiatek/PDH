@@ -63,6 +63,7 @@ type CheckpointWriteReason =
   | 'hand_start'
   | 'accepted_action'
   | 'auto_action'
+  | 'timer_updated'
   | 'discard'
   | 'auto_discard'
   | 'street_transition'
@@ -1885,6 +1886,8 @@ function applyExpiredTableTimers(
       checkpointReasons.push('showdown_settlement');
     } else if (beforePhase.phase !== hand?.phase || beforePhase.street !== hand?.street) {
       checkpointReasons.push('street_transition');
+    } else {
+      checkpointReasons.push('timer_updated');
     }
   }
 
@@ -1917,6 +1920,7 @@ function applyExpiredTableTimers(
       );
     } else if (autoActionMutation.changed) {
       shouldBroadcast = true;
+      checkpointReasons.push('timer_updated');
     }
   }
 
