@@ -339,12 +339,31 @@ export function withProfileTransaction(handler: (...args: any[]) => any) {
   };
 }
 
-export function rpcPlayerReport(ctx: any, _logger: unknown, nk: nkruntime.Nakama, payload: string) {
+function isProfileAdmin(ctx: any): boolean {
+  return (
+    Boolean(ctx?.userId) &&
+    String(ctx?.env?.PDH_ADMIN_USER_IDS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .includes(ctx.userId)
+  );
+}
+
+export function rpcAdminAccess(ctx: any, _logger: unknown, nk: nkruntime.Nakama) {
+  if (!isProfileAdmin(ctx)) return JSON.stringify({ authorized: false });
   const userId = requireEmailAccount(ctx, nk);
-  const admins = String(ctx?.env?.PDH_ADMIN_USER_IDS || '')
-    .split(',')
-    .map((s) => s.trim());
-  if (!admins.includes(userId)) throw new Error('Player report is restricted to administrators.');
+  const profile = nk.storageRead([{ collection: PROFILE_COLLECTION, userId, key: 'profile' }])[0];
+  return JSON.stringify({
+    authorized: true,
+    userId,
+    username: profile?.value?.displayName || ctx.username || 'Administrator',
+  });
+}
+
+export function rpcPlayerReport(ctx: any, _logger: unknown, nk: nkruntime.Nakama, payload: string) {
+  requireEmailAccount(ctx, nk);
+  if (!isProfileAdmin(ctx)) throw new Error('Player report is restricted to administrators.');
   const { cursor } = JSON.parse(payload || '{}');
   if (!nk.storageList) throw new Error('Player report unavailable');
   const result = nk.storageList(
@@ -362,3 +381,4 @@ export function rpcPlayerReport(ctx: any, _logger: unknown, nk: nkruntime.Nakama
 (globalThis as any).rpcPlayerProfile = rpcPlayerProfile;
 (globalThis as any).rpcFreeTopUp = rpcFreeTopUp;
 (globalThis as any).rpcPlayerReport = rpcPlayerReport;
+(globalThis as any).rpcAdminAccess = rpcAdminAccess;
