@@ -6,8 +6,9 @@ import { storePlayerName } from '../lib/playerIdentity';
 export function PlayerAccountGate({ children }: { children: ReactNode }) {
   const router = useRouter();
   const required =
-    process.env.NEXT_PUBLIC_PLAYER_PROFILES !== 'false' &&
-    ['/game', '/table/[matchId]', '/profile', '/players'].includes(router.pathname);
+    router.pathname.startsWith('/admin/') ||
+    (process.env.NEXT_PUBLIC_PLAYER_PROFILES !== 'false' &&
+      ['/game', '/table/[matchId]', '/profile', '/players'].includes(router.pathname));
   const [ready, setReady] = useState(false);
   const [checking, setChecking] = useState(true);
   const [create, setCreate] = useState(false);

@@ -85,6 +85,8 @@ afterEach(() => {
       10000
     );
     await rpc(b, 'pdh_player_profile', { displayName: 'Bob' });
+    expect(await rpc(a, 'pdh_admin_access')).toEqual({ authorized: false });
+    await expect(rpc(a, 'pdh_player_report')).rejects.toBeTruthy();
     const requestId = randomUUID();
     await rpc(a, 'pdh_free_top_up', { requestId });
     expect(await rpc(a, 'pdh_free_top_up', { requestId })).toMatchObject({

@@ -24,9 +24,14 @@ export default function PlayersPage() {
   }, []);
   return (
     <main className="min-h-screen bg-zinc-950 p-6 text-zinc-100">
-      <Link href="/play" className="text-teal-300">
-        ← Lobby
-      </Link>
+      <div className="flex gap-5">
+        <Link href="/profile" className="text-teal-300">
+          ← My profile
+        </Link>
+        <Link href="/admin/analytics" className="text-teal-300">
+          Admin analytics
+        </Link>
+      </div>
       <h1 className="my-6 text-3xl">Player activity</h1>
       <p className="mb-5 text-zinc-400">Administrator view · free play only</p>
       {error && <p role="alert">{error}</p>}

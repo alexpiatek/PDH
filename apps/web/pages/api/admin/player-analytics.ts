@@ -16,7 +16,7 @@ export default async function handler(
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  if (!requireAdminAnalytics(req, res as NextApiResponse<{ error: string }>)) {
+  if (!(await requireAdminAnalytics(req, res as NextApiResponse<{ error: string }>))) {
     return;
   }
 

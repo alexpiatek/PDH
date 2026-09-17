@@ -6,6 +6,7 @@ import {
   rpcPlayerProfile,
   rpcFreeTopUp,
   rpcPlayerReport,
+  rpcAdminAccess,
   withProfileTransaction,
 } from '../src/playerProfiles';
 import {
@@ -51,6 +52,32 @@ function store() {
 }
 
 describe('persistent free-play profiles', () => {
+  it('grants administration only to allowlisted email account IDs, without changing profiles', () => {
+    const { nk, data, profile } = store();
+    profile('alex-id');
+    profile('brad-id');
+    profile('regular-id');
+    const before = structuredClone([...data]);
+    const env = { PDH_ADMIN_USER_IDS: ' alex-id,brad-id ' };
+    for (const userId of ['alex-id', 'brad-id']) {
+      expect(JSON.parse(rpcAdminAccess({ userId, env }, null, nk))).toMatchObject({
+        authorized: true,
+        userId,
+      });
+      expect(() => rpcPlayerReport({ userId, env }, null, nk, '{}')).not.toThrow();
+    }
+    for (const ctx of [
+      { userId: 'regular-id', username: 'Alex', env },
+      { userId: 'alex-id', env: {} },
+      { env },
+    ]) {
+      expect(JSON.parse(rpcAdminAccess(ctx, null, nk))).toEqual({ authorized: false });
+      expect(() => rpcPlayerReport(ctx, null, nk, '{}')).toThrow();
+    }
+    expect([...data]).toEqual(before);
+    nk.accountGetId = () => ({});
+    expect(() => rpcAdminAccess({ userId: 'alex-id', env }, null, nk)).toThrow(/email/);
+  });
   it('recovers an expired settled checkpoint only while every funded allocation still matches', () => {
     const { nk, data, profile } = store();
     profile();

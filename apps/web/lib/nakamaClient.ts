@@ -440,6 +440,14 @@ export async function ensureNakamaReady() {
   return { session, socket };
 }
 
+export async function fetchPlayerAdmin(path: '/api/admin/me' | '/api/admin/player-analytics') {
+  const session = await ensureNakamaSession();
+  return fetch(path, {
+    headers: { Authorization: `Bearer ${session.token}` },
+    cache: 'no-store',
+  });
+}
+
 export function formatNakamaError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;

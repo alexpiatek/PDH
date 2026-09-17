@@ -5,12 +5,14 @@ import {
   changePlayerPassword,
   formatNakamaError,
   getPlayerProfile,
+  fetchPlayerAdmin,
   signOutPlayer,
   type PlayerProfile,
 } from '../lib/nakamaClient';
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [passwordBusy, setPasswordBusy] = useState(false);
@@ -22,6 +24,19 @@ export default function ProfilePage() {
     getPlayerProfile()
       .then(setProfile)
       .catch((err) => setError(formatNakamaError(err)));
+  }, []);
+  useEffect(() => {
+    let disposed = false;
+    void fetchPlayerAdmin('/api/admin/me')
+      .then((response) => {
+        if (!disposed) setIsAdmin(response.ok);
+      })
+      .catch(() => {
+        if (!disposed) setIsAdmin(false);
+      });
+    return () => {
+      disposed = true;
+    };
   }, []);
   const topUp = async () => {
     if (busy) return;
@@ -58,6 +73,22 @@ export default function ProfilePage() {
         )}
         {profile && (
           <>
+            {isAdmin && (
+              <section className="mt-6 rounded-xl border border-teal-300/30 bg-teal-400/5 p-5">
+                <h2 className="text-lg font-semibold">Administration</h2>
+                <p className="mt-1 text-sm text-zinc-400">
+                  Your player account also has administrator access.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-4">
+                  <Link href="/admin/analytics" className="text-teal-300 underline">
+                    Admin analytics
+                  </Link>
+                  <Link href="/players" className="text-teal-300 underline">
+                    Player activity and chip totals
+                  </Link>
+                </div>
+              </section>
+            )}
             <dl className="my-8 grid grid-cols-2 gap-4 sm:grid-cols-3">
               {[
                 ['Available chips', profile.availableChips],

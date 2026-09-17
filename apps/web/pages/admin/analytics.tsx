@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
 import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import {
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 import { BondiPokerLogo } from '../../components/BondiPokerLogo';
 import type { PlayerTestingDashboard } from '../../lib/playerTestingAnalyticsServer';
+import { fetchPlayerAdmin, signOutPlayer } from '../../lib/nakamaClient';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'locked' | 'error';
 
@@ -72,11 +74,15 @@ const AdminAnalyticsPage: NextPage = () => {
     setLoadState('loading');
     setError('');
     try {
-      const response = await fetch('/api/admin/player-analytics');
-      if (response.status === 401) {
+      const response = await fetchPlayerAdmin('/api/admin/player-analytics');
+      if (response.status === 401 || response.status === 403) {
         setLoadState('locked');
         setDashboard(null);
-        await router.push('/admin/login');
+        setError(
+          response.status === 403
+            ? 'This player account does not have administrator access.'
+            : 'Your sign-in has expired. Please sign out and sign in again.'
+        );
         return;
       }
       if (!response.ok) {
@@ -92,33 +98,47 @@ const AdminAnalyticsPage: NextPage = () => {
   };
 
   useEffect(() => {
-    void fetch('/api/admin/me')
+    void fetchPlayerAdmin('/api/admin/me')
       .then(async (response) => {
-        if (response.status === 401) {
-          await router.push('/admin/login');
+        if (response.status === 401 || response.status === 403) {
+          setLoadState('locked');
+          setDashboard(null);
+          setError(
+            response.status === 403
+              ? 'This player account does not have administrator access.'
+              : 'Your sign-in has expired. Please sign out and sign in again.'
+          );
           return;
         }
+        if (!response.ok) throw new Error('Account access could not be checked. Please try again.');
         const payload = (await response.json()) as {
           authenticated?: boolean;
           username?: string;
-          localDev?: boolean;
         };
         if (payload.authenticated) {
-          setAdminName(payload.localDev ? 'Local admin' : payload.username || 'Admin');
+          setAdminName(payload.username || 'Admin');
           await loadDashboard();
         } else {
-          await router.push('/admin/login');
+          setLoadState('locked');
+          setError('Sign in with an approved player account.');
         }
       })
       .catch((meError) => {
         setLoadState('error');
         setError(meError instanceof Error ? meError.message : 'Admin check failed.');
       });
+    // Clear privileged content when another tab signs out or switches accounts.
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key === 'pdh.nakama.session_token') window.location.reload();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, [router]);
 
   const logout = async () => {
-    await fetch('/api/admin/logout', { method: 'POST' });
-    await router.push('/admin/login');
+    setDashboard(null);
+    await signOutPlayer();
+    window.location.assign('/play');
   };
 
   const summary = dashboard?.summary;
@@ -180,6 +200,12 @@ const AdminAnalyticsPage: NextPage = () => {
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Link href="/profile" className="px-3 py-2 text-sm text-teal-200">
+                My profile
+              </Link>
+              <Link href="/players" className="px-3 py-2 text-sm text-teal-200">
+                Player activity
+              </Link>
               {adminName ? (
                 <div className="rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-300">
                   {adminName}
@@ -203,7 +229,7 @@ const AdminAnalyticsPage: NextPage = () => {
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-white/15 bg-white/[0.035] px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:border-rose-200/50 hover:text-rose-100"
               >
                 <LogOut aria-hidden="true" className="h-4 w-4" />
-                Logout
+                Sign out
               </button>
             </div>
           </div>
@@ -212,7 +238,10 @@ const AdminAnalyticsPage: NextPage = () => {
         <section className="mx-auto max-w-7xl px-5 py-6 sm:px-8">
           {loadState === 'locked' ? (
             <div className="rounded-lg border border-amber-300/35 bg-amber-300/[0.08] p-5 text-amber-50">
-              Enter the admin analytics passcode and refresh.
+              {error || 'Sign in with an approved player account.'}
+              <Link href="/profile" className="ml-2 underline">
+                Return to your profile
+              </Link>
             </div>
           ) : null}
 
@@ -385,7 +414,7 @@ const AdminAnalyticsPage: NextPage = () => {
                     Recent Sessions
                   </h2>
                   <a
-                    href="/admin/login"
+                    href="/profile"
                     className="inline-flex items-center gap-2 text-sm font-semibold text-teal-100 hover:text-teal-50"
                   >
                     <Shield aria-hidden="true" className="h-4 w-4" />
