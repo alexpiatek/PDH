@@ -15,6 +15,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Private friend-table creation and server-enforced code admission, plus real-server profile, recovery and chip conservation coverage.
 
 ### Fixed
+- Hands with an all-in blind advance through every discard street instead of waiting on an ineligible player; recovered turn/timer updates are saved atomically so refreshes cannot enter a save-error loop.
 
 - Finished tables with verified outstanding chip allocations remain recoverable after the normal checkpoint expiry window.
 - Persistent-chip accounting ignores storage object key order, retries concurrent profile writes safely, and retains failed departures for refund recovery.

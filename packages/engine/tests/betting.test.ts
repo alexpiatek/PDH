@@ -23,6 +23,44 @@ function bettingStateSnapshot(table: PokerTable, playerId: string) {
 }
 
 describe('betting rules', () => {
+  it.each([
+    [1, 10000],
+    [400, 10000],
+    [10000, 1],
+    [1, 1],
+  ])(
+    'runs out all three discard streets when blinds exhaust a player (%i / %i)',
+    (smallStack, bigStack) => {
+      const table = new PokerTable('short-blinds', { smallBlind: 400, bigBlind: 800 });
+      table.seatPlayer(0, { id: 'p0', name: 'Small blind', stack: smallStack });
+      table.seatPlayer(1, { id: 'p1', name: 'Big blind', stack: bigStack });
+      table.startHand(rng);
+      const hand = table.state.hand!;
+      expect(hand.actionOnSeat).toBe(-1);
+      expect(hand.pendingNextPhaseAt).not.toBeNull();
+      table.advancePendingPhase(hand.pendingNextPhaseAt! + 1);
+      for (const street of ['flop', 'turn', 'river']) {
+        expect(hand.phase).toBe('discard');
+        expect(hand.street).toBe(street);
+        for (const id of [...hand.discardPending]) table.applyDiscard(id, 0);
+      }
+      expect(hand.phase).toBe('showdown');
+      expect(table.state.seats.filter(Boolean).reduce((sum, seat) => sum + seat!.stack, 0)).toBe(
+        smallStack + bigStack
+      );
+    }
+  );
+
+  it('keeps the call decision when a short big blind still requires chips from the small blind', () => {
+    const table = new PokerTable('short-call', { smallBlind: 400, bigBlind: 800 });
+    table.seatPlayer(0, { id: 'p0', name: 'Small blind', stack: 10000 });
+    table.seatPlayer(1, { id: 'p1', name: 'Big blind', stack: 500 });
+    table.startHand(rng);
+    expect(table.state.hand!.pendingNextPhaseAt).toBeNull();
+    expect(table.getLegalActionsForPlayer('p0').betting?.callAmount).toBe(100);
+    table.applyAction('p0', { type: 'call' });
+    expect(table.state.hand!.pendingNextPhaseAt).not.toBeNull();
+  });
   it('posts blinds at hand start', () => {
     const table = new PokerTable('t', { smallBlind: 400, bigBlind: 800 });
     table.seatPlayer(0, { id: 'p0', name: 'UTG', stack: 5000 });
