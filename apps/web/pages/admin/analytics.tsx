@@ -5,17 +5,20 @@ import type { NextPage } from 'next';
 import { useRouter } from 'next/router';
 import {
   Activity,
+  AlertTriangle,
   BarChart3,
   CircleDollarSign,
   Gauge,
   LogOut,
   RefreshCw,
   Shield,
+  Server,
   TrendingUp,
   Users,
 } from 'lucide-react';
 import { BondiPokerLogo } from '../../components/BondiPokerLogo';
 import type { PlayerTestingDashboard } from '../../lib/playerTestingAnalyticsServer';
+import type { SystemHealthSnapshot, SystemHealthStatus } from '../../lib/systemHealthServer';
 import { fetchPlayerAdmin, signOutPlayer } from '../../lib/nakamaClient';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'locked' | 'error';
@@ -50,12 +53,20 @@ function signalClass(signal: 'low' | 'medium' | 'high'): string {
   return 'border-zinc-500/45 bg-white/[0.035] text-zinc-200';
 }
 
+function healthClass(status: SystemHealthStatus): string {
+  if (status === 'operational')
+    return 'border-emerald-300/35 bg-emerald-400/[0.07] text-emerald-100';
+  if (status === 'unconfigured') return 'border-amber-300/35 bg-amber-300/[0.07] text-amber-100';
+  return 'border-rose-300/40 bg-rose-500/[0.09] text-rose-100';
+}
+
 const AdminAnalyticsPage: NextPage = () => {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<PlayerTestingDashboard | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [error, setError] = useState('');
   const [adminName, setAdminName] = useState('');
+  const [systemHealth, setSystemHealth] = useState<SystemHealthSnapshot | null>(null);
 
   const maxEntrySessions = useMemo(
     () => Math.max(1, ...(dashboard?.entryPoints.map((entry) => entry.sessions) ?? [1])),
@@ -74,7 +85,10 @@ const AdminAnalyticsPage: NextPage = () => {
     setLoadState('loading');
     setError('');
     try {
-      const response = await fetchPlayerAdmin('/api/admin/player-analytics');
+      const [response, healthResponse] = await Promise.all([
+        fetchPlayerAdmin('/api/admin/player-analytics'),
+        fetchPlayerAdmin('/api/admin/system-health'),
+      ]);
       if (response.status === 401 || response.status === 403) {
         setLoadState('locked');
         setDashboard(null);
@@ -90,6 +104,11 @@ const AdminAnalyticsPage: NextPage = () => {
       }
       const payload = (await response.json()) as PlayerTestingDashboard;
       setDashboard(payload);
+      if (healthResponse.ok) {
+        setSystemHealth((await healthResponse.json()) as SystemHealthSnapshot);
+      } else {
+        setSystemHealth(null);
+      }
       setLoadState('ready');
     } catch (loadError) {
       setLoadState('error');
@@ -262,6 +281,74 @@ const AdminAnalyticsPage: NextPage = () => {
                 </div>
                 <div>Updated {formatDate(dashboard.updatedAt)}</div>
               </div>
+
+              <section className="rounded-lg border border-white/10 bg-white/[0.025] p-5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Server aria-hidden="true" className="h-4 w-4 text-teal-300" />
+                      <h2 className="font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">
+                        System Health
+                      </h2>
+                    </div>
+                    <p className="mt-2 text-sm text-zinc-500">
+                      Live service checks from the Bondi Poker server
+                    </p>
+                  </div>
+                  {systemHealth ? (
+                    <div
+                      className={`rounded-md border px-3 py-2 text-sm font-semibold ${healthClass(systemHealth.status)}`}
+                    >
+                      {systemHealth.status === 'operational'
+                        ? 'Services operational'
+                        : 'Service problem detected'}
+                    </div>
+                  ) : null}
+                </div>
+
+                {systemHealth ? (
+                  <>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      {systemHealth.checks.map((check) => (
+                        <div
+                          key={check.id}
+                          className={`rounded-md border p-4 ${healthClass(check.status)}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="text-sm font-semibold">{check.label}</div>
+                            <span className="text-[0.65rem] font-semibold uppercase tracking-[0.12em]">
+                              {check.status}
+                            </span>
+                          </div>
+                          <p className="mt-3 text-sm leading-5 opacity-80">{check.detail}</p>
+                          <div className="mt-3 text-xs opacity-65">
+                            {check.latencyMs === null ? 'Live check' : `${check.latencyMs} ms`}
+                          </div>
+                          {check.dashboardUrl ? (
+                            <a
+                              href={check.dashboardUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-3 inline-block text-sm font-semibold underline"
+                            >
+                              Open monitor
+                            </a>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 flex gap-2 text-sm text-zinc-500">
+                      <AlertTriangle
+                        aria-hidden="true"
+                        className="mt-0.5 h-4 w-4 shrink-0 text-amber-300"
+                      />
+                      <span>{systemHealth.note}</span>
+                    </div>
+                  </>
+                ) : (
+                  <p className="mt-4 text-sm text-rose-200">System health could not be loaded.</p>
+                )}
+              </section>
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
                 {kpis.map((kpi) => {

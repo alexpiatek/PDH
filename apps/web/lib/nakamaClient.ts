@@ -440,7 +440,9 @@ export async function ensureNakamaReady() {
   return { session, socket };
 }
 
-export async function fetchPlayerAdmin(path: '/api/admin/me' | '/api/admin/player-analytics') {
+export async function fetchPlayerAdmin(
+  path: '/api/admin/me' | '/api/admin/player-analytics' | '/api/admin/system-health'
+) {
   const session = await ensureNakamaSession();
   return fetch(path, {
     headers: { Authorization: `Bearer ${session.token}` },

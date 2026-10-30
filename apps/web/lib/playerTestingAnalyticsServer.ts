@@ -150,6 +150,14 @@ function getTestingPool(): Pool | null {
   return pool;
 }
 
+export async function checkPlayerTestingDatabase(): Promise<void> {
+  const pool = getTestingPool();
+  if (!pool) {
+    throw new Error('Player analytics database is not configured.');
+  }
+  await pool.query('SELECT 1');
+}
+
 function optionalText(value: unknown, maxLength: number): string | null {
   if (typeof value !== 'string') {
     return null;
