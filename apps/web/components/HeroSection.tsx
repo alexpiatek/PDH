@@ -529,10 +529,10 @@ export default function HeroSection() {
       <section className="relative isolate border-b border-white/10">
         <div className="pointer-events-none absolute inset-0">
           <div
-            className="absolute inset-0 bg-cover bg-center opacity-[0.08]"
-            style={{ backgroundImage: "url('/Casino floor background.png')" }}
+            className="absolute inset-0 bg-cover bg-[position:65%_center] lg:bg-center"
+            style={{ backgroundImage: "url('/brand/coastal-hero.jpg')" }}
           />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_38%,rgba(20,184,166,0.16),transparent_30%),radial-gradient(circle_at_18%_22%,rgba(251,191,36,0.08),transparent_26%),linear-gradient(180deg,rgba(3,8,11,0.94),rgba(2,7,9,0.98))]" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(3,8,11,0.25),rgba(3,8,11,0.45)_70%,rgba(3,8,11,0.92))] lg:bg-[linear-gradient(90deg,rgba(3,8,11,0.4),rgba(3,8,11,0.12)),linear-gradient(0deg,rgba(3,8,11,0.85),transparent_35%)]" />
         </div>
 
         <header className="relative z-10 border-b border-amber-300/55">
