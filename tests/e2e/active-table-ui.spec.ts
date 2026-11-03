@@ -32,13 +32,23 @@ async function boxOf(locator: Locator) {
 }
 
 async function expectNoOverlap(a: Locator, b: Locator, label: string) {
-  const [boxA, boxB] = await Promise.all([boxOf(a), boxOf(b)]);
-  const overlaps =
-    boxA.x < boxB.x + boxB.width &&
-    boxA.x + boxA.width > boxB.x &&
-    boxA.y < boxB.y + boxB.height &&
-    boxA.y + boxA.height > boxB.y;
-  expect(overlaps, `${label}: ${JSON.stringify({ boxA, boxB })}`).toBe(false);
+  await expect(a).toBeVisible();
+  await expect(b).toBeVisible();
+  await expect
+    .poll(
+      async () => {
+        const [boxA, boxB] = await Promise.all([a.boundingBox(), b.boundingBox()]);
+        if (!boxA || !boxB) return true;
+        return (
+          boxA.x < boxB.x + boxB.width &&
+          boxA.x + boxA.width > boxB.x &&
+          boxA.y < boxB.y + boxB.height &&
+          boxA.y + boxA.height > boxB.y
+        );
+      },
+      { message: label }
+    )
+    .toBe(false);
 }
 
 async function expectWithinViewport(page: Page, locator: Locator, label: string) {
@@ -157,12 +167,14 @@ test.describe('active table layout safety', () => {
       for (let index = 0; index < count; index += 1) {
         await expectWithinViewport(page, seatCards.nth(index), `${scenario} seat ${index}`);
       }
-      if (scenario === 'mobile-9') {
-        for (let a = 0; a < count; a++)
-          for (let b = a + 1; b < count; b++) {
-            await expectNoOverlap(seatCards.nth(a), seatCards.nth(b), `seats ${a} and ${b}`);
-          }
-      }
+      for (let a = 0; a < count; a++)
+        for (let b = a + 1; b < count; b++) {
+          await expectNoOverlap(
+            seatCards.nth(a),
+            seatCards.nth(b),
+            `${scenario} seats ${a} and ${b}`
+          );
+        }
 
       await expect
         .poll(() =>
@@ -184,6 +196,26 @@ test.describe('active table layout safety', () => {
       page.getByText(/YOUR TURN|TO ACT|WAITING|DISCARDING|FOLDED|DISCONNECTED|RECONNECTING|ALL-IN/)
     ).toHaveCount(0);
     await expect(page.getByText(/ - \d+s/)).toHaveCount(0);
+  });
+
+  test('short phones keep cards above actions and crowded seats separate', async ({ page }) => {
+    for (const scenario of ['betting-call', 'discard', 'mobile-6', 'mobile-9']) {
+      await openScenario(page, scenario, { width: 375, height: 667 });
+      await expectWithinViewport(page, page.getByTestId('hero-hole-cards'), `${scenario} hand`);
+      await expectNoOverlap(
+        page.getByTestId('hero-hole-cards'),
+        page.getByTestId('action-tray'),
+        `${scenario} hand and actions`
+      );
+      const seats = page.locator('[data-testid^="seat-card-"]');
+      for (let a = 0; a < (await seats.count()); a++)
+        for (let b = a + 1; b < (await seats.count()); b++)
+          await expectNoOverlap(
+            seats.nth(a),
+            seats.nth(b),
+            `${scenario} short seats ${a} and ${b}`
+          );
+    }
   });
 
   test('showdown result banner stays clear of board, hero cards, and next-hand controls', async ({
@@ -232,6 +264,61 @@ test.describe('active table layout safety', () => {
     await expect(page.getByTestId('confirm-discard')).toHaveText('Discard selected');
     await expect(tray.getByText('Choose one card to continue')).toHaveCount(0);
     await expect(tray.getByText(/0\/1/)).toHaveCount(0);
+  });
+
+  test('discard cards support keyboard selection and announce the selected card', async ({
+    page,
+  }) => {
+    await openScenario(page, 'discard', { width: 390, height: 844 });
+    const card = page.getByRole('button', { name: 'A♠, choose to discard face down', exact: true });
+    await expect(card).toBeEnabled();
+    await card.focus();
+    await card.press('Enter');
+    await expect(card).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('action-tray')).toContainText(
+      'A♠ selected. Your discard stays hidden.'
+    );
+    await expect(page.getByTestId('confirm-discard')).toBeEnabled();
+    await card.press('Space');
+    await expect(card).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByTestId('confirm-discard')).toBeDisabled();
+  });
+
+  test('the hand guide opens rules and returns keyboard focus on Escape', async ({ page }) => {
+    await openScenario(page, 'betting-call', { width: 390, height: 844 });
+    const guide = page.getByTestId('hand-progress');
+    await guide.click();
+    await expect(page.getByTestId('rules-close')).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.getByTestId('rules-close')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('rules-overlay')).toHaveCount(0);
+    await expect(guide).toBeFocused();
+  });
+
+  test('mobile raise editing keeps the hand visible and preserves all-in confirmation', async ({
+    page,
+  }) => {
+    for (const viewport of [
+      { width: 390, height: 844 },
+      { width: 375, height: 667 },
+    ]) {
+      await openScenario(page, 'betting-call', viewport);
+      await page.getByTestId('action-raise-toggle').click();
+      await expect(page.getByTestId('bet-panel-close')).toBeFocused();
+      await expectNoOverlap(
+        page.getByTestId('hero-hole-cards'),
+        page.getByTestId('action-tray'),
+        'hand and raise editor'
+      );
+      await expectWithinViewport(page, page.getByTestId('action-tray'), 'raise editor');
+      await page.getByTestId('raise-option-allin').click();
+      await expect(page.getByTestId('action-raise')).toContainText('Confirm all-in');
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('bet-panel')).toHaveCount(0);
+      await expect(page.getByTestId('action-raise-toggle')).toBeFocused();
+      await expect(page.getByTestId('action-call')).toBeVisible();
+    }
   });
 
   test('all-in discard does not show rebuy or queued sit-out as active-hand UI', async ({

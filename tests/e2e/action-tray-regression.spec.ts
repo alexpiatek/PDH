@@ -194,7 +194,7 @@ test.describe('poker action tray viewport regressions', () => {
     const countdown = page.getByTestId('next-hand-countdown');
     await expectWithinViewport(page, countdown);
     await expect(countdown).toContainText(/Next hand in|Ready for next hand/);
-    await expect(countdown).toContainText(/Server controlled|Results held/);
+    await expect(countdown).toContainText(/Waiting to deal|Review your hand/);
     await expect(page.getByRole('button', { name: 'Ready' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Next Hand' })).toHaveCount(0);
   });

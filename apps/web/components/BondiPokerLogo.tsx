@@ -35,12 +35,8 @@ export function BondiPokerLogo({ variant, className = '', href }: BondiPokerLogo
 
     return (
       <>
-        <img
-          src={MARK_LOGO_SRC}
-          alt={LOGO_ALT}
-          className="h-7 w-7 shrink-0 rounded border border-amber-200/30 object-cover shadow-[0_8px_18px_rgba(0,0,0,0.28)]"
-        />
-        <span className="truncate font-[var(--font-display)] text-[0.68rem] font-bold uppercase tracking-[0.18em] text-amber-200">
+        <img src={MARK_LOGO_SRC} alt={LOGO_ALT} className="h-7 w-7 shrink-0 object-contain" />
+        <span className="truncate font-[var(--font-serif)] text-[0.85rem] font-semibold uppercase tracking-[0.18em] text-[#f1c471]">
           Bondi Poker
         </span>
       </>

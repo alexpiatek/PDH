@@ -1,3 +1,26 @@
+## Player experience beyond the homepage — 3 November 2026
+
+**Local result: passed.** The existing coastal direction now continues through the lobby, live table, profile, 404/error and email-preference pages. The account gate, practice hand and friend invitation room were reviewed alongside them. Game screenshots use the existing network-disabled hand fixtures; the profile screenshot uses the actual shared profile view with synthetic totals. No production player account, chip balance, campaign or message was used for this review.
+
+### Findings and changes
+
+1. **Mobile gameplay — high priority, repaired.** At six players on a 390px phone, an opponent nameplate overlapped the hero seat. At 375 × 667, the betting bar covered the hand; opening Raise also hid the hand on a 390px phone. Six-player tables now use the compact seat arrangement, shorter screens reserve room for the controls, and the mobile raise editor focuses on amount, presets and confirmation. The cards stay visible. The original all-in confirmation remains in place. Geometry checks cover four through nine seats, short phones and the expanded raise editor.
+2. **Understanding the game — clearer during play.** The lobby and table show how five cards become four, three and two. The table guide opens the existing rules without leaving the hand. An empty preflop board explains when the first discard happens. Discard cards are real keyboard-operable buttons with pressed state, a gold selection, and the selected card named above confirmation. Rules take keyboard focus, contain Tab, close with Escape and restore focus. Betting shortcuts pause while menus or rules/history are open.
+3. **Player journey — consistent and easier to scan.** The lobby leads with creating or joining a friend table, with practice still available. Brad's ocean photograph is used on concealed cards; readable card faces are retained. Available chips and four key hand totals lead the profile, with detailed accounting available in a disclosure. Top-up receipt handling, account APIs, password requirements and administrator checks are retained. The result banner is more readable on phones and the next-hand message uses player-facing wording. Missing-page and email-preference screens use the shared coastal shell.
+
+### Current-review evidence
+
+- [Table before](docs/qa/player-experience/table-before.jpg) and [table after](docs/qa/player-experience/table-after.jpg)
+- [Lobby before](docs/qa/player-experience/lobby-before.jpg) and [lobby after](docs/qa/player-experience/lobby-after.jpg)
+- [Six-seat overlap before](docs/qa/player-experience/mobile-table-before.jpg), [nine-seat phone after](docs/qa/player-experience/mobile-nine-after.jpg), [short phone after](docs/qa/player-experience/mobile-six-short-after.jpg)
+- [Raise editor before](docs/qa/player-experience/raise-mobile-before-layout.jpg), [phone after](docs/qa/player-experience/raise-mobile-after.jpg), [short phone after](docs/qa/player-experience/raise-mobile-short-after.jpg)
+- [Keyboard-selected discard](docs/qa/player-experience/discard-mobile-short-after.jpg) and [long hand result](docs/qa/player-experience/showdown-long-mobile-after.jpg)
+- [Profile desktop](docs/qa/player-experience/profile-desktop-after.jpg), [profile phone](docs/qa/player-experience/profile-mobile-after.jpg), [page recovery](docs/qa/player-experience/error-after.jpg)
+
+All accepted images were captured and inspected in this review. Desktop review used the normal Chrome viewport; phone checks used 390 × 844 and 375 × 667. Before/after screenshots may differ in the local-only device-sharing helper, which is now limited to the waiting room. Profile baseline review was source-based because the live page requires a signed-in account; no production account was created for screenshots. The shared profile preview and poker fixtures return 404 unless the existing test-state environment switch is explicitly enabled. This is a visual/interaction review, not a measured conversion or comprehensive accessibility study. Private administrator reports and the low-level app crash boundary are outside this visual pass.
+
+Local lint, type checks, production web build and all 254 unit tests passed; six database-dependent campaign tests were skipped locally. Added browser coverage checks seat separation, short-phone hand visibility, raise editing/all-in confirmation, keyboard discard selection and rules focus. The repository's server-backed integration and browser CI remain the pre-merge release gate. No protocol, poker rules, server-authoritative action validation, dependencies, database schema or DNS change is required. Release uses the existing tested-commit deployment workflow and its artifact rollback.
+
 # Coastal first-play design QA
 
 ## Five-card clarity and X-first community — 3 November 2026

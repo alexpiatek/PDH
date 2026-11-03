@@ -4,7 +4,13 @@ import type { ReactNode } from 'react';
 
 export const DISCORD_URL = process.env.NEXT_PUBLIC_DISCORD_INVITE_URL?.trim() || null;
 
-export function CoastalHeader({ compact = false }: { compact?: boolean }) {
+export function CoastalHeader({
+  compact = false,
+  signedIn = false,
+}: {
+  compact?: boolean;
+  signedIn?: boolean;
+}) {
   return (
     <header className="coastal-header">
       <Link href="/" className="coastal-brand" aria-label="Bondi Poker home">
@@ -45,7 +51,7 @@ export function CoastalHeader({ compact = false }: { compact?: boolean }) {
           </>
         )}
         <Link href="/profile" className="coastal-signin">
-          Sign in
+          {signedIn ? 'My profile' : 'Sign in'}
         </Link>
       </nav>
     </header>
@@ -56,17 +62,19 @@ export function CoastalShell({
   children,
   className = '',
   compactHeader = false,
+  signedIn = false,
 }: {
   children: ReactNode;
   className?: string;
   compactHeader?: boolean;
+  signedIn?: boolean;
 }) {
   return (
     <div className={`coastal-page ${className}`}>
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <CoastalHeader compact={compactHeader} />
+      <CoastalHeader compact={compactHeader} signedIn={signedIn} />
       {children}
     </div>
   );
