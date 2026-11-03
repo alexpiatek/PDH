@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import {
   Brain,
   CircleDot,
+  ExternalLink,
   LockKeyhole,
   ShieldCheck,
   Spade,
@@ -16,7 +17,7 @@ const EARLY_ACCESS_SUCCESS_MESSAGE =
   'You\u2019re on the list. We\u2019ll send early access invites, test-night announcements, and launch updates.';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DISCORD_INVITE_URL =
-  process.env.NEXT_PUBLIC_DISCORD_INVITE_URL?.trim() || 'https://discord.gg/YOUR_INVITE_CODE';
+  process.env.NEXT_PUBLIC_DISCORD_INVITE_URL?.trim() || 'https://discord.gg/tmkeanX7T';
 
 type CardFace = {
   src: string;
@@ -107,7 +108,7 @@ const WHY_CARDS: WhyCard[] = [
   },
   {
     title: 'Hidden discards after every post-flop street',
-    copy: 'Discard one hidden card after the flop, turn, and river. Information stays buried.',
+    copy: 'After each post-flop betting round, discard one hidden card. Your discards stay secret.',
     icon: LockKeyhole,
   },
   {
@@ -116,8 +117,8 @@ const WHY_CARDS: WhyCard[] = [
     icon: Brain,
   },
   {
-    title: 'Deterministic engine and authoritative server',
-    copy: 'Built for fair play, consistent outcomes, and a smooth real-time experience.',
+    title: 'Free play with friends',
+    copy: 'Create a private table, share the code, and play with free chips that have no cash value.',
     icon: ShieldCheck,
   },
 ];
@@ -126,9 +127,9 @@ const RULES = [
   '2-9 players, standard 52-card deck',
   'Each player is dealt 5 hole cards',
   'No discards pre-flop',
-  'After the flop, each remaining player discards 1 hidden card',
-  'After the turn, each remaining player discards 1 hidden card',
-  'After the river, each remaining player discards 1 hidden card',
+  'After flop betting, each remaining player discards 1 hidden card',
+  'After turn betting, each remaining player discards 1 hidden card',
+  'After river betting, each remaining player discards 1 hidden card',
   'Players reach showdown with 2 hole cards',
   'Best 5-card hand from 2 hole cards + 5 board cards wins',
   'Discards stay face-down and are never revealed',
@@ -138,21 +139,44 @@ const RULES = [
 function CardImage({ card, className = '' }: { card: CardFace; className?: string }) {
   const rank = card.code.slice(0, -1);
   const suit = card.code.slice(-1);
+  const suitColor = suit === '\u2665' || suit === '\u2666' ? 'text-red-700' : 'text-zinc-950';
   return (
     <div
       role="img"
       aria-label={card.alt}
-      className={`relative aspect-[5/7] w-9 shrink-0 overflow-hidden rounded-[2px] border border-black/15 bg-[#fafaf3] text-black shadow-[0_4px_10px_rgba(0,0,0,0.28)] sm:w-10 lg:w-10 xl:w-11 ${className}`}
+      className={`relative aspect-[5/7] w-9 shrink-0 overflow-hidden rounded-[2px] border border-black/15 bg-[#fafaf3] shadow-[0_4px_10px_rgba(0,0,0,0.28)] sm:w-10 lg:w-10 xl:w-11 ${suitColor} ${className}`}
     >
-      <img src={card.src} alt="" className="absolute left-[17%] top-[10%] h-[80%] w-[66%] rounded-[1px] object-cover" />
-      <span aria-hidden="true" className="absolute left-[3%] top-[2%] flex flex-col items-center font-serif text-[7px] font-bold leading-[0.95] sm:text-[8px]">
-        <span>{rank}</span><span>{suit}</span>
+      <img
+        src={card.src}
+        alt=""
+        className="absolute left-[17%] top-[10%] h-[80%] w-[66%] rounded-[1px] object-cover"
+      />
+      <span
+        aria-hidden="true"
+        className="absolute left-[3%] top-[2%] flex flex-col items-center font-serif text-[7px] font-bold leading-[0.95] sm:text-[8px]"
+      >
+        <span>{rank}</span>
+        <span>{suit}</span>
       </span>
-      <span aria-hidden="true" className="absolute bottom-[2%] right-[3%] flex rotate-180 flex-col items-center font-serif text-[7px] font-bold leading-[0.95] sm:text-[8px]">
-        <span>{rank}</span><span>{suit}</span>
+      <span
+        aria-hidden="true"
+        className="absolute bottom-[2%] right-[3%] flex rotate-180 flex-col items-center font-serif text-[7px] font-bold leading-[0.95] sm:text-[8px]"
+      >
+        <span>{rank}</span>
+        <span>{suit}</span>
       </span>
-      <span aria-hidden="true" className="absolute right-[3%] top-[11%] text-[2px] font-semibold leading-none [writing-mode:vertical-rl]">BONDI POKER</span>
-      <span aria-hidden="true" className="absolute bottom-[11%] left-[3%] rotate-180 text-[2px] font-semibold leading-none [writing-mode:vertical-rl]">BONDI POKER</span>
+      <span
+        aria-hidden="true"
+        className="absolute right-[3%] top-[11%] text-[2px] font-semibold leading-none [writing-mode:vertical-rl]"
+      >
+        BONDI POKER
+      </span>
+      <span
+        aria-hidden="true"
+        className="absolute bottom-[11%] left-[3%] rotate-180 text-[2px] font-semibold leading-none [writing-mode:vertical-rl]"
+      >
+        BONDI POKER
+      </span>
     </div>
   );
 }
@@ -528,35 +552,30 @@ export default function HeroSection() {
       <section className="relative isolate border-b border-white/10">
         <div className="pointer-events-none absolute inset-0">
           <div
-            className="absolute inset-0 bg-fixed bg-top bg-no-repeat"
-            style={{
-              backgroundImage: "url('/brand/coastal-hero.jpg')",
-              backgroundSize: 'contain',
-            }}
+            className="absolute inset-0 bg-cover bg-top bg-no-repeat lg:bg-contain"
+            style={{ backgroundImage: "url('/brand/coastal-hero.jpg')" }}
           />
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(3,8,11,0.25),rgba(3,8,11,0.45)_70%,rgba(3,8,11,0.92))] lg:bg-[linear-gradient(90deg,rgba(3,8,11,0.4),rgba(3,8,11,0.12)),linear-gradient(0deg,rgba(3,8,11,0.85),transparent_35%)]" />
         </div>
 
         <header className="relative z-10 border-b border-amber-300/55">
-          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 sm:px-8 sm:py-5">
-            <div className="-translate-x-[108px] inline-flex min-w-0 items-center gap-0 sm:gap-1">
-              <img
-                src="/brand/bondi-poker-header-art.png"
-                alt=""
-                width={144}
-                height={96}
-                className="h-16 w-24 shrink-0 object-contain sm:h-24 sm:w-36"
-                style={{
-                  maskImage: 'radial-gradient(ellipse at center, black 40%, transparent 72%)',
-                  WebkitMaskImage: 'radial-gradient(ellipse at center, black 40%, transparent 72%)',
-                }}
-              />
-            </div>
-            <div className="absolute left-1/2 top-1/2 flex w-max max-w-[74vw] -translate-x-1/2 -translate-y-1/2 items-center gap-2">
+          <div className="relative mx-auto flex min-h-20 max-w-7xl items-center justify-between px-6 py-4 sm:min-h-24 sm:px-8 sm:py-5">
+            <img
+              src="/brand/bondi-poker-header-art.png"
+              alt=""
+              width={144}
+              height={96}
+              className="hidden h-16 w-24 shrink-0 object-contain md:block"
+              style={{
+                maskImage: 'radial-gradient(ellipse at center, black 40%, transparent 72%)',
+                WebkitMaskImage: 'radial-gradient(ellipse at center, black 40%, transparent 72%)',
+              }}
+            />
+            <div className="absolute left-1/2 top-1/2 flex w-max max-w-[82vw] -translate-x-1/2 -translate-y-1/2 items-center gap-2">
               <BondiPokerLogo
                 href="/"
                 variant="nav"
-                className="min-w-0 max-w-[62vw]"
+                className="min-w-0 max-w-[68vw] md:max-w-[45vw]"
               />
               <svg
                 viewBox="0 0 210 233"
@@ -566,6 +585,16 @@ export default function HeroSection() {
                 <image href="/brand/bondi-poker-wordmark.svg" width="1842" height="233" />
               </svg>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                void handlePlayNow();
+              }}
+              disabled={playNowLoading}
+              className="relative ml-auto hidden rounded-md border border-amber-300/50 px-4 py-2 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.16em] text-amber-100 transition hover:border-teal-300/70 hover:text-teal-100 disabled:cursor-not-allowed disabled:opacity-60 md:inline-flex"
+            >
+              {playNowLoading ? 'Opening' : 'Play'}
+            </button>
           </div>
         </header>
 
@@ -575,9 +604,12 @@ export default function HeroSection() {
               A new kind of online Hold&apos;em.
             </h1>
 
-            <p className="mt-6 max-w-lg text-base leading-7 text-zinc-300 sm:text-lg lg:text-xl lg:leading-8">
+            <p className="mt-6 max-w-lg text-base leading-7 text-zinc-200 sm:text-lg lg:text-xl lg:leading-8">
               Real-time multiplayer poker with a twist: start with 5 hole cards, discard one after
-              the flop, turn, and river, and reach showdown with just 2 hole cards.
+              each post-flop betting round, and reach showdown with just 2 hole cards.
+            </p>
+            <p className="mt-4 text-sm font-semibold leading-6 text-teal-200">
+              Free play chips. No cash value. Early access.
             </p>
 
             <div className="mt-6 max-w-xl lg:mt-7">
@@ -588,9 +620,9 @@ export default function HeroSection() {
                     void handlePlayNow();
                   }}
                   disabled={playNowLoading}
-                  className="inline-flex min-h-14 flex-1 items-center justify-center gap-2 rounded-md border border-teal-200/80 bg-teal-400/[0.58] px-7 py-4 text-base font-semibold text-white shadow-[0_0_28px_rgba(20,184,166,0.26)] transition hover:bg-teal-300/[0.66] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex min-h-14 flex-1 items-center justify-center rounded-md border border-teal-200/80 bg-teal-300 px-7 py-4 text-base font-semibold text-zinc-950 shadow-[0_0_28px_rgba(20,184,166,0.26)] transition hover:bg-teal-200 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {playNowLoading ? 'Opening' : 'Quick Play'}
+                  {playNowLoading ? 'Opening' : 'Play with friends'}
                 </button>
                 <a
                   href={DISCORD_INVITE_URL}
@@ -602,18 +634,19 @@ export default function HeroSection() {
                       destination: 'discord_invite',
                     });
                   }}
-                  className="inline-flex min-h-14 items-center justify-center gap-2 rounded-md border border-amber-300/70 bg-transparent px-4 py-4 text-sm font-semibold text-amber-100 transition hover:border-teal-200 hover:text-teal-100 sm:w-40 sm:shrink-0"
+                  className="inline-flex min-h-14 items-center justify-center gap-2 rounded-md border border-amber-300/70 bg-zinc-950/35 px-5 py-4 text-sm font-semibold text-amber-100 transition hover:border-teal-200 hover:text-teal-100"
                 >
-                  <DiscordLogo className="h-4 w-4" />
+                  <DiscordLogo className="h-5 w-5" />
                   Join Discord
+                  <ExternalLink aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
                 </a>
               </div>
 
               <p className="mt-3 text-sm leading-6 text-zinc-300">
-                Find live games, coordinate test sessions, get updates, and report bugs in Discord.
+                Sign in to create a private table and invite your friends with a code.
               </p>
               <p className="mt-1 text-xs leading-5 text-amber-100/85">
-                Games are still early and may not always be active.
+                Public tables may be quiet. Join Discord to arrange a game or report a bug.
               </p>
 
               <button

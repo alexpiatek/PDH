@@ -266,3 +266,19 @@ Keep backups of:
 - Postgres volume snapshots/dumps
 
 Rotate any key that was exposed in logs/chat.
+
+## Website-only deployment scope
+
+`scripts/deploy-tested.sh` still installs and builds a clean release before activation.
+It compares the previous and tested revisions with `scripts/deployment-scope.mjs`.
+When dependency inputs are unchanged, activation and rollback reuse the live
+installation. Website-only changes replace `.next` and restart `pdh-web` without
+recreating Nakama or replacing its engine artifacts. Shared packages, server or
+Compose changes still activate the backend; dependency changes also reinstall.
+
+Before a dependency-changing release, the deployment user must be able to write
+the existing `node_modules` tree. The script fails before activation if it finds
+unwritable entries. An administrator should repair the affected installation's
+ownership under the existing non-root deployment policy before retrying such a
+release. Website-only deployment does not change permissions or hide that issue.
+

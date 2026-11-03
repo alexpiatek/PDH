@@ -68,6 +68,11 @@ jobs:
       - name: Run unit tests
         run: bash scripts/run-pnpm.sh test
 
+      - name: Deployment regression tests
+        run: |
+          bash -n scripts/deploy-tested.sh
+          node --test scripts/deployment-scope.test.mjs scripts/deploy-tested.test.mjs
+
   integration_tests:
     name: Integration Tests
     runs-on: ubuntu-latest
