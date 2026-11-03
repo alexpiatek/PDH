@@ -26,6 +26,7 @@ import {
   updateTestingProfileDisplayName,
 } from '../lib/playerTestingAnalytics';
 import { getRecentTables, type RecentLobbyTable, upsertRecentTable } from '../lib/recentTables';
+import { HandProgress } from '../components/HandProgress';
 import { CoastalShell, CoastalFooter } from '../components/CoastalShell';
 import { readPlayIntent, playIntentUrl, type PlayIntent } from '../lib/playIntent';
 
@@ -341,18 +342,22 @@ const PlayLobbyPage: NextPage = () => {
   }, [router.isReady, router.query, name, joinCode]);
 
   return (
-    <CoastalShell>
+    <CoastalShell signedIn={signedIn}>
       <Head>
         <title>Play with friends | Bondi Poker</title>
       </Head>
       <main id="main-content" className="coastal-lobby" data-testid="lobby-shell">
         <section data-testid="lobby-hero" className="lobby-intro">
           <p className="coastal-eyebrow">Pull up a seat</p>
-          <h1>Your next poker night starts here.</h1>
-          <p>Make a private table, share the link and bring your friends.</p>
+          <h1>Your table. Your people.</h1>
+          <p>Create a table, invite your friends and deal the first hand.</p>
           <Link href="/practice" className="coastal-inline-link">
             New to the game? Try a practice hand <ArrowRight size={16} aria-hidden="true" />
           </Link>
+          <div className="lobby-game-guide">
+            <p>A new kind of Hold’em. Start with five. Finish with two.</p>
+            <HandProgress />
+          </div>
           <p className="coastal-fineprint">
             Free profile for multiplayer. Play chips only. No cash value.
           </p>
@@ -418,7 +423,7 @@ const PlayLobbyPage: NextPage = () => {
           </form>
           <details className="lobby-public">
             <summary>Looking for a public game?</summary>
-            <p>Public tables can be quiet. Find players in Discord or try Quick Play.</p>
+            <p>Public tables can be quiet. Bring a friend or try Quick Play.</p>
             <form data-testid="quick-play-card" onSubmit={(e) => void handleQuickPlay(e)}>
               <button
                 data-testid="join-button"

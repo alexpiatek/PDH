@@ -14,6 +14,7 @@ import type { ClientMessage, LegalActions, ServerMessage } from '../server-types
 import { BondiPokerLogo } from './BondiPokerLogo';
 import { TableInvitation } from './TableInvitation';
 import { MinimalCardFace } from './MinimalCardFace';
+import { HandProgress } from './HandProgress';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
 import { getPlayerInitials } from '../lib/playerInitials';
@@ -112,8 +113,7 @@ const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '0.0.0.0']);
 const TABLE_THEME = {
   fontSans:
     'var(--font-sans, "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
-  fontDisplay:
-    'var(--font-display, "Sora", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif)',
+  fontDisplay: 'var(--font-serif, Georgia, serif)',
   pageBackground:
     'radial-gradient(circle at 72% 18%, rgba(20,184,166,0.17), transparent 31%), ' +
     'radial-gradient(circle at 16% 16%, rgba(251,191,36,0.1), transparent 29%), ' +
@@ -125,17 +125,17 @@ const TABLE_THEME = {
     'linear-gradient(180deg, rgba(3,8,11,0.72), rgba(2,7,9,0.82)), ' +
     'url("/brand/bondi-night-coast.webp")',
   panel: 'rgba(3,8,11,0.76)',
-  panelStrong: 'rgba(2,7,9,0.92)',
+  panelStrong: 'rgba(3,25,24,0.97)',
   panelSoft: 'rgba(255,255,255,0.035)',
   border: 'rgba(255,255,255,0.14)',
   borderStrong: 'rgba(251,191,36,0.42)',
-  amber: '#fde68a',
-  amberStrong: '#fbbf24',
+  amber: '#f1c471',
+  amberStrong: '#edbd62',
   teal: '#5eead4',
   tealSoft: 'rgba(20,184,166,0.24)',
   tealBorder: 'rgba(94,234,212,0.54)',
-  text: '#f8fafc',
-  muted: 'rgba(212,212,216,0.78)',
+  text: '#fff4df',
+  muted: '#c5d3ce',
   dim: 'rgba(161,161,170,0.78)',
 };
 
@@ -793,8 +793,8 @@ const ShowdownResultBanner = ({
           <div
             data-testid="showdown-result-main-line"
             style={{
-              fontFamily: TABLE_THEME.fontDisplay,
-              fontSize: isPhone ? 11 : 21,
+              fontFamily: TABLE_THEME.fontSans,
+              fontSize: isPhone ? 13 : 21,
               fontWeight: 900,
               lineHeight: isPhone ? 1.08 : 1.08,
               color: '#f8fafc',
@@ -809,7 +809,7 @@ const ShowdownResultBanner = ({
             style={{
               marginTop: isPhone ? 1 : 3,
               color: '#dcfce7',
-              fontSize: isPhone ? 8.5 : 14,
+              fontSize: isPhone ? 10.5 : 14,
               fontWeight: 800,
               lineHeight: isPhone ? 1.08 : 1.18,
               overflowWrap: 'anywhere',
@@ -824,7 +824,7 @@ const ShowdownResultBanner = ({
               style={{
                 marginTop: isPhone ? 2 : 5,
                 color: TABLE_THEME.muted,
-                fontSize: isPhone ? 7.5 : 12,
+                fontSize: isPhone ? 9.5 : 12,
                 fontWeight: 700,
                 overflowWrap: 'anywhere',
                 whiteSpace: isPhone ? 'normal' : 'nowrap',
@@ -994,128 +994,149 @@ const HandHistoryPanel = ({
   );
 };
 
-const RulesOverlay = ({ isPhone, onClose }: { isPhone: boolean; onClose: () => void }) => (
-  <div
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="table-rules-title"
-    data-testid="rules-overlay"
-    style={{
-      position: 'fixed',
-      inset: 0,
-      zIndex: 70,
-      display: 'flex',
-      alignItems: isPhone ? 'flex-end' : 'center',
-      justifyContent: 'center',
-      padding: isPhone ? '12px 10px calc(14px + env(safe-area-inset-bottom))' : 24,
-      background: 'rgba(2,7,9,0.58)',
-      backdropFilter: 'blur(7px)',
-      fontFamily: TABLE_THEME.fontSans,
-      color: TABLE_THEME.text,
-    }}
-    onClick={onClose}
-  >
-    <section
-      style={{
-        width: isPhone ? '100%' : 460,
-        maxWidth: 'calc(100vw - 20px)',
-        borderRadius: isPhone ? '12px 12px 8px 8px' : 10,
-        border: `1px solid ${TABLE_THEME.tealBorder}`,
-        background:
-          'linear-gradient(180deg, rgba(8,13,17,0.98), rgba(2,7,9,0.96)), radial-gradient(circle at 0% 0%, rgba(20,184,166,0.14), transparent 36%)',
-        boxShadow: '0 22px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)',
-        padding: isPhone ? '14px 14px 16px' : '18px 18px 20px',
+const RulesOverlay = ({ isPhone, onClose }: { isPhone: boolean; onClose: () => void }) => {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    closeRef.current?.focus();
+    return () => {
+      if (previousFocus instanceof HTMLElement) previousFocus.focus();
+    };
+  }, []);
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="table-rules-title"
+      data-testid="rules-overlay"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          onClose();
+        }
+        if (event.key === 'Tab') {
+          event.preventDefault();
+          closeRef.current?.focus();
+        }
       }}
-      onClick={(event) => event.stopPropagation()}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 70,
+        display: 'flex',
+        alignItems: isPhone ? 'flex-end' : 'center',
+        justifyContent: 'center',
+        padding: isPhone ? '12px 10px calc(14px + env(safe-area-inset-bottom))' : 24,
+        background: 'rgba(2,7,9,0.58)',
+        backdropFilter: 'blur(7px)',
+        fontFamily: TABLE_THEME.fontSans,
+        color: TABLE_THEME.text,
+      }}
+      onClick={onClose}
     >
-      <div
+      <section
         style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          gap: 14,
+          width: isPhone ? '100%' : 460,
+          maxWidth: 'calc(100vw - 20px)',
+          borderRadius: isPhone ? '12px 12px 8px 8px' : 10,
+          border: `1px solid ${TABLE_THEME.tealBorder}`,
+          background:
+            'linear-gradient(180deg, rgba(8,13,17,0.98), rgba(2,7,9,0.96)), radial-gradient(circle at 0% 0%, rgba(20,184,166,0.14), transparent 36%)',
+          boxShadow: '0 22px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)',
+          padding: isPhone ? '14px 14px 16px' : '18px 18px 20px',
         }}
+        onClick={(event) => event.stopPropagation()}
       >
-        <h2
-          id="table-rules-title"
+        <div
           style={{
-            margin: 0,
-            fontFamily: TABLE_THEME.fontDisplay,
-            fontSize: isPhone ? 18 : 21,
-            lineHeight: 1.15,
-            fontWeight: 900,
-            color: '#f8fafc',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 14,
           }}
         >
-          How Bondi Poker works
-        </h2>
-        <button
-          type="button"
-          aria-label="Close rules"
-          data-testid="rules-close"
-          onClick={onClose}
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 7,
-            border: `1px solid ${TABLE_THEME.border}`,
-            background: TABLE_THEME.panelSoft,
-            color: TABLE_THEME.text,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            flex: '0 0 auto',
-          }}
-        >
-          <X aria-hidden="true" size={16} strokeWidth={2.2} />
-        </button>
-      </div>
-      <ul
-        style={{
-          margin: isPhone ? '14px 0 0' : '16px 0 0',
-          padding: 0,
-          listStyle: 'none',
-          display: 'grid',
-          gap: isPhone ? 9 : 10,
-        }}
-      >
-        {RULES_COPY.map((rule, index) => (
-          <li
-            key={rule}
+          <h2
+            id="table-rules-title"
             style={{
-              display: 'grid',
-              gridTemplateColumns: '24px minmax(0, 1fr)',
-              gap: 9,
-              alignItems: 'baseline',
-              fontSize: isPhone ? 13 : 14,
-              lineHeight: 1.45,
-              color: 'rgba(226,232,240,0.9)',
+              margin: 0,
+              fontFamily: TABLE_THEME.fontDisplay,
+              fontSize: isPhone ? 18 : 21,
+              lineHeight: 1.15,
+              fontWeight: 900,
+              color: '#f8fafc',
             }}
           >
-            <span
-              aria-hidden="true"
+            How Bondi Poker works
+          </h2>
+          <button
+            type="button"
+            ref={closeRef}
+            aria-label="Close rules"
+            data-testid="rules-close"
+            onClick={onClose}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 7,
+              border: `1px solid ${TABLE_THEME.border}`,
+              background: TABLE_THEME.panelSoft,
+              color: TABLE_THEME.text,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              flex: '0 0 auto',
+            }}
+          >
+            <X aria-hidden="true" size={16} strokeWidth={2.2} />
+          </button>
+        </div>
+        <ul
+          style={{
+            margin: isPhone ? '14px 0 0' : '16px 0 0',
+            padding: 0,
+            listStyle: 'none',
+            display: 'grid',
+            gap: isPhone ? 9 : 10,
+          }}
+        >
+          {RULES_COPY.map((rule, index) => (
+            <li
+              key={rule}
               style={{
-                width: 22,
-                height: 22,
-                borderRadius: 999,
-                border: '1px solid rgba(251,191,36,0.5)',
-                color: TABLE_THEME.amber,
-                display: 'inline-grid',
-                placeItems: 'center',
-                fontSize: 11,
-                fontWeight: 900,
+                display: 'grid',
+                gridTemplateColumns: '24px minmax(0, 1fr)',
+                gap: 9,
+                alignItems: 'baseline',
+                fontSize: isPhone ? 13 : 14,
+                lineHeight: 1.45,
+                color: 'rgba(226,232,240,0.9)',
               }}
             >
-              {index + 1}
-            </span>
-            <span>{rule}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  </div>
-);
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 999,
+                  border: '1px solid rgba(251,191,36,0.5)',
+                  color: TABLE_THEME.amber,
+                  display: 'inline-grid',
+                  placeItems: 'center',
+                  fontSize: 11,
+                  fontWeight: 900,
+                }}
+              >
+                {index + 1}
+              </span>
+              <span>{rule}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+};
 
 const NextHandCountdown = ({
   seconds,
@@ -1176,7 +1197,7 @@ const NextHandCountdown = ({
         >
           {ready ? 'Ready for next hand' : 'Next hand in'}
           <br />
-          {showMinHold ? `Results held ${minSeconds}s` : 'Server controlled'}
+          {showMinHold ? `Review your hand · ${minSeconds}s` : 'Waiting to deal'}
         </div>
         {canReady ? (
           <button
@@ -1276,13 +1297,11 @@ const CardBack = ({
           inset: sizing.inset,
           borderRadius: sizing.radius - 2,
           border: 'none',
-          background:
-            `radial-gradient(circle at 50% 50%, rgba(255,255,255,0.16), rgba(0,0,0,0) 55%), ` +
-            `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.12), rgba(0,0,0,0) 40%), ` +
-            `radial-gradient(circle at 70% 70%, rgba(255,255,255,0.1), rgba(0,0,0,0) 42%), ` +
-            `repeating-linear-gradient(45deg, ${palette.pattern} 0 1px, rgba(0,0,0,0.2) 1px 3px), ` +
-            `repeating-linear-gradient(-45deg, ${palette.pattern} 0 1px, rgba(0,0,0,0.18) 1px 3px), ` +
-            `linear-gradient(135deg, ${palette.base}, ${palette.dark})`,
+          backgroundImage:
+            'linear-gradient(rgba(2,35,33,0.12), rgba(2,35,33,0.24)), url("/cards/coastal/ocean.jpg")',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          boxShadow: `inset 0 0 0 1px ${palette.border}`,
         }}
       />
     </div>
@@ -1343,6 +1362,9 @@ export const PokerGamePage = ({
   const [showRulesOverlay, setShowRulesOverlay] = useState(false);
   const [copyCodeFeedback, setCopyCodeFeedback] = useState<string | null>(null);
   const [showRaiseDrawer, setShowRaiseDrawer] = useState(false);
+  const raiseToggleRef = useRef<HTMLButtonElement>(null);
+  const raiseCloseRef = useRef<HTMLButtonElement>(null);
+  const raiseWasOpenRef = useRef(false);
   const [confirmAllIn, setConfirmAllIn] = useState(false);
   const [allInPresetSelected, setAllInPresetSelected] = useState(false);
   const [rebuyState, setRebuyState] = useState<'idle' | 'pending' | 'confirmed'>('idle');
@@ -2308,6 +2330,12 @@ export const PokerGamePage = ({
   const isPortraitPhone = isPhone && viewportHeight > viewportWidth;
   const isLandscapePhone = isMobile && viewportHeight <= 520 && viewportWidth > viewportHeight;
   const pinActionTray = isMobile;
+  useEffect(() => {
+    if (!isPhone) return;
+    if (showRaiseDrawer) raiseCloseRef.current?.focus();
+    else if (raiseWasOpenRef.current) raiseToggleRef.current?.focus();
+    raiseWasOpenRef.current = showRaiseDrawer;
+  }, [showRaiseDrawer, isPhone]);
   const layoutTableWidth = isPortraitPhone
     ? 390
     : isLandscapePhone
@@ -3216,7 +3244,7 @@ export const PokerGamePage = ({
     return lines.slice(-10);
   }, [hand?.log, hand?.street, state?.log]);
 
-  const densePhoneTable = isPortraitPhone && (hand?.players.length ?? 0) >= 8;
+  const densePhoneTable = isPortraitPhone && (hand?.players.length ?? 0) >= 6;
   const seatingPositions = isPortraitPhone
     ? [
         { left: '50%', top: '80%' },
@@ -3373,7 +3401,11 @@ export const PokerGamePage = ({
         ? 132
         : 126;
   const mobileHeroCardsBottomOffset = isLandscapePhone ? 78 : isPortraitPhone ? 30 : 28;
-  const mobileTableVerticalReserve = isPortraitPhone ? 202 : isLandscapePhone ? 196 : 110;
+  const mobileTableVerticalReserve = isPortraitPhone
+    ? (showRaiseDrawer ? 150 : 0) + (viewportHeight < 740 ? 246 : 202)
+    : isLandscapePhone
+      ? 196
+      : 110;
   const heroInfoBottomOffset = isPhone
     ? mobileHeroInfoBottomOffset
     : isMobile
@@ -3413,7 +3445,15 @@ export const PokerGamePage = ({
   );
   const tableMinimumWidth = Math.min(
     tableAvailableWidth,
-    isPortraitPhone ? 300 : isLandscapePhone ? 330 : 360
+    isPortraitPhone
+      ? viewportHeight < 740
+        ? showRaiseDrawer
+          ? 220
+          : 270
+        : 300
+      : isLandscapePhone
+        ? 330
+        : 360
   );
   const tableOuterWidthPx = Math.floor(Math.max(tableMinimumWidth, tableRawWidth));
   const tableOuterWidth = `${tableOuterWidthPx}px`;
@@ -3551,6 +3591,8 @@ export const PokerGamePage = ({
     (!serverDiscardValidIndexes || serverDiscardValidIndexes.has(idx));
   const selectedDiscardIsValid =
     selectedDiscardIndex !== null && isDiscardIndexAllowed(selectedDiscardIndex);
+  const selectedDiscardCard =
+    selectedDiscardIndex !== null ? you?.holeCards[selectedDiscardIndex] : undefined;
   const confirmDiscardDisabledReason = discardConfirmDisabledReason({
     pending: discardPending,
     selectedIndex: selectedDiscardIndex,
@@ -4020,7 +4062,14 @@ export const PokerGamePage = ({
     ) : null;
 
   useEffect(() => {
-    if (!seated || !hand || hand.phase !== 'betting') {
+    if (
+      !seated ||
+      !hand ||
+      hand.phase !== 'betting' ||
+      showRulesOverlay ||
+      showHandHistory ||
+      showTopMenu
+    ) {
       return;
     }
 
@@ -4069,7 +4118,19 @@ export const PokerGamePage = ({
     return () => {
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [act, canCall, canCheck, canFold, canOpenRaiseDrawer, isCallAllIn, seated]);
+  }, [
+    act,
+    canCall,
+    canCheck,
+    canFold,
+    canOpenRaiseDrawer,
+    hand,
+    isCallAllIn,
+    seated,
+    showRulesOverlay,
+    showHandHistory,
+    showTopMenu,
+  ]);
 
   useEffect(() => {
     if (maxRaiseTo === null || clampedRaiseTo < maxRaiseTo) {
@@ -4186,6 +4247,7 @@ export const PokerGamePage = ({
 
   return (
     <div
+      className={`poker-player-page ${isPhone && showRaiseDrawer ? 'poker-raise-open' : ''}`}
       style={{
         fontFamily: TABLE_THEME.fontSans,
         color: TABLE_THEME.text,
@@ -4225,14 +4287,17 @@ export const PokerGamePage = ({
             gap: 10,
           }}
         >
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: isPhone ? 1 : undefined }}>
             <BondiPokerLogo
               variant="table"
-              className={isPhone ? 'max-w-[150px]' : 'max-w-[210px]'}
+              className={isPhone ? 'max-w-[200px]' : 'max-w-[240px]'}
             />
             <div
               style={{
                 marginTop: isPhone ? 4 : 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
                 fontSize: isPhone ? 12 : 13,
                 fontWeight: 600,
                 color: TABLE_THEME.muted,
@@ -4241,14 +4306,25 @@ export const PokerGamePage = ({
                 textOverflow: 'ellipsis',
               }}
             >
-              {tableLabel}
-              {hand ? ` \u00b7 ${currentStreetLabel}` : ''}
-              {!isPhone && hand ? ` \u00b7 Pot ${formatChips(potAmount)}` : ''}
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {tableLabel}
+                {hand ? ` · ${currentStreetLabel}` : ''}
+              </span>
+              {isPhone && hand && (
+                <HandProgress
+                  street={hand.street}
+                  compact
+                  onShowRules={() => setShowRulesOverlay(true)}
+                />
+              )}
             </div>
             <span data-testid="street-indicator" style={{ display: 'none' }}>
               {hand ? `${hand.street} / ${hand.phase}` : 'waiting / idle'}
             </span>
           </div>
+          {!isPhone && hand && (
+            <HandProgress street={hand.street} onShowRules={() => setShowRulesOverlay(true)} />
+          )}
           <div
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, position: 'relative' }}
           >
@@ -4257,10 +4333,11 @@ export const PokerGamePage = ({
                 type="button"
                 onClick={() => setShowTopMenu((previous) => !previous)}
                 aria-label="Table menu"
+                aria-expanded={showTopMenu}
                 data-testid="table-menu-button"
                 style={{
-                  minHeight: isPhone ? 32 : 34,
-                  minWidth: isPhone ? 32 : 34,
+                  minHeight: 44,
+                  minWidth: 44,
                   borderRadius: 8,
                   border: `1px solid ${TABLE_THEME.border}`,
                   background: TABLE_THEME.panelSoft,
@@ -4309,7 +4386,8 @@ export const PokerGamePage = ({
                       color: TABLE_THEME.text,
                       padding: '8px 10px',
                       textAlign: 'left',
-                      fontSize: 12,
+                      fontSize: 13,
+                      minHeight: 44,
                       fontWeight: 700,
                       cursor: 'pointer',
                     }}
@@ -4331,7 +4409,8 @@ export const PokerGamePage = ({
                       color: TABLE_THEME.text,
                       padding: '8px 10px',
                       textAlign: 'left',
-                      fontSize: 12,
+                      fontSize: 13,
+                      minHeight: 44,
                       fontWeight: 700,
                       cursor: 'pointer',
                       display: 'flex',
@@ -4362,7 +4441,8 @@ export const PokerGamePage = ({
                     color: TABLE_THEME.text,
                     padding: '8px 10px',
                     textAlign: 'left',
-                    fontSize: 12,
+                    fontSize: 13,
+                    minHeight: 44,
                     fontWeight: 700,
                     cursor: 'pointer',
                   }}
@@ -4384,7 +4464,8 @@ export const PokerGamePage = ({
                       color: '#fee2e2',
                       padding: '8px 10px',
                       textAlign: 'left',
-                      fontSize: 12,
+                      fontSize: 13,
+                      minHeight: 44,
                       fontWeight: 700,
                       cursor: 'pointer',
                     }}
@@ -4429,7 +4510,7 @@ export const PokerGamePage = ({
           </div>
         </div>
       ) : null}
-      {currentLanUrl ? (
+      {currentLanUrl && !hand ? (
         <details
           role="status"
           data-testid="local-lan-url"
@@ -4715,8 +4796,8 @@ export const PokerGamePage = ({
               marginTop: isMobile ? 2 : 14,
               borderRadius: isPortraitPhone ? 150 : isPhone ? 110 : 999,
               background:
-                'radial-gradient(circle at 50% 44%, rgba(20,184,166,0.24) 0%, rgba(13,74,57,0.95) 48%, rgba(6,43,32,0.98) 100%)',
-              border: `${tableOuterBorder}px solid rgba(251,191,36,0.34)`,
+                'radial-gradient(ellipse at 50% 40%, #12534a 0%, #093c33 58%, #042820 100%)',
+              border: `${tableOuterBorder}px solid rgba(185,149,80,0.58)`,
               boxShadow:
                 '0 34px 90px rgba(0,0,0,0.5), 0 0 0 1px rgba(251,191,36,0.18), inset 0 0 58px rgba(0,0,0,0.56)',
             }}
@@ -4732,6 +4813,26 @@ export const PokerGamePage = ({
                 transformOrigin: 'center',
               }}
             >
+              {hand?.street === 'preflop' &&
+                !(isPhone && showRaiseDrawer) &&
+                (!isPortraitPhone || viewportHeight >= 740) &&
+                (!isPortraitPhone || densePhoneTable || tablePlayers.length < 4) && (
+                  <div
+                    className="table-round-hint"
+                    style={{
+                      position: 'absolute',
+                      left: '50%',
+                      top: isPhone ? '48%' : '36%',
+                      transform: 'translate(-50%, -50%)',
+                      width: isPhone ? 190 : 300,
+                      textAlign: 'center',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <strong>Five cards. Your choice.</strong>
+                    <span>Bet now. Your first discard comes after flop betting.</span>
+                  </div>
+                )}
               <div
                 style={{
                   position: 'absolute',
@@ -5522,8 +5623,17 @@ export const PokerGamePage = ({
                               } as React.CSSProperties
                             }
                           >
-                            <div
+                            <button
+                              type="button"
+                              className="poker-hole-card"
+                              disabled={!discardSelectable}
+                              aria-label={`${cardText(c)}${discardSelectable ? ', choose to discard face down' : ''}`}
+                              aria-pressed={discardSelectable ? discardSelected : undefined}
                               style={{
+                                padding: 0,
+                                border: 'none',
+                                borderRadius: 8,
+                                background: 'transparent',
                                 transform: `rotate(${isPhone ? 0 : idx === 0 ? -6 : 6}deg) translateY(${discardSelected ? '-8px' : '0px'}) scale(${phoneGameplayCardScale})`,
                                 transformOrigin: isPhone ? 'top left' : 'center center',
                                 width: heroHoleCardMetrics.width,
@@ -5532,8 +5642,8 @@ export const PokerGamePage = ({
                                 transition: 'transform 140ms ease, filter 140ms ease',
                                 filter: discardSelectable
                                   ? discardSelected
-                                    ? 'drop-shadow(0 0 10px rgba(248,113,113,0.5))'
-                                    : 'drop-shadow(0 0 8px rgba(34,197,94,0.35))'
+                                    ? 'drop-shadow(0 0 8px rgba(237,189,98,0.5))'
+                                    : 'drop-shadow(0 0 4px rgba(94,234,212,0.18))'
                                   : undefined,
                               }}
                               onClick={() => handleDiscardClick(idx)}
@@ -5552,13 +5662,13 @@ export const PokerGamePage = ({
                                     ? 'red'
                                     : discardSelectable
                                       ? discardSelected
-                                        ? 'red'
+                                        ? 'gold'
                                         : 'green'
                                       : undefined
                                 }
                                 fade={discardFlashIndex === idx}
                               />
-                            </div>
+                            </button>
                           </div>
                         );
                       })}
@@ -5670,11 +5780,11 @@ export const PokerGamePage = ({
                       {tableTimerSeconds !== null ? `${tableTimerSeconds}s` : '--'}
                     </span>
                   </div>
-                  {!selectedDiscardIsValid ? (
-                    <div style={{ fontSize: 13, color: TABLE_THEME.text }}>
-                      Choose one card to continue
-                    </div>
-                  ) : null}
+                  <div style={{ fontSize: 13, color: TABLE_THEME.text }} aria-live="polite">
+                    {selectedDiscardIsValid && selectedDiscardCard
+                      ? `${cardText(selectedDiscardCard)} selected. Your discard stays hidden.`
+                      : 'Choose one card to continue. It stays face down.'}
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
                     <button
                       data-testid="confirm-discard"
@@ -5741,6 +5851,7 @@ export const PokerGamePage = ({
                 >
                   {isMyTurn ? (
                     <div
+                      className="poker-bet-turn"
                       style={{
                         display: 'flex',
                         justifyContent: 'flex-start',
@@ -5770,13 +5881,17 @@ export const PokerGamePage = ({
                     </span>
                   )}
                   {isMyTurn ? (
-                    <div style={{ fontSize: 12, color: 'rgba(244,244,245,0.9)' }}>
+                    <div
+                      className="poker-bet-stakes"
+                      style={{ fontSize: 12, color: 'rgba(244,244,245,0.9)' }}
+                    >
                       {actionTrayStakeLine}
                     </div>
                   ) : null}
                   {isMyTurn ? (
                     <>
                       <div
+                        className="poker-bet-actions"
                         style={{
                           display: 'grid',
                           gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
@@ -5820,10 +5935,10 @@ export const PokerGamePage = ({
                                   glow: 'rgba(248,113,113,0.35)',
                                 }
                               : {
-                                  border: 'rgba(94,234,212,0.78)',
-                                  background: 'rgba(20,184,166,0.28)',
-                                  color: '#e0f2fe',
-                                  glow: 'rgba(20,184,166,0.3)',
+                                  border: '#edbd62',
+                                  background: '#edbd62',
+                                  color: '#082924',
+                                  glow: 'rgba(237,189,98,0.16)',
                                 }
                           )}
                         >
@@ -5838,6 +5953,8 @@ export const PokerGamePage = ({
                         />
                         <button
                           data-testid="action-raise-toggle"
+                          ref={raiseToggleRef}
+                          aria-expanded={showRaiseDrawer}
                           type="button"
                           disabled={!canOpenRaiseDrawer}
                           onClick={toggleRaiseDrawer}
@@ -5868,15 +5985,25 @@ export const PokerGamePage = ({
                       </div>
                       {showRaiseDrawer ? (
                         <div
+                          className="poker-bet-panel"
+                          data-testid="bet-panel"
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              setShowRaiseDrawer(false);
+                              setConfirmAllIn(false);
+                              setAllInPresetSelected(false);
+                            }
+                          }}
                           style={{
                             marginTop: 2,
                             borderRadius: 8,
                             border: `1px solid ${TABLE_THEME.border}`,
                             background: 'rgba(0,0,0,0.3)',
-                            padding: isPhone ? '10px' : '12px',
+                            padding: isPhone ? '8px' : '12px',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: 10,
+                            gap: isPhone ? 7 : 10,
                           }}
                         >
                           <div
@@ -5891,9 +6018,15 @@ export const PokerGamePage = ({
                               {raiseActionLabel === 'Bet' ? 'Bet amount' : 'Raise to'}{' '}
                               <strong>{selectedRaiseTo}</strong>
                             </div>
+                            {isPhone && (
+                              <span style={{ fontSize: 11, color: TABLE_THEME.teal }}>
+                                {trayTurnStatusLabel}
+                              </span>
+                            )}
                             <button
                               type="button"
                               data-testid="bet-panel-close"
+                              ref={raiseCloseRef}
                               aria-label="Close bet panel"
                               onClick={() => {
                                 setShowRaiseDrawer(false);
@@ -5905,8 +6038,8 @@ export const PokerGamePage = ({
                                 background: TABLE_THEME.panelSoft,
                                 color: TABLE_THEME.muted,
                                 borderRadius: 6,
-                                minWidth: 30,
-                                minHeight: 28,
+                                minWidth: 44,
+                                minHeight: 44,
                                 display: 'grid',
                                 placeItems: 'center',
                                 cursor: 'pointer',
@@ -5917,6 +6050,7 @@ export const PokerGamePage = ({
                           </div>
                           <input
                             type="range"
+                            aria-label={`${raiseActionLabel} amount slider`}
                             min={minRaiseTo ?? undefined}
                             max={manualMaxRaiseTo ?? undefined}
                             value={rangeRaiseValue}
@@ -5969,12 +6103,15 @@ export const PokerGamePage = ({
                           <div
                             style={{
                               display: 'grid',
-                              gridTemplateColumns: isPhone ? '1fr' : '1fr auto',
+                              gridTemplateColumns: isPhone
+                                ? 'minmax(0, 0.7fr) minmax(0, 1.3fr)'
+                                : '1fr auto',
                               gap: 8,
                             }}
                           >
                             <input
                               type="number"
+                              aria-label={`${raiseActionLabel} amount`}
                               value={betAmount}
                               min={minRaiseTo ?? undefined}
                               max={manualMaxRaiseTo ?? undefined}
@@ -5991,8 +6128,9 @@ export const PokerGamePage = ({
                                 background: 'rgba(0,0,0,0.32)',
                                 color: TABLE_THEME.text,
                                 padding: '8px 10px',
-                                fontSize: 13,
-                                outline: 'none',
+                                width: '100%',
+                                minWidth: 0,
+                                fontSize: isPhone ? 16 : 13,
                               }}
                             />
                             <button
@@ -6001,13 +6139,11 @@ export const PokerGamePage = ({
                               disabled={!canRaise}
                               onClick={submitRaiseAction}
                               style={turnActionStyle(canRaise, {
-                                border: selectedRaiseIsAllIn
-                                  ? 'rgba(248,113,113,0.9)'
-                                  : 'rgba(94,234,212,0.78)',
+                                border: selectedRaiseIsAllIn ? 'rgba(248,113,113,0.9)' : '#edbd62',
                                 background: selectedRaiseIsAllIn
                                   ? 'rgba(127,29,29,0.58)'
-                                  : 'rgba(20,184,166,0.28)',
-                                color: selectedRaiseIsAllIn ? '#fee2e2' : '#ccfbf1',
+                                  : '#edbd62',
+                                color: selectedRaiseIsAllIn ? '#fee2e2' : '#082924',
                                 glow: selectedRaiseIsAllIn
                                   ? 'rgba(248,113,113,0.35)'
                                   : 'rgba(20,184,166,0.3)',
@@ -6016,7 +6152,13 @@ export const PokerGamePage = ({
                               {raiseSubmitLabel}
                             </button>
                           </div>
-                          <div style={{ fontSize: 11, color: 'rgba(203,213,225,0.9)' }}>
+                          <div
+                            style={{
+                              display: isPhone && canRaise ? 'none' : 'block',
+                              fontSize: 11,
+                              color: 'rgba(203,213,225,0.9)',
+                            }}
+                          >
                             {raiseDisabledHint}
                           </div>
                         </div>
@@ -6249,7 +6391,7 @@ const CardView = ({
 }: {
   card: Card;
   highlight?: boolean;
-  outline?: 'green' | 'red';
+  outline?: 'green' | 'red' | 'gold';
   fade?: boolean;
   dim?: boolean;
   size?: CardViewSize;
@@ -6270,7 +6412,14 @@ const CardView = ({
       ? '1px solid #d1d5db'
       : `1px solid ${TABLE_THEME.border}`;
   const baseShadow = isClassicSize ? '0 6px 16px rgba(0,0,0,0.25)' : undefined;
-  const outlineColor = outline === 'green' ? '#22c55e' : outline === 'red' ? '#ef4444' : null;
+  const outlineColor =
+    outline === 'green'
+      ? '#5eead4'
+      : outline === 'red'
+        ? '#ef4444'
+        : outline === 'gold'
+          ? '#edbd62'
+          : null;
   const outlineShadow = outlineColor ? `0 0 0 2px ${outlineColor}` : undefined;
   const highlightShadow = highlight
     ? '0 0 0 2px rgba(34,197,94,0.38), 0 0 18px rgba(34,197,94,0.5)'

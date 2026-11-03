@@ -1,6 +1,7 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useState } from 'react';
+import { CoastalShell } from '../components/CoastalShell';
 
 export default function UnsubscribePage() {
   const router = useRouter();
@@ -20,14 +21,15 @@ export default function UnsubscribePage() {
     }
   }
   return (
-    <main className="min-h-screen bg-[#03080b] px-6 py-20 text-zinc-100">
+    <CoastalShell compactHeader>
       <Head>
         <title>Unsubscribe | Bondi Poker</title>
         <meta name="robots" content="noindex,nofollow" />
         <meta name="referrer" content="no-referrer" />
       </Head>
-      <div className="mx-auto max-w-lg">
-        <h1 className="mb-5 text-2xl font-semibold">Bondi Poker Emails</h1>
+      <main id="main-content" className="coastal-utility">
+        <p className="coastal-eyebrow">YOUR INBOX, YOUR CHOICE</p>
+        <h1>Bondi Poker Emails</h1>
         {status === 'done' ? (
           <p role="status">You have been unsubscribed from Bondi Poker updates.</p>
         ) : (
@@ -40,7 +42,7 @@ export default function UnsubscribePage() {
             <button
               disabled={!valid || status === 'loading'}
               onClick={() => void submit()}
-              className="min-h-11 rounded-md bg-teal-300 px-5 py-3 font-semibold text-black disabled:opacity-40"
+              className="coastal-button primary"
             >
               {status === 'loading' ? 'Unsubscribing...' : 'Unsubscribe'}
             </button>
@@ -51,7 +53,7 @@ export default function UnsubscribePage() {
             ) : null}
           </>
         )}
-      </div>
-    </main>
+      </main>
+    </CoastalShell>
   );
 }

@@ -969,7 +969,7 @@ export default function PokerActionTrayTestPage({
   return (
     <>
       <Head>
-        <title>Action Tray Test - {scenario}</title>
+        <title>{`Action Tray Test - ${scenario}`}</title>
       </Head>
       {scenario === 'all-in-discard-transition' ? (
         <div style={{ position: 'fixed', left: 0, top: 0, zIndex: 9999, opacity: 0.01 }}>
