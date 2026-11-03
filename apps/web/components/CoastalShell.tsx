@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 export const DISCORD_URL =
   process.env.NEXT_PUBLIC_DISCORD_INVITE_URL || 'https://discord.gg/tmkeanX7T';
 
-export function CoastalHeader() {
+export function CoastalHeader({ compact = false }: { compact?: boolean }) {
   return (
     <header className="coastal-header">
       <Link href="/" className="coastal-brand" aria-label="Bondi Poker home">
@@ -18,14 +18,31 @@ export function CoastalHeader() {
         <Link href="/#how-it-works" className="coastal-rules-link">
           How to play
         </Link>
-        <a href="https://x.com/BondiPoker" target="_blank" rel="noopener noreferrer">
-          X <span className="nav-label">Community</span>
-          <ArrowUpRight size={14} aria-hidden="true" />
-        </a>
-        <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" aria-label="Discord">
-          <Users size={17} aria-hidden="true" />
-          <span className="nav-community-label">Discord</span>
-        </a>
+        {compact ? (
+          <Link href="/play#join-table">Join a table</Link>
+        ) : (
+          <>
+            <a
+              className="coastal-social-link"
+              href="https://x.com/BondiPoker"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              X <span className="nav-label">Community</span>
+              <ArrowUpRight size={14} aria-hidden="true" />
+            </a>
+            <a
+              className="coastal-social-link"
+              href={DISCORD_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Discord"
+            >
+              <Users size={17} aria-hidden="true" />
+              <span className="nav-community-label">Discord</span>
+            </a>
+          </>
+        )}
         <Link href="/profile" className="coastal-signin">
           Sign in
         </Link>
@@ -37,16 +54,18 @@ export function CoastalHeader() {
 export function CoastalShell({
   children,
   className = '',
+  compactHeader = false,
 }: {
   children: ReactNode;
   className?: string;
+  compactHeader?: boolean;
 }) {
   return (
     <div className={`coastal-page ${className}`}>
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <CoastalHeader />
+      <CoastalHeader compact={compactHeader} />
       {children}
     </div>
   );

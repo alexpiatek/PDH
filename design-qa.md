@@ -1,5 +1,35 @@
 # Coastal first-play design QA
 
+## Homepage refinement — 3 November 2026
+
+**Local result: passed.** This follow-up keeps the selected dark coastal direction and responds to the homepage review. It changes presentation only; practice logic, account entry, invitations, campaigns and server contracts are unchanged.
+
+### Review steps and resulting changes
+
+1. **Hero — clearer.** The current live page was captured before editing. Repeated table badges, the extra invite button and the duplicate join link competed with the main action. The result leads with “Poker night. With your people.” and one gold “Play with friends” action beside practice. Join-by-code is in the header, with social destinations still in the footer.
+2. **Game explanation — clearer.** The 5/4/3/2 rank artwork could be read as card values rather than hand sizes. It is replaced by a single ordered explanation: five private cards, one hidden discard after each post-flop betting round, then two cards at showdown. The practice link remains adjacent.
+3. **Artwork and practice — preserved.** Brad's original `b8638e6` photo-card composition and all five original photographs are restored on the homepage. Practice and live play retain `MinimalCardFace`. The coast now fades into the page before the photograph ends. Completed the practice hand through Two Pair and restarted to five cards with discard disabled until selection.
+
+### Accepted evidence
+
+- [Desktop hero](docs/qa/coastal-refinement/desktop.jpg)
+- [Narrow phone at 320px](docs/qa/coastal-refinement/mobile-320.jpg)
+- [Completed practice at 320px](docs/qa/coastal-refinement/practice-complete.jpg)
+- [Before/after comparison](docs/qa/coastal-refinement/comparison.jpg)
+
+All images were captured and inspected in this review. The comparison uses the same 1466px content width and the top 765px of each desktop capture, then scales both equally for the comparison sheet. Responsive layouts were inspected at 320px, 390px and desktop sizes; DOM bounds showed no horizontal overflow. The narrow header keeps the logo, join link and sign-in control separate. Images have accessible card names; the main controls retain focus outlines and 44px minimum target heights. This is not a full assistive-technology or physical-device accessibility audit.
+
+### Validation and release
+
+- Lint, repository typecheck, changelog check and optimized production web build passed. Shellcheck is unavailable locally and the existing lint runner skips it.
+- Existing unit suites: 254 passed; six database-dependent campaign tests skipped locally.
+- Practice completed all three discards, produced the engine-derived Two Pair result, and restarted correctly without account creation.
+- Server-backed integration and browser E2E remain required in CI before merging. Use the existing tested web deployment workflow and retain the previous release for rollback. No dependency, runtime, protocol, database, account or DNS changes are included.
+
+## Original first-play QA record
+
+The earlier report below documents the original PR #21 implementation before this homepage refinement.
+
 **Final result: passed**
 
 No actionable P0/P1/P2 visual findings remain in the reviewed states. This is a visual and local interaction result, not a claim that real-server multiplayer or production deployment has been verified.
