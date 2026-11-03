@@ -1,0 +1,43 @@
+name: Restore web deployment ownership
+on:
+  push:
+    branches: [ops/repair-bondi-web-ownership]
+permissions:
+  contents: read
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Restore the approved deployment owner for the web build
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          command_timeout: 2m
+          script: |
+            set -eu
+            cd /home/pdh/PDH
+            test "$(pwd -P)" = /home/pdh/PDH
+            test "$(id -un)" = pdh
+            if test -w apps/web && test -w apps/web/.next; then
+              echo 'Web build is writable.'
+              exit 0
+            fi
+            owner="$(id -u):$(id -g)"
+            if ! sudo -n /bin/chown --no-dereference "$owner" /home/pdh/PDH/apps/web >/dev/null 2>&1; then
+              echo 'Administrator ownership repair is required.'
+              exit 1
+            fi
+            if ! sudo -n /bin/chown -R --no-dereference "$owner" /home/pdh/PDH/apps/web/.next >/dev/null 2>&1; then
+              echo 'Administrator build ownership repair is required.'
+              exit 1
+            fi
+            test -w apps/web
+            test -w apps/web/.next
+            echo 'Web deployment ownership restored.'
