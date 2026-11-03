@@ -5597,10 +5597,7 @@ export const PokerGamePage = ({
                     >
                       {you.holeCards.map((c, idx) => {
                         const discardSelectable =
-                          discardPending &&
-                          !discardSubmitted &&
-                          !animateHoleDeal &&
-                          isDiscardIndexAllowed(idx);
+                          discardPending && !discardSubmitted && isDiscardIndexAllowed(idx);
                         const discardSelected = discardSelectable && selectedDiscardIndex === idx;
                         return (
                           <div
