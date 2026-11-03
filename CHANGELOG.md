@@ -15,6 +15,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Private friend-table creation and server-enforced code admission, plus real-server profile, recovery and chip conservation coverage.
 
 ### Fixed
+- Deployment checks build-directory replacement permissions before activation, leaving the running release untouched when ownership needs administrator repair.
 - Website-only deployments retain unchanged live dependencies and avoid restarting Nakama; dependency permission problems fail before activation.
 - Coastal homepage keeps photo cards readable, explains discard timing and free play, and leads into private friend tables.
 

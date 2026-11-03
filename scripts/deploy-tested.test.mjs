@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -8,10 +8,14 @@ import { fileURLToPath } from 'node:url';
 
 const scripts = dirname(fileURLToPath(import.meta.url));
 
-for (const failRestart of [false, true]) {
+for (const { failRestart, unwritable } of [
+  { failRestart: false, unwritable: false },
+  { failRestart: true, unwritable: false },
+  { failRestart: false, unwritable: true },
+]) {
   test(
-    `website activation ${failRestart ? 'rolls back after a restart failure' : 'succeeds'} without touching dependencies or Nakama`,
-    { skip: process.platform === 'win32' },
+    `website activation ${unwritable ? 'stops before activation for an unwritable build' : failRestart ? 'rolls back after a restart failure' : 'succeeds'} without touching dependencies or Nakama`,
+    { skip: process.platform === 'win32' || (unwritable && process.getuid?.() === 0) },
     () => {
       const base = mkdtempSync(join(tmpdir(), 'pdh-deploy-test-'));
       const root = join(base, 'repo');
@@ -72,6 +76,7 @@ fi
         for (const artifact of ['apps/web/.next', 'apps/nakama/dist', 'packages/engine/dist']) {
           put(join(root, artifact, 'version'), 'previous');
         }
+        if (unwritable) chmodSync(join(root, 'apps/web/.next'), 0o555);
         const result = spawnSync('bash', ['scripts/deploy-tested.sh', next], {
           cwd: root,
           encoding: 'utf8',
@@ -83,20 +88,26 @@ fi
             TEST_FAILED: join(base, 'failed'),
           },
         });
-        assert.equal(result.status === 0, !failRestart, result.stdout + result.stderr);
-        assert.equal(git('rev-parse', 'HEAD'), failRestart ? previous : next);
+        assert.equal(result.status === 0, !(failRestart || unwritable), result.stdout + result.stderr);
+        assert.equal(git('rev-parse', 'HEAD'), failRestart || unwritable ? previous : next);
         assert.equal(
           readFileSync(join(root, 'apps/web/.next/version'), 'utf8'),
-          failRestart ? 'previous' : 'new'
+          failRestart || unwritable ? 'previous' : 'new'
         );
         for (const artifact of ['apps/nakama/dist', 'packages/engine/dist']) {
           assert.equal(readFileSync(join(root, artifact, 'version'), 'utf8'), 'previous');
+        }
+        if (unwritable) {
+          assert.match(result.stderr, /ownership repair is required before activation/);
+          assert.equal(existsSync(log), false, 'preflight must run before install or service commands');
+          return;
         }
         const commands = readFileSync(log, 'utf8');
         assert.equal(commands.split('\n').filter((line) => line.includes(':install ')).length, 1);
         assert.ok(!commands.includes(`pnpm:${root}:install`), commands);
         assert.ok(!commands.includes('--force-recreate'), commands);
       } finally {
+        if (unwritable) chmodSync(join(root, 'apps/web/.next'), 0o755);
         rmSync(base, { recursive: true, force: true });
       }
     }

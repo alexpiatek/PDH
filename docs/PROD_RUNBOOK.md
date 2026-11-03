@@ -282,3 +282,6 @@ unwritable entries. An administrator should repair the affected installation's
 ownership under the existing non-root deployment policy before retrying such a
 release. Website-only deployment does not change permissions or hide that issue.
 
+
+Artifact parents and existing build directories must also be writable before activation.
+An unwritable build fails preflight before the live checkout or service is changed.
