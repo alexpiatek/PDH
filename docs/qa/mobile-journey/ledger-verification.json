@@ -1,0 +1,24 @@
+{
+  "verifiedAt": "2026-11-03T13:08:05.836Z",
+  "isolated": true,
+  "totalChips": 20000,
+  "expectedChips": 20000,
+  "players": [
+    {
+      "name": "Mia",
+      "availableChips": 12800,
+      "atTable": 0,
+      "handsStarted": 6,
+      "handsCompleted": 6,
+      "freeTopUps": 0
+    },
+    {
+      "name": "Sam",
+      "availableChips": 0,
+      "atTable": 7200,
+      "handsStarted": 6,
+      "handsCompleted": 6,
+      "freeTopUps": 0
+    }
+  ]
+}

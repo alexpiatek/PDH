@@ -20,6 +20,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Real mobile hands resize correctly when the table first appears, keep the board clear of the player label, and recover expired/repeated action notices after confirming current server state. Existing players can switch to sign-in at the top of invitation entry. Two real-server phone journeys cover all three discards, reconnect and the next deal.
 - Player screens carry the coastal design through the lobby, live table, profile and recovery pages. The hand guide explains the five-to-two progression during play, discard cards support keyboard selection, and six-player/short-phone layouts keep seats and betting controls clear of the hand.
 - Homepage explains the five-card Hold’em twist immediately, gives no-account practice the primary entry, makes X the first community destination with optional Discord second, and turns the opening hand into a playable practice link. Invalid Discord invites can be removed without losing the X entry.
 - Homepage leads with a quieter poker-night hero, restores Brad's original coastal photo cards, replaces the rank countdown with clear five-to-two instructions, and fades the ocean into the page without a hard edge.
