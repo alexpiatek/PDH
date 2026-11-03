@@ -136,6 +136,34 @@ export function normalizeEmail(rawEmail: unknown): string | null {
   return email;
 }
 
+export interface EarlyAccessSignupPage {
+  total: number;
+  page: number;
+  signups: {
+    email: string;
+    name: string | null;
+    createdAt: string;
+    marketingConsent: boolean;
+    unsubscribedAt: string | null;
+    source: string | null;
+  }[];
+}
+
+export async function loadEarlyAccessSignups(page: number): Promise<EarlyAccessSignupPage> {
+  const pool = getEarlyAccessPool();
+  if (!pool) throw new Error('Early access database is not configured');
+  const count = await pool.query<{ total: number }>(
+    'SELECT count(*)::integer AS total FROM public.early_access_signups'
+  );
+  const result = await pool.query<EarlyAccessSignupPage['signups'][number]>(
+    `SELECT email, name, created_at AS "createdAt", marketing_consent AS "marketingConsent",
+       unsubscribed_at AS "unsubscribedAt", source
+     FROM public.early_access_signups ORDER BY created_at DESC, id DESC LIMIT 50 OFFSET $1`,
+    [(page - 1) * 50]
+  );
+  return { total: count.rows[0].total, page, signups: result.rows };
+}
+
 function optionalText(value: unknown, maxLength: number): string | null {
   if (typeof value !== 'string') {
     return null;
