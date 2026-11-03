@@ -99,13 +99,29 @@ export function PlayerAccountGate({ children }: { children: ReactNode }) {
           </Link>
         </section>
         <section className="coastal-auth-panel">
-          <p className="coastal-eyebrow">
-            {intent?.action === 'create'
-              ? 'Create your private table'
-              : intent?.action === 'join'
-                ? `Join table ${intent.code}`
-                : 'Bondi Poker'}
-          </p>
+          <div className="coastal-auth-heading-row">
+            <p className="coastal-eyebrow">
+              {intent?.action === 'create'
+                ? 'Create your private table'
+                : intent?.action === 'join'
+                  ? `Join table ${intent.code}`
+                  : 'Bondi Poker'}
+            </p>
+            <button
+              type="button"
+              className="coastal-auth-switch"
+              disabled={busy}
+              aria-label={
+                create ? 'Already have an account? Sign in' : 'New here? Create an account'
+              }
+              onClick={() => {
+                setCreate(!create);
+                setError('');
+              }}
+            >
+              {create ? 'Sign in' : 'Create account'}
+            </button>
+          </div>
           <h1 className="mt-3 text-3xl font-semibold" tabIndex={-1} autoFocus>
             {create ? 'Create your player profile' : 'Welcome back'}
           </h1>
@@ -172,15 +188,6 @@ export function PlayerAccountGate({ children }: { children: ReactNode }) {
                     : 'Sign in'}
             </button>
           </form>
-          <button
-            className="mt-5 text-sm text-teal-300"
-            onClick={() => {
-              setCreate(!create);
-              setError('');
-            }}
-          >
-            {create ? 'Already have an account? Sign in' : 'New here? Create an account'}
-          </button>
           <p className="mt-5 text-sm text-zinc-400">
             Forgotten your password?{' '}
             <a

@@ -1571,3 +1571,28 @@ button.hand-progress {
 .poker-raise-open .poker-bet-actions {
   display: none !important;
 }
+
+.coastal-auth-heading-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+}
+.coastal-auth-heading-row .coastal-eyebrow {
+  margin: 0;
+}
+.coastal-auth-switch {
+  border: 1px solid #edbd6280;
+  border-radius: 8px;
+  background: transparent;
+  color: #edbd62;
+  min-height: 44px;
+  padding: 8px 14px;
+  font: 600 13px var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.coastal-auth-switch:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}

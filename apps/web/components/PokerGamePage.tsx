@@ -27,6 +27,7 @@ import {
   updateTestingProfileDisplayName,
 } from '../lib/playerTestingAnalytics';
 import { resolveBettingActionControls } from '../lib/actionControls';
+import { isActionStateMismatch } from '../lib/actionRecovery';
 import { discardConfirmDisabledReason, discardObligationKey } from '../lib/discardControls';
 import { LOCAL_BROWSER_HOSTS, type LocalAccessInfo } from '../lib/localAccess';
 import {
@@ -1335,7 +1336,7 @@ export const PokerGamePage = ({
     stateVersion: null,
   });
   const serverTimeOffsetMsRef = useRef(0);
-  const tableRef = useRef<HTMLDivElement | null>(null);
+  const [tableElement, setTableElement] = useState<HTMLDivElement | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(resolvedDebugPlayerId);
   const [name, setName] = useState('');
   const [nameHydrated, setNameHydrated] = useState(false);
@@ -1423,6 +1424,7 @@ export const PokerGamePage = ({
     setDiscardFlashIndex(null);
     setSelectedDiscardIndex(null);
     setStatus(message);
+    refreshingAfterErrorRef.current = true;
     requestFreshState();
   };
 
@@ -1625,6 +1627,10 @@ export const PokerGamePage = ({
           msg.message.toLowerCase().includes('not in discard phase')
         ) {
           recoverDiscardSubmission('Discard not received. Choose a card again.');
+        } else if (isActionStateMismatch(msg.message)) {
+          refreshingAfterErrorRef.current = true;
+          setStatus('That action has ended. Updating the table...');
+          requestFreshState();
         } else if (recoverable) {
           refreshingAfterErrorRef.current = true;
           setStatus('The last update was not saved. Refreshing the table; please try again.');
@@ -2741,8 +2747,8 @@ export const PokerGamePage = ({
     return () => window.clearTimeout(timeoutId);
   }, [reactionCooldownUntil]);
 
-  useEffect(() => {
-    const el = tableRef.current;
+  useIsomorphicLayoutEffect(() => {
+    const el = tableElement;
     if (!el) return;
     const updateScale = () => {
       const rect = el.getBoundingClientRect();
@@ -2758,7 +2764,7 @@ export const PokerGamePage = ({
     const observer = new ResizeObserver(updateScale);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [layoutTableWidth, layoutTableHeight]);
+  }, [tableElement, layoutTableWidth, layoutTableHeight]);
 
   useEffect(() => {
     return () => {
@@ -3396,7 +3402,7 @@ export const PokerGamePage = ({
   const mobileHeroInfoBottomOffset = densePhoneTable
     ? 120
     : isPortraitPhone
-      ? 180
+      ? 164
       : isLandscapePhone
         ? 132
         : 126;
@@ -4248,6 +4254,8 @@ export const PokerGamePage = ({
   return (
     <div
       className={`poker-player-page ${isPhone && showRaiseDrawer ? 'poker-raise-open' : ''}`}
+      data-testid="poker-game-screen"
+      data-hand-id={hand?.handId ?? ''}
       style={{
         fontFamily: TABLE_THEME.fontSans,
         color: TABLE_THEME.text,
@@ -4768,7 +4776,7 @@ export const PokerGamePage = ({
         >
           <div
             data-testid="table-felt"
-            ref={tableRef}
+            ref={setTableElement}
             style={{
               position: 'relative',
               width: tableOuterWidth,
@@ -4822,7 +4830,7 @@ export const PokerGamePage = ({
                     style={{
                       position: 'absolute',
                       left: '50%',
-                      top: isPhone ? '48%' : '36%',
+                      top: isPhone ? (densePhoneTable ? '48%' : '40%') : '36%',
                       transform: 'translate(-50%, -50%)',
                       width: isPhone ? 190 : 300,
                       textAlign: 'center',
