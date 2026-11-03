@@ -1,0 +1,29 @@
+name: Check public release revision
+on:
+  push:
+    branches: [ops/check-bondi-release-revision]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check source revision before publishing
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
+          command_timeout: 2m
+          script: |
+            set -eu
+            cd /home/pdh/PDH
+            printf 'SOURCE_COMMIT='
+            git rev-parse HEAD
+            printf 'SOURCE_TREE='
+            git rev-parse 'HEAD^{tree}'
+            printf 'SHALLOW_HISTORY='
+            git rev-parse --is-shallow-repository
+            if test -z "$(git status --porcelain)"; then echo SOURCE_CLEAN=yes; else echo SOURCE_CLEAN=no; fi
