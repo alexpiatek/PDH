@@ -26,6 +26,21 @@ async function expectInsideViewport(page: Page, locator: Locator) {
 }
 
 test.describe('table entry and waiting room UX', () => {
+  test('a solo host sees a usable invitation and practice while waiting', async ({ page }) => {
+    await openScenario(page, 'solo-waiting', { width: 390, height: 844 });
+    const invitation = page.getByRole('region', { name: 'Invite friends to your table' });
+    await expect(invitation).toBeVisible();
+    await expect(
+      invitation.getByText('1 of 9 seats filled. At least 2 players are needed to play.')
+    ).toBeVisible();
+    await expect(invitation.getByRole('textbox', { name: 'Table invitation link' })).toHaveValue(
+      /\/play\?code=RZ587G$/
+    );
+    await expect(invitation.getByRole('button', { name: 'Copy invite link' })).toBeEnabled();
+    await expect(
+      invitation.getByRole('link', { name: 'Try a practice hand while you wait' })
+    ).toHaveAttribute('target', '_blank');
+  });
   test('known-name table entry uses compact joining state instead of the large form', async ({
     page,
   }) => {
