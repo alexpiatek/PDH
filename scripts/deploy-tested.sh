@@ -34,6 +34,15 @@ scope="$(node "$release/scripts/deployment-scope.mjs" "$previous" "$sha")"
 read -r update_dependencies update_backend <<< "$scope"
 [[ "$update_dependencies" =~ ^[01]$ && "$update_backend" =~ ^[01]$ ]] || { echo 'Invalid deployment scope' >&2; exit 1; }
 printf 'Deployment scope: dependencies=%s backend=%s\n' "$update_dependencies" "$update_backend"
+artifacts=(apps/web/.next)
+if [[ "$update_backend" == 1 ]]; then artifacts+=(apps/nakama/dist packages/engine/dist); fi
+# Check replacement permissions before touching the live checkout or service.
+for artifact in "${artifacts[@]}"; do
+  if [[ ! -w "$(dirname "$artifact")" || ( -e "$artifact" && ! -w "$artifact" ) ]]; then
+    echo 'Deployment artifacts are not writable; administrator ownership repair is required before activation.' >&2
+    exit 1
+  fi
+done
 # Fail before activation if a dependency-changing release cannot update this tree.
 # Website-only releases use the unchanged installation and never mutate it.
 if [[ "$update_dependencies" == 1 && -d node_modules ]]; then
@@ -56,8 +65,6 @@ fi
 # a separate reviewed backup/restore procedure before this activation step.
 backup="$release/previous-artifacts"
 mkdir -p "$backup"
-artifacts=(apps/web/.next)
-if [[ "$update_backend" == 1 ]]; then artifacts+=(apps/nakama/dist packages/engine/dist); fi
 dependencies_touched=0
 for artifact in "${artifacts[@]}"; do
   mkdir -p "$backup/$(dirname "$artifact")"
