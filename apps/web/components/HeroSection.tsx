@@ -682,6 +682,14 @@ export default function HeroSection() {
 
           <div className="text-sm leading-7 text-zinc-300 lg:pt-2">
             <p>Bondi Poker is a skill-based online poker game. Play responsibly.</p>
+            <a
+              href="https://x.com/BondiPoker"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex min-h-11 items-center text-teal-200 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-300"
+            >
+              X / Twitter &middot; @BondiPoker
+            </a>
             <div className="mt-8 border-t border-white/15 pt-7 text-zinc-400">
               &copy; 2026 Bondi Poker. All rights reserved.
             </div>

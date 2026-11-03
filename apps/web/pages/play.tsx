@@ -661,6 +661,16 @@ const PlayLobbyPage: NextPage = () => {
             ) : null}
           </section>
         </div>
+        <footer className="mt-6 text-center text-sm text-zinc-400">
+          <a
+            href="https://x.com/BondiPoker"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center text-teal-200 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-300"
+          >
+            X / Twitter &middot; @BondiPoker
+          </a>
+        </footer>
       </main>
     </>
   );
