@@ -30,6 +30,16 @@ previous="$(git rev-parse HEAD)"
 release="$(dirname "$root")/.pdh-releases/${sha}-$(date +%s)"
 mkdir -p "$(dirname "$release")"
 git worktree add --detach "$release" "$sha"
+scope="$(node "$release/scripts/deployment-scope.mjs" "$previous" "$sha")"
+read -r update_dependencies update_backend <<< "$scope"
+[[ "$update_dependencies" =~ ^[01]$ && "$update_backend" =~ ^[01]$ ]] || { echo 'Invalid deployment scope' >&2; exit 1; }
+printf 'Deployment scope: dependencies=%s backend=%s\n' "$update_dependencies" "$update_backend"
+# Fail before activation if a dependency-changing release cannot update this tree.
+# Website-only releases use the unchanged installation and never mutate it.
+if [[ "$update_dependencies" == 1 && -d node_modules ]]; then
+  blocked="$(find node_modules ! -writable -print -quit)"
+  [[ -z "$blocked" ]] || { echo 'Deployment dependencies are not writable; repair ownership before deploying dependency changes.' >&2; exit 1; }
+fi
 [[ ! -f .env ]] || cp -p .env "$release/.env"
 [[ ! -f apps/web/.env.local ]] || cp -p apps/web/.env.local "$release/apps/web/.env.local"
 (
@@ -46,25 +56,32 @@ git worktree add --detach "$release" "$sha"
 # a separate reviewed backup/restore procedure before this activation step.
 backup="$release/previous-artifacts"
 mkdir -p "$backup"
-for artifact in apps/web/.next apps/nakama/dist packages/engine/dist; do
+artifacts=(apps/web/.next)
+if [[ "$update_backend" == 1 ]]; then artifacts+=(apps/nakama/dist packages/engine/dist); fi
+dependencies_touched=0
+for artifact in "${artifacts[@]}"; do
   mkdir -p "$backup/$(dirname "$artifact")"
   [[ ! -d "$artifact" ]] || cp -a "$artifact" "$backup/$artifact"
 done
 rollback() {
   echo "Activation failed; restoring $previous. Database contents are retained." >&2
   git switch --detach "$previous" || return 1
-  if git cat-file -e "$previous:pnpm-lock.yaml" 2>/dev/null; then
-    bash scripts/run-pnpm.sh install --frozen-lockfile --prod=false || return 1
-  else
-    bash scripts/run-pnpm.sh install --lockfile=false --prod=false || return 1
+  if [[ "$dependencies_touched" == 1 ]]; then
+    if git cat-file -e "$previous:pnpm-lock.yaml" 2>/dev/null; then
+      bash scripts/run-pnpm.sh install --frozen-lockfile --prod=false || return 1
+    else
+      bash scripts/run-pnpm.sh install --lockfile=false --prod=false || return 1
+    fi
   fi
-  for artifact in apps/web/.next apps/nakama/dist packages/engine/dist; do
+  for artifact in "${artifacts[@]}"; do
     if [[ -d "$backup/$artifact" ]]; then
       [[ ! -e "$artifact" ]] || mv "$artifact" "$release/failed-$(echo "$artifact" | tr / -)"
       cp -a "$backup/$artifact" "$artifact"
     fi
   done
-  docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate nakama
+  if [[ "$update_backend" == 1 ]]; then
+    docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate nakama
+  fi
   sudo -n /bin/systemctl restart "$web_service"
   wait_for_health "$api_health_url"
   # Verify the service locally even if the release's external health URL failed.
@@ -73,12 +90,17 @@ rollback() {
 trap 'rollback' ERR
 trap 'rollback; exit 1' TERM INT
 git merge --ff-only "$sha"
-bash scripts/run-pnpm.sh install --frozen-lockfile --prod=false
-for artifact in apps/web/.next apps/nakama/dist packages/engine/dist; do
+if [[ "$update_dependencies" == 1 ]]; then
+  dependencies_touched=1
+  bash scripts/run-pnpm.sh install --frozen-lockfile --prod=false
+fi
+for artifact in "${artifacts[@]}"; do
   [[ ! -e "$artifact" ]] || mv "$artifact" "$release/replaced-$(echo "$artifact" | tr / -)"
   cp -a "$release/$artifact" "$artifact"
 done
-docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate nakama
+if [[ "$update_backend" == 1 ]]; then
+  docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate nakama
+fi
 sudo -n /bin/systemctl restart "$web_service"
 wait_for_health "$api_health_url"
 wait_for_health "$web_health_url"

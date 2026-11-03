@@ -15,6 +15,9 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Private friend-table creation and server-enforced code admission, plus real-server profile, recovery and chip conservation coverage.
 
 ### Fixed
+- Website-only deployments retain unchanged live dependencies and avoid restarting Nakama; dependency permission problems fail before activation.
+- Coastal homepage keeps photo cards readable, explains discard timing and free play, and leads into private friend tables.
+
 - Hands with an all-in blind advance through every discard street instead of waiting on an ineligible player; recovered turn/timer updates are saved atomically so refreshes cannot enter a save-error loop.
 
 - Finished tables with verified outstanding chip allocations remain recoverable after the normal checkpoint expiry window.
