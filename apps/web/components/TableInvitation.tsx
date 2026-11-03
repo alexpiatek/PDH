@@ -54,12 +54,14 @@ export function TableInvitation({ code, playerCount }: { code: string; playerCou
       <a href="/practice" target="_blank" rel="noopener noreferrer">
         Try a practice hand while you wait
       </a>
-      <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer">
-        Find players in Discord
-      </a>
       <a href="https://x.com/BondiPoker" target="_blank" rel="noopener noreferrer">
         X / @BondiPoker
       </a>
+      {DISCORD_URL && (
+        <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer">
+          Find players in Discord
+        </a>
+      )}
     </section>
   );
 }

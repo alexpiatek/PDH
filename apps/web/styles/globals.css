@@ -242,8 +242,43 @@ a {
   border-color: #b6c8be80;
   background: #032b2766;
 }
+.hero-community {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  margin-top: 8px;
+  padding: 5px 0;
+  color: var(--coast-gold);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.hero-community small {
+  display: block;
+  margin-top: 3px;
+  color: var(--coast-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.hero-community:hover {
+  color: #ffe1a0;
+}
+.hero-discord {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  color: var(--coast-muted);
+  font-size: 12px;
+}
+.hero-discord:hover {
+  color: var(--coast-gold);
+}
 .hero-preview {
+  display: block;
   min-width: 0;
+  text-align: center;
 }
 .coastal-table-preview {
   position: relative;
@@ -253,13 +288,43 @@ a {
 }
 .preview-hand {
   position: absolute;
-  top: 33%;
+  top: 34%;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 9px;
+  gap: 0;
   justify-content: center;
-  width: 76%;
+  width: 84%;
+}
+.preview-opening,
+.preview-choice {
+  position: absolute;
+  left: 15%;
+  right: 15%;
+  margin: 0;
+  color: #e6d8b4;
+}
+.preview-opening {
+  top: 22%;
+  font-size: clamp(10px, 0.9vw, 13px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.preview-choice {
+  top: 74%;
+  font-family: var(--font-serif);
+  font-size: clamp(18px, 1.8vw, 27px);
+  font-weight: 600;
+}
+.preview-practice {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  color: var(--coast-gold);
+  font-size: 13px;
+  font-weight: 700;
 }
 .coastal-card {
   display: block;
@@ -276,7 +341,29 @@ a {
     box-shadow 0.15s;
 }
 .preview-hand .coastal-card {
-  width: clamp(48px, 6.3vw, 97px);
+  width: clamp(52px, 7.4vw, 110px);
+  margin-left: -13px;
+  transform-origin: center 120%;
+}
+.preview-hand .coastal-card:first-child {
+  margin-left: 0;
+  transform: rotate(-12deg) translateY(8px);
+}
+.preview-hand .coastal-card:nth-child(2) {
+  transform: rotate(-6deg);
+}
+.preview-hand .coastal-card:nth-child(3) {
+  transform: translateY(-3px);
+}
+.preview-hand .coastal-card:nth-child(4) {
+  transform: rotate(6deg);
+}
+.preview-hand .coastal-card:nth-child(5) {
+  transform: rotate(12deg) translateY(8px);
+}
+.hero-preview:hover .coastal-card,
+.hero-preview:focus-visible .coastal-card {
+  box-shadow: 0 8px 20px #0007;
 }
 .coastal-photo-card {
   background: #fafaf3;
@@ -951,12 +1038,31 @@ a {
     width: 100%;
     max-width: 600px;
   }
-  .preview-hand {
-    gap: 5px;
+  .hero-community {
+    margin-top: 10px;
+    gap: 9px;
+    font-size: 12px;
+  }
+  .hero-community small {
+    font-size: 11px;
+  }
+  .hero-community > svg {
+    flex-shrink: 0;
+  }
+  .preview-opening {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+  }
+  .preview-choice {
+    font-size: 18px;
+  }
+  .preview-practice {
+    font-size: 12px;
   }
   .preview-hand .coastal-card {
-    width: 13vw;
-    max-width: 78px;
+    width: 15vw;
+    max-width: 90px;
+    margin-left: -8px;
     border-radius: 3px;
   }
   .photo-card-corner {

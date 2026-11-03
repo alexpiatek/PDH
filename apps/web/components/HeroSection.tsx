@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
-import { CoastalFooter, CoastalShell } from './CoastalShell';
+import { ArrowRight, ArrowUpRight, Users } from 'lucide-react';
+import { CoastalFooter, CoastalShell, DISCORD_URL } from './CoastalShell';
 import { CoastalPhotoCard } from './CoastalCard';
 import { PRACTICE_HAND } from '../lib/practiceHand';
 import EarlyAccessForm from './EarlyAccessForm';
@@ -14,27 +14,57 @@ export default function HeroSection() {
       <main id="main-content">
         <section className="coastal-hero" aria-labelledby="hero-heading">
           <div className="coastal-hero-copy">
-            <p className="coastal-eyebrow">A fresh twist on Hold’em</p>
+            <p className="coastal-eyebrow">A new kind of Hold’em</p>
             <h1 id="hero-heading">
-              Poker night.
+              Start with five.
               <br />
-              With your people.
+              Finish with two.
             </h1>
             <p className="coastal-intro">
-              Start with five cards. Finish with two. Bring your friends and see what stays.
+              Bet like Hold’em. Discard one card face down after the flop, turn and river betting
+              rounds.
             </p>
             <div className="coastal-ctas">
-              <Link className="coastal-button primary" href="/play?action=create">
-                Play with friends <ArrowRight size={18} aria-hidden="true" />
+              <Link className="coastal-button primary" href="/practice">
+                Try a practice hand <ArrowRight size={18} aria-hidden="true" />
               </Link>
-              <Link className="coastal-button secondary" href="/practice">
-                Try a practice hand
+              <Link className="coastal-button secondary" href="/play?action=create">
+                Play with friends
               </Link>
             </div>
-            <p className="coastal-fineprint">Free play chips. No cash value.</p>
+            <p className="coastal-fineprint">
+              No account needed for practice. Free play chips only.
+            </p>
+            <a
+              className="hero-community"
+              href="https://x.com/BondiPoker"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Users size={20} aria-hidden="true" />
+              <span>
+                Join us on X<small>Hands, updates and poker nights. @BondiPoker</small>
+              </span>
+              <ArrowUpRight size={16} aria-hidden="true" />
+            </a>
+            {DISCORD_URL && (
+              <a
+                className="hero-discord"
+                href={DISCORD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Prefer Discord? Join the community <ArrowUpRight size={14} aria-hidden="true" />
+              </a>
+            )}
           </div>
-          <div className="hero-preview">
+          <Link
+            className="hero-preview"
+            href="/practice"
+            aria-label="Try this five-card practice hand without an account"
+          >
             <div className="coastal-table-preview">
+              <p className="preview-opening">Your opening hand · 5 cards</p>
               <div className="preview-hand">
                 {PRACTICE_HAND.map((card, index) => (
                   <CoastalPhotoCard
@@ -44,8 +74,12 @@ export default function HeroSection() {
                   />
                 ))}
               </div>
+              <p className="preview-choice">Choose what stays.</p>
             </div>
-          </div>
+            <span className="preview-practice">
+              Try this hand <ArrowRight size={16} aria-hidden="true" />
+            </span>
+          </Link>
         </section>
         <section className="coastal-how" id="how-it-works" aria-labelledby="learn-heading">
           <div className="coastal-how-heading">
