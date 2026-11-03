@@ -552,22 +552,46 @@ export default function HeroSection() {
       <section className="relative isolate border-b border-white/10">
         <div className="pointer-events-none absolute inset-0">
           <div
-            className="absolute inset-0 bg-cover bg-[position:65%_center] lg:bg-center"
+            className="absolute inset-0 bg-cover bg-top bg-no-repeat lg:bg-contain"
             style={{ backgroundImage: "url('/brand/coastal-hero.jpg')" }}
           />
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(3,8,11,0.25),rgba(3,8,11,0.45)_70%,rgba(3,8,11,0.92))] lg:bg-[linear-gradient(90deg,rgba(3,8,11,0.4),rgba(3,8,11,0.12)),linear-gradient(0deg,rgba(3,8,11,0.85),transparent_35%)]" />
         </div>
 
         <header className="relative z-10 border-b border-amber-300/55">
-          <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 sm:px-8 sm:py-5">
-            <BondiPokerLogo href="/" variant="nav" className="max-w-[68vw]" />
+          <div className="relative mx-auto flex min-h-20 max-w-7xl items-center justify-between px-6 py-4 sm:min-h-24 sm:px-8 sm:py-5">
+            <img
+              src="/brand/bondi-poker-header-art.png"
+              alt=""
+              width={144}
+              height={96}
+              className="hidden h-16 w-24 shrink-0 object-contain md:block"
+              style={{
+                maskImage: 'radial-gradient(ellipse at center, black 40%, transparent 72%)',
+                WebkitMaskImage: 'radial-gradient(ellipse at center, black 40%, transparent 72%)',
+              }}
+            />
+            <div className="absolute left-1/2 top-1/2 flex w-max max-w-[82vw] -translate-x-1/2 -translate-y-1/2 items-center gap-2">
+              <BondiPokerLogo
+                href="/"
+                variant="nav"
+                className="min-w-0 max-w-[68vw] md:max-w-[45vw]"
+              />
+              <svg
+                viewBox="0 0 210 233"
+                aria-hidden="true"
+                className="h-6 w-6 shrink-0 sm:h-7 sm:w-7 lg:h-8 lg:w-8"
+              >
+                <image href="/brand/bondi-poker-wordmark.svg" width="1842" height="233" />
+              </svg>
+            </div>
             <button
               type="button"
               onClick={() => {
                 void handlePlayNow();
               }}
               disabled={playNowLoading}
-              className="hidden rounded-md border border-amber-300/50 px-4 py-2 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.16em] text-amber-100 transition hover:border-teal-300/70 hover:text-teal-100 disabled:cursor-not-allowed disabled:opacity-60 sm:inline-flex"
+              className="relative ml-auto hidden rounded-md border border-amber-300/50 px-4 py-2 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.16em] text-amber-100 transition hover:border-teal-300/70 hover:text-teal-100 disabled:cursor-not-allowed disabled:opacity-60 md:inline-flex"
             >
               {playNowLoading ? 'Opening' : 'Play'}
             </button>
@@ -603,7 +627,7 @@ export default function HeroSection() {
                 <a
                   href={DISCORD_INVITE_URL}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   onClick={() => {
                     logClientEvent('landing_cta', {
                       cta: 'hero_join_discord',
