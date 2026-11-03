@@ -1,6 +1,8 @@
 # Coastal first-play flow
 
-The homepage, lobby, account entry and local practice hand share the dark coastal palette and existing Bondi brand mark. The minimal live deck is shared with these screens through `MinimalCardFace`, preserving the existing pips and court-card artwork with a subtle surf detail. Community destinations use the existing Discord environment override and Bondi Poker X account.
+The homepage, lobby, account entry and local practice hand share the dark coastal palette and existing Bondi brand mark. The homepage restores Brad's original coastal photo-card composition and five source photographs through `CoastalPhotoCard`. Practice and live play retain the readable `MinimalCardFace` pips and court-card artwork. Community destinations use the existing Discord environment override and Bondi Poker X account.
+
+The homepage keeps one primary invitation, "Play with friends", alongside no-account practice. Join-by-code remains in the header. A single three-step explanation replaces the decorative rank countdown: five private cards, one hidden discard after each post-flop betting round, then two cards at showdown. The ocean background fades into the page before the photograph ends. The homepage header keeps social links in the footer; other screens retain their existing community navigation.
 
 ## Entry points
 

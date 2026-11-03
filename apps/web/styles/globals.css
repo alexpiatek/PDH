@@ -71,7 +71,14 @@ a {
   --coast-line: #a8804566;
   min-height: 100vh;
   color: var(--coast-ink);
-  background: #022321 url('/brand/bondi-night-coast.webp') center top/100% auto no-repeat;
+  background-color: #022321;
+  background-image:
+    linear-gradient(180deg, transparent 26vw, #022321 62vw), url('/brand/bondi-night-coast.webp');
+  background-size:
+    100% 100%,
+    100% auto;
+  background-position: center top;
+  background-repeat: no-repeat;
   font-family: var(--font-sans);
   padding: 0 3.4vw;
 }
@@ -132,11 +139,11 @@ a {
 .coastal-hero {
   max-width: 1440px;
   margin: auto;
-  min-height: 650px;
+  min-height: 620px;
   display: grid;
-  grid-template-columns: 45% 55%;
+  grid-template-columns: 48% 52%;
   align-items: center;
-  padding: 70px 0 38px;
+  padding: 64px 0 44px;
   gap: 0;
 }
 .coastal-hero-copy {
@@ -151,14 +158,14 @@ a {
   line-height: 1.03;
 }
 .coastal-hero h1 {
-  font-size: clamp(44px, 4.35vw, 72px);
-  margin: 0 -60px 24px 0;
+  font-size: clamp(46px, 5.15vw, 78px);
+  margin: 0 0 24px;
   text-wrap: balance;
 }
 .coastal-intro {
-  font-size: clamp(16px, 1.55vw, 23px);
+  font-size: clamp(16px, 1.3vw, 19px);
   line-height: 1.6;
-  max-width: 520px;
+  max-width: 440px;
   color: #e3e9de;
   margin: 0 0 34px;
 }
@@ -169,9 +176,9 @@ a {
   flex-wrap: wrap;
 }
 .coastal-hero-copy .coastal-ctas .coastal-button {
-  min-height: 62px;
-  padding: 17px 25px;
-  font-size: 18px;
+  min-height: 56px;
+  padding: 15px 22px;
+  font-size: 16px;
 }
 .coastal-button {
   min-height: 52px;
@@ -228,8 +235,14 @@ a {
   text-underline-offset: 5px;
   color: var(--coast-gold);
 }
+.coastal-home .coastal-signin {
+  margin-left: 0;
+}
+.coastal-home .coastal-button.secondary {
+  border-color: #b6c8be80;
+  background: #032b2766;
+}
 .hero-preview {
-  margin-left: -8px;
   min-width: 0;
 }
 .coastal-table-preview {
@@ -237,42 +250,16 @@ a {
   aspect-ratio: 1.5;
   background: url('/brand/bondi-table.webp') center/100% 100% no-repeat;
   width: 100%;
-  isolation: isolate;
-}
-.table-preview-label,
-.your-seat {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 1px solid #eac56b;
-  background: #042c26;
-  border-radius: 30px;
-  white-space: nowrap;
-  color: #ffe1a0;
-  box-shadow: 0 4px 12px #0005;
-}
-.table-preview-label {
-  top: 11%;
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  font-weight: 800;
-  padding: 7px 18px;
-}
-.your-seat {
-  bottom: 7%;
-  font-size: 13px;
-  padding: 6px 20px;
 }
 .preview-hand {
   position: absolute;
-  top: 31%;
+  top: 33%;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 8px;
-  width: 68%;
+  gap: 9px;
   justify-content: center;
+  width: 76%;
 }
 .coastal-card {
   display: block;
@@ -288,131 +275,117 @@ a {
     transform 0.15s,
     box-shadow 0.15s;
 }
-.coastal-card-face {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: fill;
+.preview-hand .coastal-card {
+  width: clamp(48px, 6.3vw, 97px);
 }
-.coastal-card-wave {
+.coastal-photo-card {
+  background: #fafaf3;
+  color: #102b33;
+  border: 1px solid #0002;
+  border-radius: 4px;
+}
+.coastal-photo-card.is-red {
+  color: #c9362c;
+}
+.coastal-photo {
   position: absolute;
-  left: 26%;
-  width: 48%;
-  height: 12%;
-  bottom: 14%;
+  left: 17%;
+  top: 10%;
+  width: 66%;
+  height: 80%;
   object-fit: cover;
-  opacity: 0.38;
-  border-radius: 2px;
-  mix-blend-mode: multiply;
+  border-radius: 1px;
 }
-.table-progression {
+.photo-card-corner {
   position: absolute;
-  top: 60%;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 3%;
+  left: 3%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font: 700 clamp(7px, 0.9vw, 13px)/1 var(--font-serif);
+}
+.photo-card-corner.opposite {
+  inset: auto 3% 3% auto;
+  transform: rotate(180deg);
+}
+.photo-card-brand {
+  position: absolute;
+  top: 12%;
+  right: 3%;
+  writing-mode: vertical-rl;
+  font-size: clamp(2px, 0.22vw, 3px);
+  line-height: 1;
+  letter-spacing: 0.06em;
+}
+.photo-card-brand.opposite {
+  inset: auto auto 12% 3%;
+  transform: rotate(180deg);
+}
+.coastal-how {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 38px 0 32px;
+  border-top: 1px solid var(--coast-line);
+  scroll-margin-top: 25px;
+}
+.coastal-how-heading {
   display: flex;
   align-items: center;
-  gap: 9px;
-  white-space: nowrap;
-  font-size: clamp(11px, 1.05vw, 16px);
-  font-weight: 600;
-  color: #f8d282;
+  justify-content: space-between;
+  gap: 32px;
+}
+.coastal-how-heading h2 {
+  font: 600 clamp(28px, 2.7vw, 40px)/1.15 var(--font-serif);
+  letter-spacing: -0.02em;
+  margin: 0 0 10px;
+}
+.coastal-how-heading p {
+  font-size: 14px;
   margin: 0;
+  color: var(--coast-muted);
 }
-.preview-invite {
-  position: absolute;
-  top: 71%;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 1px solid #b9cd8d99;
-  border-radius: 8px;
-  padding: 10px 20px;
-  display: flex;
-  gap: 14px;
+.coastal-practice-link {
+  display: grid;
+  grid-template-columns: auto 17px;
   align-items: center;
-  color: #ffebbb;
-  background: #064239;
-  white-space: nowrap;
+  column-gap: 10px;
+  row-gap: 5px;
+  color: var(--coast-gold);
   font-size: 14px;
   font-weight: 700;
+  padding: 12px 0;
+  min-height: 44px;
 }
-.preview-invite:hover {
-  background: #166353;
+.coastal-practice-link:hover {
+  color: #ffe1a0;
 }
-.preview-caption {
-  text-align: center;
-  margin: 7px 0 0;
-  font-size: clamp(13px, 1.35vw, 20px);
-  color: #edf2e5;
-}
-.coastal-learn-strip {
-  max-width: 1440px;
-  margin: 0 auto;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 32px;
-  border-top: 1px solid var(--coast-line);
-  border-bottom: 1px solid var(--coast-line);
-  padding: 35px 0;
-}
-.coastal-learn-strip h2 {
-  font: 600 clamp(25px, 2.5vw, 39px)/1.1 var(--font-serif);
-  letter-spacing: -0.02em;
-  margin: 0 0 6px;
-}
-.coastal-learn-strip p {
-  font-size: 15px;
-  margin: 0;
-  color: #d2dfd7;
-}
-.learn-progression {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  color: var(--coast-gold);
-}
-.learn-progression .coastal-card {
-  width: 46px;
-}
-.learn-progression > svg {
-  width: 19px;
-}
-.coastal-community {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  font-size: 12px;
-  line-height: 1.7;
-  color: #d0dcd3;
-}
-.coastal-community b {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--coast-gold);
-  font-size: 13px;
+.coastal-practice-link small {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--coast-muted);
 }
 .coastal-rules {
-  max-width: 1440px;
-  margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+  list-style: none;
   gap: 50px;
-  padding: 50px 0 30px;
+  margin: 32px 0 0;
+  padding: 0;
 }
-.coastal-rules > div > span {
+.coastal-rules > li > span {
   font-size: 11px;
   color: var(--coast-gold);
   letter-spacing: 0.12em;
 }
 .coastal-rules h3 {
   font: 600 27px var(--font-serif);
-  margin: 8px 0;
+  margin: 10px 0;
 }
 .coastal-rules p {
   font-size: 13px;
-  line-height: 1.9;
+  line-height: 1.85;
   color: #c5d5cc;
   max-width: 350px;
   margin: 0;
@@ -832,15 +805,6 @@ a {
   border-radius: 6px;
   font-size: 12px;
 }
-@media (min-width: 1600px) {
-  .coastal-hero {
-    min-height: 730px;
-  }
-  .coastal-page {
-    background-size: cover;
-    background-attachment: fixed;
-  }
-}
 @media (max-width: 1100px) {
   .coastal-signin {
     margin-left: 0;
@@ -852,13 +816,12 @@ a {
     display: none;
   }
   .coastal-hero {
-    grid-template-columns: 45% 55%;
-    min-height: 580px;
+    grid-template-columns: 48% 52%;
+    min-height: 540px;
     padding-top: 55px;
   }
   .coastal-hero h1 {
-    font-size: 48px;
-    margin-right: -35px;
+    font-size: clamp(44px, 4.8vw, 58px);
   }
   .coastal-ctas {
     gap: 10px;
@@ -868,25 +831,9 @@ a {
     padding: 12px 15px;
     min-height: 48px;
   }
-  .coastal-hero-copy .coastal-ctas {
-    flex-direction: column;
-    align-items: flex-start;
-  }
   .coastal-intro {
     font-size: 17px;
     margin-bottom: 25px;
-  }
-  .coastal-learn-strip {
-    gap: 20px;
-  }
-  .learn-progression {
-    gap: 9px;
-  }
-  .learn-progression .coastal-card {
-    width: 38px;
-  }
-  .coastal-community {
-    max-width: 215px;
   }
   .coastal-auth,
   .coastal-lobby {
@@ -904,16 +851,23 @@ a {
 @media (max-width: 760px) {
   .coastal-page {
     padding: 0 22px;
-    background-size: auto 850px;
-    background-position: 60% 0;
+    background-image:
+      linear-gradient(180deg, transparent 320px, #022321 920px),
+      url('/brand/bondi-night-coast.webp');
+    background-size:
+      100% 100%,
+      auto 950px;
+    background-position:
+      center top,
+      60% top;
   }
   .coastal-header {
     height: 77px;
     gap: 12px;
   }
   .coastal-brand {
-    font-size: 17px;
-    letter-spacing: 0.14em;
+    font-size: 16px;
+    letter-spacing: 0.12em;
     gap: 7px;
   }
   .coastal-brand img {
@@ -923,6 +877,9 @@ a {
   .coastal-header nav {
     gap: 0;
     font-size: 11px;
+  }
+  .coastal-home .coastal-header nav {
+    gap: 12px;
   }
   .coastal-rules-link,
   .nav-community-label {
@@ -941,32 +898,32 @@ a {
     display: flex;
     flex-direction: column;
     min-height: 0;
-    padding: 46px 0 30px;
-    gap: 22px;
+    padding: 38px 0 24px;
+    gap: 12px;
   }
   .coastal-hero-copy {
     width: 100%;
   }
   .coastal-eyebrow {
     font-size: 9px;
-    letter-spacing: 0.16em;
+    letter-spacing: 0.14em;
     margin-bottom: 18px;
   }
   .coastal-hero h1 {
-    font-size: clamp(38px, 7.9vw, 58px);
-    margin: 0 0 19px;
-    max-width: 650px;
+    font-size: clamp(37px, 10.2vw, 58px);
+    margin: 0 0 20px;
     text-wrap: initial;
   }
   .coastal-intro {
     font-size: 15px;
     line-height: 1.7;
-    max-width: 460px;
-    margin: 0 0 23px;
+    max-width: 430px;
+    margin: 0 0 24px;
   }
   .coastal-hero-copy .coastal-ctas {
-    flex-direction: row;
+    flex-wrap: nowrap;
     align-items: stretch;
+    gap: 10px;
   }
   .coastal-button {
     min-height: 49px;
@@ -977,126 +934,69 @@ a {
   .coastal-hero-copy .coastal-ctas > .coastal-button {
     flex: 1;
     padding: 12px 9px;
-    min-height: 49px;
+    min-height: 50px;
     font-size: 12px;
   }
   .coastal-hero-copy .coastal-ctas > .coastal-button svg {
     display: none;
   }
   .coastal-fineprint {
-    font-size: 10px;
-    margin: 13px 0;
+    font-size: 11px;
+    margin: 13px 0 4px;
   }
   .coastal-inline-link {
-    font-size: 10px;
+    font-size: 12px;
   }
   .hero-preview {
     width: 100%;
     max-width: 600px;
-    margin: 0 -14px;
-  }
-  .coastal-table-preview {
-    width: calc(100% + 20px);
-    margin-left: -10px;
   }
   .preview-hand {
     gap: 5px;
   }
   .preview-hand .coastal-card {
-    width: 12vw;
-    max-width: 68px;
-    border-radius: 5px;
-  }
-  .table-preview-label {
-    font-size: 8px;
-    letter-spacing: 0.15em;
-    padding: 5px 12px;
-  }
-  .table-progression {
-    gap: 5px;
-    font-size: 10px;
-    top: 61%;
-  }
-  .table-progression svg {
-    width: 13px;
-  }
-  .preview-invite {
-    top: 72%;
-    font-size: 11px;
-    gap: 8px;
-    padding: 7px 16px;
-  }
-  .preview-invite svg {
-    width: 17px;
-  }
-  .your-seat {
-    font-size: 9px;
-    padding: 4px 15px;
-  }
-  .preview-caption {
-    font-size: 12px;
-    margin-top: 5px;
-  }
-  .coastal-learn-strip {
-    flex-wrap: wrap;
-    padding: 26px 0;
-    gap: 20px;
-  }
-  .coastal-learn-strip > div:first-child {
-    flex-basis: 100%;
-  }
-  .coastal-learn-strip h2 {
-    font-size: 30px;
-  }
-  .coastal-learn-strip p {
-    font-size: 12px;
-  }
-  .learn-progression {
-    gap: 9px;
-    flex: 1;
-  }
-  .learn-progression .coastal-card {
-    width: 30px;
+    width: 13vw;
+    max-width: 78px;
     border-radius: 3px;
   }
-  .learn-progression > svg {
-    width: 15px;
+  .photo-card-corner {
+    font-size: clamp(7px, 1.9vw, 11px);
   }
-  .coastal-community {
-    max-width: 150px;
-    font-size: 10px;
-    gap: 8px;
+  .coastal-how {
+    padding: 30px 0 20px;
   }
-  .coastal-community b {
-    font-size: 10px;
-    display: inline;
+  .coastal-how-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
   }
-  .coastal-community > svg {
-    width: 18px;
+  .coastal-how-heading h2 {
+    font-size: 30px;
+    max-width: 340px;
   }
-  .coastal-community b svg {
-    display: none;
+  .coastal-how-heading p {
+    font-size: 13px;
   }
   .coastal-rules {
     grid-template-columns: 1fr;
-    padding: 30px 0;
+    margin-top: 25px;
     gap: 25px;
   }
-  .coastal-rules > div {
+  .coastal-rules > li {
     padding-left: 32px;
     position: relative;
   }
-  .coastal-rules > div > span {
+  .coastal-rules > li > span {
     position: absolute;
     left: 0;
     top: 7px;
   }
   .coastal-rules h3 {
     font-size: 26px;
-    margin: 0 0 5px;
+    margin: 0 0 7px;
   }
   .coastal-rules p {
-    font-size: 12px;
+    font-size: 13px;
     max-width: none;
   }
   .coastal-footer {
@@ -1216,6 +1116,21 @@ a {
   }
   .practice-page .coastal-footer {
     margin-top: 30px;
+  }
+}
+@media (max-width: 360px) {
+  .coastal-header .coastal-social-link {
+    display: none;
+  }
+  .coastal-brand {
+    font-size: 14px;
+    letter-spacing: 0.08em;
+  }
+  .coastal-header {
+    gap: 8px;
+  }
+  .coastal-brand img {
+    width: 24px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
