@@ -12,6 +12,8 @@ import {
 } from '@pdh/protocol';
 import type { ClientMessage, LegalActions, ServerMessage } from '../server-types';
 import { BondiPokerLogo } from './BondiPokerLogo';
+import { TableInvitation } from './TableInvitation';
+import { MinimalCardFace } from './MinimalCardFace';
 import { logClientEvent } from '../lib/clientTelemetry';
 import { normalizePlayerName, readStoredPlayerName, storePlayerName } from '../lib/playerIdentity';
 import { getPlayerInitials } from '../lib/playerInitials';
@@ -83,7 +85,7 @@ const CHAT_HISTORY_LIMIT = 50;
 const RULES_COPY = [
   'You start with 5 hole cards.',
   "Betting works like No-Limit Hold'em.",
-  'After the flop, turn, and river, each remaining player discards 1 card.',
+  'After each flop, turn, and river betting round finishes, each remaining player discards 1 card.',
   'You reach showdown with 2 hole cards.',
   'Best 5-card poker hand wins using your 2 hole cards and the 5-card board.',
   'Discards stay hidden.',
@@ -116,12 +118,12 @@ const TABLE_THEME = {
     'radial-gradient(circle at 72% 18%, rgba(20,184,166,0.17), transparent 31%), ' +
     'radial-gradient(circle at 16% 16%, rgba(251,191,36,0.1), transparent 29%), ' +
     'linear-gradient(180deg, rgba(3,8,11,0.94), rgba(2,7,9,0.985)), ' +
-    'url("/Casino floor background.png")',
+    'url("/brand/bondi-night-coast.webp")',
   seatedPageBackground:
     'radial-gradient(circle at 72% 18%, rgba(20,184,166,0.12), transparent 34%), ' +
     'radial-gradient(circle at 16% 16%, rgba(251,191,36,0.08), transparent 30%), ' +
     'linear-gradient(180deg, rgba(3,8,11,0.72), rgba(2,7,9,0.82)), ' +
-    'url("/Casino floor background.png")',
+    'url("/brand/bondi-night-coast.webp")',
   panel: 'rgba(3,8,11,0.76)',
   panelStrong: 'rgba(2,7,9,0.92)',
   panelSoft: 'rgba(255,255,255,0.035)',
@@ -499,125 +501,6 @@ interface PokerGamePageProps {
   debugDisableNetwork?: boolean;
   debugStatus?: string;
 }
-
-type Pip = { x: number; y: number; size?: number };
-
-const pipLayoutByRank: Record<Card['rank'], Pip[]> = {
-  A: [{ x: 50, y: 72, size: 28 }],
-  K: [],
-  Q: [],
-  J: [],
-  T: [
-    { x: 32, y: 34 },
-    { x: 68, y: 34 },
-    { x: 32, y: 52 },
-    { x: 68, y: 52 },
-    { x: 32, y: 70 },
-    { x: 68, y: 70 },
-    { x: 32, y: 88 },
-    { x: 68, y: 88 },
-    { x: 32, y: 106 },
-    { x: 68, y: 106 },
-  ],
-  '9': [
-    { x: 32, y: 34 },
-    { x: 68, y: 34 },
-    { x: 32, y: 52 },
-    { x: 68, y: 52 },
-    { x: 32, y: 88 },
-    { x: 68, y: 88 },
-    { x: 32, y: 106 },
-    { x: 68, y: 106 },
-    { x: 50, y: 70 },
-  ],
-  '8': [
-    { x: 32, y: 34 },
-    { x: 68, y: 34 },
-    { x: 32, y: 52 },
-    { x: 68, y: 52 },
-    { x: 32, y: 88 },
-    { x: 68, y: 88 },
-    { x: 32, y: 106 },
-    { x: 68, y: 106 },
-  ],
-  '7': [
-    { x: 32, y: 34 },
-    { x: 68, y: 34 },
-    { x: 32, y: 70 },
-    { x: 68, y: 70 },
-    { x: 32, y: 106 },
-    { x: 68, y: 106 },
-    { x: 50, y: 52 },
-  ],
-  '6': [
-    { x: 32, y: 34 },
-    { x: 68, y: 34 },
-    { x: 32, y: 70 },
-    { x: 68, y: 70 },
-    { x: 32, y: 106 },
-    { x: 68, y: 106 },
-  ],
-  '5': [
-    { x: 32, y: 34 },
-    { x: 68, y: 34 },
-    { x: 32, y: 106 },
-    { x: 68, y: 106 },
-    { x: 50, y: 70 },
-  ],
-  '4': [
-    { x: 32, y: 34 },
-    { x: 68, y: 34 },
-    { x: 32, y: 106 },
-    { x: 68, y: 106 },
-  ],
-  '3': [
-    { x: 50, y: 34 },
-    { x: 50, y: 70 },
-    { x: 50, y: 106 },
-  ],
-  '2': [
-    { x: 50, y: 34 },
-    { x: 50, y: 106 },
-  ],
-};
-
-const SuitPip = ({
-  suit,
-  x,
-  y,
-  size,
-  color,
-}: {
-  suit: Card['suit'];
-  x: number;
-  y: number;
-  size: number;
-  color: string;
-}) => {
-  const scale = size / 100;
-  return (
-    <g transform={`translate(${x} ${y}) scale(${scale}) translate(-50 -50)`} fill={color}>
-      {suit === 'H' && (
-        <path d="M50 90 L18 52 C6 36 14 16 34 16 C44 16 50 24 50 32 C50 24 56 16 66 16 C86 16 94 36 82 52 L50 90 Z" />
-      )}
-      {suit === 'S' && (
-        <>
-          <path d="M50 12 C70 32 90 50 50 88 C10 50 30 32 50 12 Z" />
-          <path d="M45 88 L55 88 L62 100 L38 100 Z" />
-        </>
-      )}
-      {suit === 'D' && <polygon points="50,8 88,50 50,92 12,50" />}
-      {suit === 'C' && (
-        <>
-          <circle cx="35" cy="45" r="18" />
-          <circle cx="65" cy="45" r="18" />
-          <circle cx="50" cy="25" r="18" />
-          <rect x="44" y="45" width="12" height="38" rx="4" />
-        </>
-      )}
-    </g>
-  );
-};
 
 type ActionTone = 'raise' | 'call' | 'allin' | 'fold' | 'check' | 'bet';
 type ActionBadge = { name: string; label: string; tone: ActionTone; amount?: number };
@@ -6197,7 +6080,7 @@ export const PokerGamePage = ({
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  transform: isMobile ? 'none' : 'translateY(-7cm)',
+                  transform: 'none',
                 }}
               >
                 <div
@@ -6216,22 +6099,9 @@ export const PokerGamePage = ({
                     <span style={ellipsisDotStyle(400)}>.</span>
                   </span>
                 </div>
-                {waitingForPlayers && tableCode ? (
-                  <div
-                    style={{
-                      marginTop: 10,
-                      fontFamily: TABLE_THEME.fontSans,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      letterSpacing: 1.2,
-                      color: 'rgba(254,243,199,0.92)',
-                      border: '1px solid rgba(251,191,36,0.35)',
-                      borderRadius: 10,
-                      background: 'rgba(9,13,23,0.72)',
-                      padding: '7px 10px',
-                    }}
-                  >
-                    Table code {tableCode}
+                {waitingForPlayers && copyableTableCode ? (
+                  <div style={{ marginTop: 22, maxWidth: '100%', width: isMobile ? '100%' : 480 }}>
+                    <TableInvitation code={copyableTableCode} playerCount={seatedPlayerCount} />
                   </div>
                 ) : null}
               </div>
@@ -6424,13 +6294,6 @@ const CardView = ({
   }, [card.rank, card.suit, size]);
 
   if (USE_CUSTOM_MINIMAL_DECK && isClassicSize && !isHidden) {
-    const suitColor = isRed ? MINIMAL_DECK_PALETTE.orange : MINIMAL_DECK_PALETTE.navy;
-    const isFaceCard = card.rank === 'J' || card.rank === 'Q' || card.rank === 'K';
-    const cornerFontSize = rankLabel === '10' ? 14 : 16;
-    const cornerSuitSize = 14;
-    const pipSize = 17;
-    const pips = pipLayoutByRank[card.rank] ?? [];
-
     return (
       <div
         style={{
@@ -6450,60 +6313,7 @@ const CardView = ({
           justifyContent: 'center',
         }}
       >
-        <svg
-          viewBox="0 0 100 140"
-          width="100%"
-          height="100%"
-          role="img"
-          aria-label={`${rankLabel} of ${suit}`}
-        >
-          <rect x="0" y="0" width="100" height="140" rx="10" fill={MINIMAL_DECK_PALETTE.face} />
-          <g
-            fontFamily="var(--font-sans, Manrope, ui-sans-serif, system-ui)"
-            fontWeight={700}
-            fill={suitColor}
-          >
-            <text x="8" y="18" fontSize={cornerFontSize}>
-              {rankLabel}
-            </text>
-          </g>
-          <SuitPip suit={card.suit} x={13} y={30} size={cornerSuitSize} color={suitColor} />
-          <g transform="translate(100 140) rotate(180)">
-            <text
-              x="8"
-              y="18"
-              fontSize={cornerFontSize}
-              fontFamily="var(--font-sans, Manrope, ui-sans-serif, system-ui)"
-              fontWeight={700}
-              fill={suitColor}
-            >
-              {rankLabel}
-            </text>
-            <SuitPip suit={card.suit} x={13} y={30} size={cornerSuitSize} color={suitColor} />
-          </g>
-          {isFaceCard ? (
-            <>
-              <g opacity="0.55" fill={MINIMAL_DECK_PALETTE.accent}>
-                <rect x="28" y="32" width="44" height="76" rx="12" transform="rotate(-18 50 70)" />
-                <rect x="28" y="32" width="44" height="76" rx="12" transform="rotate(18 50 70)" />
-              </g>
-              <SuitPip suit={card.suit} x={50} y={70} size={26} color={suitColor} />
-            </>
-          ) : (
-            <>
-              {pips.map((pip, idx) => (
-                <SuitPip
-                  key={idx}
-                  suit={card.suit}
-                  x={pip.x}
-                  y={pip.y}
-                  size={pip.size ?? pipSize}
-                  color={suitColor}
-                />
-              ))}
-            </>
-          )}
-        </svg>
+        <MinimalCardFace card={card} />
       </div>
     );
   }

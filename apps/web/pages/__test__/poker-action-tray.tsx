@@ -21,6 +21,7 @@ type Scenario =
   | 'out-of-chips-between'
   | 'start-gate'
   | 'start-gate-ready'
+  | 'solo-waiting'
   | 'join-fallback'
   | 'joining-known-name';
 
@@ -51,6 +52,7 @@ const scenarios = new Set<Scenario>([
   'out-of-chips-between',
   'start-gate',
   'start-gate-ready',
+  'solo-waiting',
   'join-fallback',
   'joining-known-name',
 ]);
@@ -872,6 +874,11 @@ const buildState = (scenario: Scenario, now: number): PublicState | null => {
       return startGateState(now, [HERO_ID]);
     case 'start-gate':
       return startGateState(now);
+    case 'solo-waiting':
+      return baseState('solo-waiting', now, {
+        id: 'RZ587G',
+        seats: baseSeats(7600).slice(0, 1),
+      });
     case 'betting-check-allin':
       return bettingCheckAllInState(now);
     case 'discard':

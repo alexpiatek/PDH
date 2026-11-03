@@ -9,6 +9,8 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Coastal poker-night homepage, shared Brad-inspired card faces with wave accents, a no-account guided practice hand, and a friend-first lobby with contextual account entry and copyable table invitations.
+
 - Protected email updates with saved drafts, test sends, subscriber selection, a durable SMTP queue, and unsubscribe handling.
 
 - Administrator analytics and player reports use the regular player login, with profile links and server-side account-ID authorization; separate admin credentials and cookies no longer grant access.
