@@ -1,0 +1,15 @@
+[Unit]
+Description=Bondi Poker email campaign worker
+After=network-online.target pdh-web.service
+
+[Service]
+Type=simple
+User=pdh
+WorkingDirectory=/home/pdh/PDH
+ExecStart=/usr/bin/env pnpm exec tsx apps/web/scripts/campaign-worker.ts
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=360
+
+[Install]
+WantedBy=multi-user.target

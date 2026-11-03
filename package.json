@@ -9,6 +9,7 @@
     "down": "./scripts/dev-down.sh",
     "logs": "./scripts/dev-logs.sh",
     "dev:web": "./scripts/run-pnpm.sh -C apps/web dev --port 3001",
+    "email:worker": "./scripts/run-pnpm.sh exec tsx apps/web/scripts/campaign-worker.ts",
     "online": "./scripts/online.sh",
     "git": "./scripts/git.sh",
     "ship": "./scripts/ship.sh",

@@ -9,6 +9,8 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Protected email updates with saved drafts, test sends, subscriber selection, a durable SMTP queue, and unsubscribe handling.
+
 - Administrator analytics and player reports use the regular player login, with profile links and server-side account-ID authorization; separate admin credentials and cookies no longer grant access.
 - Required email/password player profiles, 10,000 welcome play chips, and unlimited fixed free top-ups with retry-safe receipts.
 - Persistent account/table balances and counts for hands, table sessions, wins, rebuys and free top-ups, with an administrator player report.

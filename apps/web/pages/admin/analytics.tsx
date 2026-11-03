@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { BondiPokerLogo } from '../../components/BondiPokerLogo';
 import { AdminSignupList } from '../../components/AdminSignupList';
+import { AdminCampaigns } from '../../components/AdminCampaigns';
 import type { PlayerTestingDashboard } from '../../lib/playerTestingAnalyticsServer';
 import type { SystemHealthSnapshot, SystemHealthStatus } from '../../lib/systemHealthServer';
 import { fetchPlayerAdmin, signOutPlayer } from '../../lib/nakamaClient';
@@ -578,6 +579,7 @@ const AdminAnalyticsPage: NextPage = () => {
             </div>
           ) : null}
           {loadState === 'ready' ? <AdminSignupList /> : null}
+          {loadState === 'ready' ? <AdminCampaigns /> : null}
         </section>
       </main>
     </>

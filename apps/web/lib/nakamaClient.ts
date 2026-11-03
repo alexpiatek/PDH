@@ -446,10 +446,17 @@ export async function fetchPlayerAdmin(
     | '/api/admin/player-analytics'
     | '/api/admin/system-health'
     | `/api/admin/early-access?page=${number}`
+    | '/api/admin/campaigns',
+  options?: { method: 'POST'; body: unknown }
 ) {
   const session = await ensureNakamaSession();
   return fetch(path, {
-    headers: { Authorization: `Bearer ${session.token}` },
+    method: options?.method || 'GET',
+    headers: {
+      Authorization: `Bearer ${session.token}`,
+      ...(options ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: options ? JSON.stringify(options.body) : undefined,
     cache: 'no-store',
   });
 }

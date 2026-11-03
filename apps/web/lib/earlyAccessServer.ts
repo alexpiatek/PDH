@@ -102,7 +102,7 @@ function earlyAccessPoolConfig(): PoolConfig | null {
   };
 }
 
-function getEarlyAccessPool(): Pool | null {
+export function getEarlyAccessPool(): Pool | null {
   const globalPool = globalThis as GlobalPool;
   if (globalPool.__PDH_EARLY_ACCESS_POOL__) {
     return globalPool.__PDH_EARLY_ACCESS_POOL__;
@@ -146,6 +146,7 @@ export interface EarlyAccessSignupPage {
     marketingConsent: boolean;
     unsubscribedAt: string | null;
     source: string | null;
+    campaignExcluded: boolean;
   }[];
 }
 
@@ -157,7 +158,7 @@ export async function loadEarlyAccessSignups(page: number): Promise<EarlyAccessS
   );
   const result = await pool.query<EarlyAccessSignupPage['signups'][number]>(
     `SELECT email, name, created_at AS "createdAt", marketing_consent AS "marketingConsent",
-       unsubscribed_at AS "unsubscribedAt", source
+       unsubscribed_at AS "unsubscribedAt", source, campaign_excluded AS "campaignExcluded"
      FROM public.early_access_signups ORDER BY created_at DESC, id DESC LIMIT 50 OFFSET $1`,
     [(page - 1) * 50]
   );

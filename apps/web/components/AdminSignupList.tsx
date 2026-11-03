@@ -9,6 +9,23 @@ export function AdminSignupList() {
   const [data, setData] = useState<EarlyAccessSignupPage | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(false);
+  async function toggleRecipient(email: string, excluded: boolean) {
+    setUpdating(true);
+    setError('');
+    try {
+      const response = await fetchPlayerAdmin('/api/admin/campaigns', {
+        method: 'POST',
+        body: { action: 'exclude', email, excluded },
+      });
+      if (!response.ok) throw new Error('Unable to update email selection.');
+      setRefresh((value) => value + 1);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setUpdating(false);
+    }
+  }
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -60,10 +77,18 @@ export function AdminSignupList() {
       {data ? (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="min-w-[760px] w-full text-left text-sm">
               <thead className="text-zinc-400">
                 <tr>
-                  {['Email', 'Name', 'Signed Up', 'Consent', 'Status', 'Source'].map((label) => (
+                  {[
+                    'Email',
+                    'Name',
+                    'Signed Up',
+                    'Consent',
+                    'Status',
+                    'Source',
+                    'Include in Updates',
+                  ].map((label) => (
                     <th
                       key={label}
                       scope="col"
@@ -89,6 +114,21 @@ export function AdminSignupList() {
                       {signup.unsubscribedAt ? 'Unsubscribed' : 'Subscribed'}
                     </td>
                     <td className="border-b border-white/10 px-3 py-3">{signup.source || '-'}</td>
+                    <td className="border-b border-white/10 px-3 py-3">
+                      <input
+                        type="checkbox"
+                        aria-label={`Include ${signup.email} in updates`}
+                        checked={
+                          !signup.campaignExcluded &&
+                          !signup.unsubscribedAt &&
+                          signup.marketingConsent
+                        }
+                        disabled={updating || !!signup.unsubscribedAt || !signup.marketingConsent}
+                        onChange={(event) =>
+                          void toggleRecipient(signup.email, !event.target.checked)
+                        }
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
