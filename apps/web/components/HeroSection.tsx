@@ -3,7 +3,6 @@ import { useRouter } from 'next/router';
 import {
   Brain,
   CircleDot,
-  ExternalLink,
   LockKeyhole,
   ShieldCheck,
   Spade,
@@ -529,25 +528,44 @@ export default function HeroSection() {
       <section className="relative isolate border-b border-white/10">
         <div className="pointer-events-none absolute inset-0">
           <div
-            className="absolute inset-0 bg-cover bg-[position:65%_center] lg:bg-center"
-            style={{ backgroundImage: "url('/brand/coastal-hero.jpg')" }}
+            className="absolute inset-0 bg-fixed bg-top bg-no-repeat"
+            style={{
+              backgroundImage: "url('/brand/coastal-hero.jpg')",
+              backgroundSize: 'contain',
+            }}
           />
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(3,8,11,0.25),rgba(3,8,11,0.45)_70%,rgba(3,8,11,0.92))] lg:bg-[linear-gradient(90deg,rgba(3,8,11,0.4),rgba(3,8,11,0.12)),linear-gradient(0deg,rgba(3,8,11,0.85),transparent_35%)]" />
         </div>
 
         <header className="relative z-10 border-b border-amber-300/55">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 sm:px-8 sm:py-5">
-            <BondiPokerLogo href="/" variant="nav" className="max-w-[68vw]" />
-            <button
-              type="button"
-              onClick={() => {
-                void handlePlayNow();
-              }}
-              disabled={playNowLoading}
-              className="hidden rounded-md border border-amber-300/50 px-4 py-2 font-[var(--font-display)] text-xs font-semibold uppercase tracking-[0.16em] text-amber-100 transition hover:border-teal-300/70 hover:text-teal-100 disabled:cursor-not-allowed disabled:opacity-60 sm:inline-flex"
-            >
-              {playNowLoading ? 'Opening' : 'Quick Play'}
-            </button>
+            <div className="-translate-x-[108px] inline-flex min-w-0 items-center gap-0 sm:gap-1">
+              <img
+                src="/brand/bondi-poker-header-art.png"
+                alt=""
+                width={144}
+                height={96}
+                className="h-16 w-24 shrink-0 object-contain sm:h-24 sm:w-36"
+                style={{
+                  maskImage: 'radial-gradient(ellipse at center, black 40%, transparent 72%)',
+                  WebkitMaskImage: 'radial-gradient(ellipse at center, black 40%, transparent 72%)',
+                }}
+              />
+            </div>
+            <div className="absolute left-1/2 top-1/2 flex w-max max-w-[74vw] -translate-x-1/2 -translate-y-1/2 items-center gap-2">
+              <BondiPokerLogo
+                href="/"
+                variant="nav"
+                className="min-w-0 max-w-[62vw]"
+              />
+              <svg
+                viewBox="0 0 210 233"
+                aria-hidden="true"
+                className="h-6 w-6 shrink-0 sm:h-7 sm:w-7 lg:h-8 lg:w-8"
+              >
+                <image href="/brand/bondi-poker-wordmark.svg" width="1842" height="233" />
+              </svg>
+            </div>
           </div>
         </header>
 
@@ -564,32 +582,31 @@ export default function HeroSection() {
 
             <div className="mt-6 max-w-xl lg:mt-7">
               <div className="flex flex-col gap-3 sm:flex-row">
-                <a
-                  href={DISCORD_INVITE_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => {
-                    logClientEvent('landing_cta', {
-                      cta: 'hero_join_discord',
-                      destination: 'discord_invite',
-                    });
-                  }}
-                  className="inline-flex min-h-14 flex-1 items-center justify-center gap-2 rounded-md border border-teal-200/80 bg-teal-400/[0.58] px-7 py-4 text-base font-semibold text-white shadow-[0_0_28px_rgba(20,184,166,0.26)] transition hover:bg-teal-300/[0.66]"
-                >
-                  <DiscordLogo className="h-5 w-5" />
-                  Join Discord
-                  <ExternalLink aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
-                </a>
                 <button
                   type="button"
                   onClick={() => {
                     void handlePlayNow();
                   }}
                   disabled={playNowLoading}
-                  className="inline-flex min-h-14 items-center justify-center rounded-md border border-amber-300/70 bg-transparent px-7 py-4 font-[var(--font-display)] text-sm font-semibold uppercase tracking-[0.16em] text-amber-100 transition hover:border-teal-200 hover:text-teal-100 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-40"
+                  className="inline-flex min-h-14 flex-1 items-center justify-center gap-2 rounded-md border border-teal-200/80 bg-teal-400/[0.58] px-7 py-4 text-base font-semibold text-white shadow-[0_0_28px_rgba(20,184,166,0.26)] transition hover:bg-teal-300/[0.66] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {playNowLoading ? 'Opening' : 'Quick Play'}
                 </button>
+                <a
+                  href={DISCORD_INVITE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    logClientEvent('landing_cta', {
+                      cta: 'hero_join_discord',
+                      destination: 'discord_invite',
+                    });
+                  }}
+                  className="inline-flex min-h-14 items-center justify-center gap-2 rounded-md border border-amber-300/70 bg-transparent px-4 py-4 text-sm font-semibold text-amber-100 transition hover:border-teal-200 hover:text-teal-100 sm:w-40 sm:shrink-0"
+                >
+                  <DiscordLogo className="h-4 w-4" />
+                  Join Discord
+                </a>
               </div>
 
               <p className="mt-3 text-sm leading-6 text-zinc-300">
