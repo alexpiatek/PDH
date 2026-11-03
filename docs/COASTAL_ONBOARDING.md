@@ -2,7 +2,9 @@
 
 The homepage, lobby, account entry and local practice hand share the dark coastal palette and existing Bondi brand mark. The homepage restores Brad's original coastal photo-card composition and five source photographs through `CoastalPhotoCard`. Practice and live play retain the readable `MinimalCardFace` pips and court-card artwork. Community destinations use the existing Discord environment override and Bondi Poker X account.
 
-The homepage keeps one primary invitation, "Play with friends", alongside no-account practice. Join-by-code remains in the header. A single three-step explanation replaces the decorative rank countdown: five private cards, one hidden discard after each post-flop betting round, then two cards at showdown. The ocean background fades into the page before the photograph ends. The homepage header keeps social links in the footer; other screens retain their existing community navigation.
+The homepage introduces the variant immediately: “A new kind of Hold’em. Start with five. Finish with two.” No-account practice is the primary entry, with private multiplayer alongside it and join-by-code in the header. The five original photo cards form an opening hand on the table; the entire illustration links to the real practice route. X is the first community destination, with Discord secondary when a working invite is configured. A single three-step explanation covers five private cards, one hidden discard after each post-flop betting round, then two cards at showdown. The ocean background fades into the page before the photograph ends.
+
+Set `NEXT_PUBLIC_DISCORD_INVITE_URL` only to a verified public invite. Leave it empty while an invite is unavailable; the secondary Discord entries are then omitted across the homepage, shared navigation, footer and waiting room. The old `tmkeanX7T` invite returned Discord error 10006, “Unknown Invite”, during this review, so it must not be used as a default. X remains available while the invite is replaced. Rebuild the web release after changing this public build-time setting.
 
 ## Entry points
 

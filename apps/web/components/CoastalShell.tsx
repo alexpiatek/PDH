@@ -2,8 +2,7 @@ import Link from 'next/link';
 import { ArrowUpRight, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-export const DISCORD_URL =
-  process.env.NEXT_PUBLIC_DISCORD_INVITE_URL || 'https://discord.gg/tmkeanX7T';
+export const DISCORD_URL = process.env.NEXT_PUBLIC_DISCORD_INVITE_URL?.trim() || null;
 
 export function CoastalHeader({ compact = false }: { compact?: boolean }) {
   return (
@@ -31,16 +30,18 @@ export function CoastalHeader({ compact = false }: { compact?: boolean }) {
               X <span className="nav-label">Community</span>
               <ArrowUpRight size={14} aria-hidden="true" />
             </a>
-            <a
-              className="coastal-social-link"
-              href={DISCORD_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Discord"
-            >
-              <Users size={17} aria-hidden="true" />
-              <span className="nav-community-label">Discord</span>
-            </a>
+            {DISCORD_URL && (
+              <a
+                className="coastal-social-link"
+                href={DISCORD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Discord"
+              >
+                <Users size={17} aria-hidden="true" />
+                <span className="nav-community-label">Discord</span>
+              </a>
+            )}
           </>
         )}
         <Link href="/profile" className="coastal-signin">
@@ -79,9 +80,11 @@ export function CoastalFooter() {
         <a href="https://x.com/BondiPoker" target="_blank" rel="noopener noreferrer">
           X / @BondiPoker
         </a>
-        <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer">
-          Discord
-        </a>
+        {DISCORD_URL && (
+          <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer">
+            Discord
+          </a>
+        )}
         <a href="mailto:admin@bondipoker.com">Get in touch</a>
       </div>
       <small>Free play chips. No purchases, cash value or withdrawals.</small>

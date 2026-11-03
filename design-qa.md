@@ -1,5 +1,25 @@
 # Coastal first-play design QA
 
+## Five-card clarity and X-first community — 3 November 2026
+
+**Local review: passed.** Compared Brad's original homepage source at `659535f`, the live `8790357` homepage, and this revision in the same desktop browser frame. Brad's source was rendered locally with the current runtime and original assets; it is a content/layout reference, not a reconstruction of the historical production environment. Temporary reference code and its route were removed before the final build.
+
+1. **Variant comprehension — clearer.** Brad's “new kind of online Hold’em” and visible discard flow explained the alternative game more directly than the previous generic poker-night headline. The revision leads with “A new kind of Hold’em. Start with five. Finish with two.” and gives the face-down discard timing immediately below.
+2. **Community entry — visible and working through X.** The owner requested X first, then Discord. “Join us on X” is visible with the main entry points and goes to the verified public `@BondiPoker` profile. Discord's current `tmkeanX7T` invite returned error 10006, “Unknown Invite”. The stale hardcoded fallback was removed; empty public configuration omits Discord entries across the homepage, shared navigation, footer and waiting room. A fresh verified invite can restore the secondary entries through the existing public build setting.
+3. **Game feel and entry — improved.** Brad's original photo cards are larger and fanned into an opening hand, with a small five-card label and readable felt caption. The whole illustration opens the real practice hand. Practice is the primary no-account action; multiplayer and join-by-code remain available. No fake player counts, pots or live activity were added.
+
+### Current-review evidence and limits
+
+- [Brad's source rendering](docs/qa/five-card-clarity/brad-original.jpg)
+- [Previous live homepage](docs/qa/five-card-clarity/previous-live.jpg)
+- [Revised desktop](docs/qa/five-card-clarity/desktop.jpg)
+- [Revised 390px mobile](docs/qa/five-card-clarity/mobile.jpg)
+- [Combined comparison](docs/qa/five-card-clarity/comparison.jpg)
+
+All accepted images were captured and inspected during this review. The three desktop sources have the same 1466px content width; the comparison crops their top frames to the same height and scales them equally. On the 390px phone frame, the headline, practice entry, X link and all five cards are visible without horizontal overflow. The entire table illustration was followed into practice, where the five-card hand and disabled-until-selection discard control were verified. Existing readable practice/live cards and game logic remain unchanged. This is a visual and interaction review, not a measured conversion or full accessibility study.
+
+Lint, repository typecheck, changelog check and production web build passed. All 254 local unit tests passed; six database-dependent campaign tests were skipped locally. Server-backed integration/E2E CI is the pre-merge gate. Deployment must clear only the known invalid public Discord setting, retain a protected copy of its previous environment file, and use the existing exact-tested-commit web workflow. No secret values, campaigns, accounts, database, protocol, backend, dependencies or DNS are changed.
+
 ## Homepage refinement — 3 November 2026
 
 **Local result: passed.** This follow-up keeps the selected dark coastal direction and responds to the homepage review. It changes presentation only; practice logic, account entry, invitations, campaigns and server contracts are unchanged.

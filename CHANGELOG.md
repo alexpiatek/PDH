@@ -19,6 +19,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Private friend-table creation and server-enforced code admission, plus real-server profile, recovery and chip conservation coverage.
 
 ### Fixed
+- Homepage explains the five-card Hold’em twist immediately, gives no-account practice the primary entry, makes X the first community destination with optional Discord second, and turns the opening hand into a playable practice link. Invalid Discord invites can be removed without losing the X entry.
 - Homepage leads with a quieter poker-night hero, restores Brad's original coastal photo cards, replaces the rank countdown with clear five-to-two instructions, and fades the ocean into the page without a hard edge.
 - Deployment checks build-directory replacement permissions before activation, leaving the running release untouched when ownership needs administrator repair.
 - Website-only deployments retain unchanged live dependencies and avoid restarting Nakama; dependency permission problems fail before activation.
