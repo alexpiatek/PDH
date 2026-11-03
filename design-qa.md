@@ -39,11 +39,13 @@ The final comparison was made after these fixes. No additional blocking visual c
 - Inspected desktop and both mobile solo waiting states using the existing gated snapshot route. Invitation URL and actual snapshot seat count were shown. In the HTTP preview, clipboard access was unavailable and the manual-copy guidance appeared, without falsely reporting success.
 - Checked application error logs after the practice flow: no application errors. Browser-extension metadata warnings were excluded from app findings.
 - Unit tests: 254 passed, 6 database-dependent campaign tests skipped. Includes all 60 practice discard paths, invalid selections, and allowlisted invitation/action URL parsing.
+- A clean CI checkout exposed a missing engine-build prerequisite for the new practice test. The test runner now builds the shared engine first; all 254 tests also passed locally after removing the previous engine build.
 - Lint, supported typecheck, changelog validation and optimized web build passed. Shellcheck was unavailable and the repository's lint runner reported that skip.
+- CI run [41597372837](https://github.com/alexpiatek/PDH/actions/runs/41597372837) passed lint/typecheck, both server integration modes, and the full browser E2E suite for frontend commit `397b00ab`. The final follow-up changes only the test-runner prerequisite and this evidence; current-head CI repeats those checks.
 
 ## Release gaps and follow-up
 
-- Real two-player gameplay, successful authenticated resume and integration/E2E jobs still require the normal CI/server environment. Docker is unavailable in this workspace. Updated E2E scenarios are included for CI, but were not executed locally through the CLI.
+- Real two-player gameplay and integration/E2E passed in CI. Docker is unavailable in this workspace, so the suite was not executed locally through the CLI. Successful authenticated resume still needs a release-environment smoke test.
 - HTTPS clipboard success must be confirmed on the release preview/live origin; manual fallback was verified here.
 - Domain/DNS work is separate and has not been changed.
 - No database, Nakama runtime, campaign, account balance or protocol migration is part of this change.
@@ -55,6 +57,7 @@ The final comparison was made after these fixes. No additional blocking visual c
 - [x] Combined source/implementation comparison and focused comparison reviewed after fixes.
 - [x] Mobile and important interaction states inspected.
 - [x] Regression tests, release notes and flow documentation updated.
-- [ ] Server-backed CI and release smoke test before merging/deploying.
+- [x] Server-backed integration and browser E2E passed for the frontend changes.
+- [ ] Final-head CI and authenticated release smoke test before merging/deploying.
 
 final result: passed
