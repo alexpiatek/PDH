@@ -1,4 +1,4 @@
-name: Check public release revision
+name: Check release working files
 on:
   push:
     branches: [ops/check-bondi-release-revision]
@@ -26,4 +26,4 @@ jobs:
             git rev-parse 'HEAD^{tree}'
             printf 'SHALLOW_HISTORY='
             git rev-parse --is-shallow-repository
-            if test -z "$(git status --porcelain)"; then echo SOURCE_CLEAN=yes; else echo SOURCE_CLEAN=no; fi
+            git status --short --untracked-files=normal
