@@ -441,7 +441,11 @@ export async function ensureNakamaReady() {
 }
 
 export async function fetchPlayerAdmin(
-  path: '/api/admin/me' | '/api/admin/player-analytics' | '/api/admin/system-health'
+  path:
+    | '/api/admin/me'
+    | '/api/admin/player-analytics'
+    | '/api/admin/system-health'
+    | `/api/admin/early-access?page=${number}`
 ) {
   const session = await ensureNakamaSession();
   return fetch(path, {
