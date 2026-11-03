@@ -12,7 +12,7 @@ import {
 import { BondiPokerLogo } from './BondiPokerLogo';
 import { logClientEvent } from '../lib/clientTelemetry';
 
-const CARD_BASE = '/cards/modern-minimal';
+const CARD_BASE = '/cards/coastal';
 const EARLY_ACCESS_SUCCESS_MESSAGE =
   'You\u2019re on the list. We\u2019ll send early access invites, test-night announcements, and launch updates.';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -48,27 +48,27 @@ type EarlyAccessFormFields = {
 type EarlyAccessFormErrors = Partial<Record<keyof EarlyAccessFormFields | 'form', string>>;
 
 const ACE_SPADES = {
-  src: `${CARD_BASE}/ace_of_spades.png`,
+  src: `${CARD_BASE}/coast.jpg`,
   alt: 'Ace of spades',
   code: 'A\u2660',
 };
 const KING_HEARTS = {
-  src: `${CARD_BASE}/king_of_hearts.png`,
+  src: `${CARD_BASE}/ocean.jpg`,
   alt: 'King of hearts',
   code: 'K\u2665',
 };
 const QUEEN_CLUBS = {
-  src: `${CARD_BASE}/queen_of_clubs.png`,
+  src: `${CARD_BASE}/shore.jpg`,
   alt: 'Queen of clubs',
   code: 'Q\u2663',
 };
 const JACK_DIAMONDS = {
-  src: `${CARD_BASE}/jack_of_diamonds.png`,
+  src: `${CARD_BASE}/surf.jpg`,
   alt: 'Jack of diamonds',
   code: 'J\u2666',
 };
 const TEN_SPADES = {
-  src: `${CARD_BASE}/10_of_spades.png`,
+  src: `${CARD_BASE}/beach.jpg`,
   alt: 'Ten of spades',
   code: '10\u2660',
 };
@@ -137,12 +137,24 @@ const RULES = [
 ] as const;
 
 function CardImage({ card, className = '' }: { card: CardFace; className?: string }) {
+  const rank = card.code.slice(0, -1);
+  const suit = card.code.slice(-1);
   return (
-    <img
-      src={card.src}
-      alt={card.alt}
-      className={`aspect-[5/7] w-9 rounded-md border border-zinc-950/25 bg-stone-100 object-cover shadow-[0_9px_18px_rgba(0,0,0,0.45)] sm:w-10 lg:w-10 xl:w-11 ${className}`}
-    />
+    <div
+      role="img"
+      aria-label={card.alt}
+      className={`relative aspect-[5/7] w-9 shrink-0 overflow-hidden rounded-[2px] border border-black/15 bg-[#fafaf3] text-black shadow-[0_4px_10px_rgba(0,0,0,0.28)] sm:w-10 lg:w-10 xl:w-11 ${className}`}
+    >
+      <img src={card.src} alt="" className="absolute left-[17%] top-[10%] h-[80%] w-[66%] rounded-[1px] object-cover" />
+      <span aria-hidden="true" className="absolute left-[3%] top-[2%] flex flex-col items-center font-serif text-[7px] font-bold leading-[0.95] sm:text-[8px]">
+        <span>{rank}</span><span>{suit}</span>
+      </span>
+      <span aria-hidden="true" className="absolute bottom-[2%] right-[3%] flex rotate-180 flex-col items-center font-serif text-[7px] font-bold leading-[0.95] sm:text-[8px]">
+        <span>{rank}</span><span>{suit}</span>
+      </span>
+      <span aria-hidden="true" className="absolute right-[3%] top-[11%] text-[2px] font-semibold leading-none [writing-mode:vertical-rl]">BONDI POKER</span>
+      <span aria-hidden="true" className="absolute bottom-[11%] left-[3%] rotate-180 text-[2px] font-semibold leading-none [writing-mode:vertical-rl]">BONDI POKER</span>
+    </div>
   );
 }
 
@@ -690,6 +702,14 @@ export default function HeroSection() {
             >
               X / Twitter &middot; @BondiPoker
             </a>
+            <div>
+              <a
+                href="mailto:admin@bondipoker.com"
+                className="inline-flex min-h-11 items-center break-all text-teal-200 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-300"
+              >
+                admin@bondipoker.com
+              </a>
+            </div>
             <div className="mt-8 border-t border-white/15 pt-7 text-zinc-400">
               &copy; 2026 Bondi Poker. All rights reserved.
             </div>
